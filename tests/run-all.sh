@@ -12,5 +12,6 @@ step "Version agrees in plugin header, PODPUB_VERSION and readme.txt" bash -c '
   r=$(sed -n "s/^Stable tag:[[:space:]]*//p" ../plugin/readme.txt | head -n1 | tr -d "[:space:]")
   echo "header=$h constant=$c readme=$r"
   [ -n "$h" ] && [ "$h" = "$c" ] && [ "$h" = "$r" ]'
+step "Admin menu structure (stubbed WordPress)" php test_admin_menu.php
 echo; [ $fail -eq 0 ] && echo "ALL CHECKS PASSED" || echo "SOME CHECKS FAILED"
 exit $fail
