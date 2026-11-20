@@ -75,7 +75,11 @@ class PodPub_Feeds {
 		if ( '' === $title ) {
 			return new WP_Error( 'podpub_no_title', 'Please enter a title for the podcast.' );
 		}
-		return wp_insert_post(
+		$dir = PodPub_Storage::create_podcast_dir( $title );
+		if ( is_wp_error( $dir ) ) {
+			return $dir;
+		}
+		$id = wp_insert_post(
 			array(
 				'post_type'   => self::POST_TYPE,
 				'post_status' => 'publish',
@@ -83,5 +87,22 @@ class PodPub_Feeds {
 			),
 			true
 		);
+		if ( is_wp_error( $id ) ) {
+			@unlink( PodPub_Storage::base_path() . '/' . $dir . '/index.html' ); // phpcs:ignore
+			@rmdir( PodPub_Storage::base_path() . '/' . $dir ); // phpcs:ignore
+			return $id;
+		}
+		update_post_meta( $id, '_podpub_dir', $dir );
+		return $id;
+	}
+
+	/**
+	 * The folder name (not the full path) a podcast's files live in.
+	 *
+	 * @param int $id Record id.
+	 * @return string
+	 */
+	public static function dir_name( $id ) {
+		return (string) get_post_meta( (int) $id, '_podpub_dir', true );
 	}
 }

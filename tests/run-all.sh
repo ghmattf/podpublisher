@@ -13,5 +13,6 @@ step "Version agrees in plugin header, PODPUB_VERSION and readme.txt" bash -c '
   echo "header=$h constant=$c readme=$r"
   [ -n "$h" ] && [ "$h" = "$c" ] && [ "$h" = "$r" ]'
 step "Admin menu structure (stubbed WordPress)" php test_admin_menu.php
+step "Folder names and podcast/episode folder layout" php test_storage.php
 echo; [ $fail -eq 0 ] && echo "ALL CHECKS PASSED" || echo "SOME CHECKS FAILED"
 exit $fail

@@ -66,8 +66,37 @@ class PodPub_Admin {
 	 */
 	public static function sanitize_settings( $input ) {
 		$input = is_array( $input ) ? $input : array();
+		$old   = array(
+			'storage_path' => (string) PodPub_Settings::get( 'storage_path' ),
+			'storage_url'  => (string) PodPub_Settings::get( 'storage_url' ),
+		);
+		$path = isset( $input['storage_path'] ) ? trim( sanitize_text_field( $input['storage_path'] ) ) : '';
+		$path = '' === $path ? '' : rtrim( str_replace( '\\', '/', $path ), '/' );
+		$url  = isset( $input['storage_url'] ) ? trim( esc_url_raw( trim( $input['storage_url'] ) ) ) : '';
+		$url  = rtrim( $url, '/' );
+
+		if ( '' !== $path && ! PodPub_Storage::valid_path( $path ) ) {
+			add_settings_error( 'podpub_settings', 'podpub_path', 'The podcast folder was not saved. It must be a full path with no spaces or special characters: only letters, numbers, dots, underscores and hyphens in each folder name.', 'error' );
+			$path = $old['storage_path'];
+			$url  = $old['storage_url'];
+		}
+		if ( '' !== $url && ! PodPub_Storage::valid_url( $url ) ) {
+			add_settings_error( 'podpub_settings', 'podpub_url', 'The public address was not saved. It must start with http:// or https:// and use only letters, numbers, dots, underscores, hyphens and slashes after the domain.', 'error' );
+			$url = $old['storage_url'];
+		}
+		if ( '' !== $path && '' === $url && '' === PodPub_Storage::derive_url( $path ) ) {
+			add_settings_error( 'podpub_settings', 'podpub_url_needed', 'That folder is outside the WordPress uploads folder, so also enter the public address that points to it. The folder and address were not saved.', 'error' );
+			$path = $old['storage_path'];
+			$url  = $old['storage_url'];
+		}
+		if ( '' !== $path && ! PodPub_Storage::ensure_dir( $path ) ) {
+			add_settings_error( 'podpub_settings', 'podpub_writable', 'Saved, but the web server cannot write to that folder yet. Create it or change its permissions before adding podcasts.', 'warning' );
+		}
+
 		return array(
 			'delete_data_on_uninstall' => empty( $input['delete_data_on_uninstall'] ) ? 0 : 1,
+			'storage_path'             => $path,
+			'storage_url'              => $url,
 		);
 	}
 
@@ -165,6 +194,14 @@ class PodPub_Admin {
 			return;
 		}
 		echo '<h1>' . esc_html( $feed->post_title ) . '</h1>';
+		$dir = PodPub_Feeds::dir_name( $id );
+		if ( '' !== $dir ) {
+			echo '<p>Files folder: <code>' . esc_html( PodPub_Storage::base_path() . '/' . $dir ) . '</code></p>';
+			$url = PodPub_Storage::base_url();
+			if ( '' !== $url ) {
+				echo '<p>Public address: <code>' . esc_html( $url . '/' . $dir . '/' ) . '</code></p>';
+			}
+		}
 		echo '<p>Managing this podcast is not built yet.</p>';
 		echo '<p><a href="' . esc_url( self::list_url() ) . '">Back to all podcasts</a></p></div>';
 	}
@@ -174,9 +211,19 @@ class PodPub_Admin {
 			return;
 		}
 		$checked = PodPub_Settings::get( 'delete_data_on_uninstall' ) ? ' checked' : '';
-		echo '<div class="wrap"><h1>PodPublisher settings</h1><form method="post" action="options.php">';
+		echo '<div class="wrap"><h1>PodPublisher settings</h1>';
+		settings_errors( 'podpub_settings' );
+		echo '<form method="post" action="options.php">';
 		settings_fields( 'podpub_settings_group' );
-		echo '<table class="form-table"><tr><th scope="row">Uninstall</th><td><label>';
+		$opt = esc_attr( PodPub_Settings::OPTION );
+		echo '<table class="form-table">';
+		echo '<tr><th scope="row"><label for="podpub_storage_path">Podcast folder</label></th><td>';
+		echo '<input type="text" id="podpub_storage_path" class="large-text code" name="' . $opt . '[storage_path]" value="' . esc_attr( (string) PodPub_Settings::get( 'storage_path' ) ) . '" placeholder="' . esc_attr( PodPub_Storage::default_path() ) . '">'; // phpcs:ignore WordPress.Security.EscapeOutput
+		echo '<p class="description">Where podcast files are written. Leave empty for the default shown. Each podcast gets its own folder here, with a folder for each episode inside it. Folder names are made from titles with spaces replaced by _ and anything else unsafe removed.</p></td></tr>';
+		echo '<tr><th scope="row"><label for="podpub_storage_url">Public address</label></th><td>';
+		echo '<input type="text" id="podpub_storage_url" class="large-text code" name="' . $opt . '[storage_url]" value="' . esc_attr( (string) PodPub_Settings::get( 'storage_url' ) ) . '" placeholder="' . esc_attr( PodPub_Storage::derive_url( PodPub_Storage::base_path() ) ) . '">'; // phpcs:ignore WordPress.Security.EscapeOutput
+		echo '<p class="description">The web address that points to the folder above. Only needed when the folder is outside the WordPress uploads folder.</p></td></tr>';
+		echo '<tr><th scope="row">Uninstall</th><td><label>';
 		echo '<input type="checkbox" name="' . esc_attr( PodPub_Settings::OPTION ) . '[delete_data_on_uninstall]" value="1"' . $checked . '> '; // phpcs:ignore WordPress.Security.EscapeOutput
 		echo 'Delete podcasts and settings when the plugin is deleted</label></td></tr></table>';
 		submit_button();

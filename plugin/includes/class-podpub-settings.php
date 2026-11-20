@@ -21,6 +21,8 @@ class PodPub_Settings {
 	public static function defaults() {
 		return array(
 			'delete_data_on_uninstall' => 0,
+			'storage_path'             => '', // Empty = default folder (PodPub_Storage::default_path()).
+			'storage_url'              => '', // Empty = worked out from the folder when it is inside uploads.
 		);
 	}
 
