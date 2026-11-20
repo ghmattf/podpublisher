@@ -1,0 +1,29 @@
+# Creates a GitHub release (and tag) whenever main has a plugin version that has not been released yet.
+# The version is read from the "Version:" header of plugin/podpublisher.php.
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create release if this version has none
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          version=$(sed -n 's/^ \* Version:[[:space:]]*//p' plugin/podpublisher.php | head -n1 | tr -d '[:space:]')
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Could not read a version (got '$version')"; exit 1; }
+          tag="v$version"
+          if gh release view "$tag" >/dev/null 2>&1; then echo "$tag already released"; exit 0; fi
+          mkdir -p stage && cp -r plugin stage/podpublisher
+          (cd stage && zip -qr ../podpublisher.zip podpublisher)
+          gh release create "$tag" podpublisher.zip --target "$GITHUB_SHA" --title "$version" --generate-notes
