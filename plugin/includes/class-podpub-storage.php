@@ -182,6 +182,31 @@ class PodPub_Storage {
 	}
 
 	/**
+	 * Delete a folder and everything in it. Symbolic links are removed, never
+	 * followed. Callers must pass only a folder they built from a checked name.
+	 *
+	 * @param string $dir Folder.
+	 * @return bool
+	 */
+	public static function remove_tree( $dir ) {
+		if ( ! is_dir( $dir ) || is_link( $dir ) ) {
+			return false;
+		}
+		foreach ( scandir( $dir ) as $f ) {
+			if ( '.' === $f || '..' === $f ) {
+				continue;
+			}
+			$p = $dir . '/' . $f;
+			if ( is_dir( $p ) && ! is_link( $p ) ) {
+				self::remove_tree( $p );
+			} else {
+				@unlink( $p ); // phpcs:ignore WordPress.PHP.NoSilencedErrors
+			}
+		}
+		return @rmdir( $dir ); // phpcs:ignore WordPress.PHP.NoSilencedErrors
+	}
+
+	/**
 	 * Create the folder for a new podcast.
 	 *
 	 * @param string $title Podcast title.

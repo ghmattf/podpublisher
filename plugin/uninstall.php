@@ -13,11 +13,12 @@ if ( ! defined( 'WP_UNINSTALL_PLUGIN' ) ) {
 define( 'PODPUB_DIR', plugin_dir_path( __FILE__ ) );
 require_once PODPUB_DIR . 'includes/class-podpub-settings.php';
 require_once PODPUB_DIR . 'includes/class-podpub-feeds.php';
+require_once PODPUB_DIR . 'includes/class-podpub-episodes.php';
 
 if ( PodPub_Settings::get( 'delete_data_on_uninstall' ) ) {
 	$podpub_ids = get_posts(
 		array(
-			'post_type'   => PodPub_Feeds::POST_TYPE,
+			'post_type'   => array( PodPub_Feeds::POST_TYPE, PodPub_Episodes::POST_TYPE ),
 			'post_status' => 'any',
 			'numberposts' => -1,
 			'fields'      => 'ids',

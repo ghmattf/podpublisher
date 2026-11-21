@@ -134,10 +134,54 @@ class PodPub_FeedXml {
 		}
 		$w->writeElement( 'podcast:medium', 'podcast' );
 
+		foreach ( isset( $p['episodes'] ) ? $p['episodes'] : array() as $e ) {
+			self::write_item( $w, $e );
+		}
+
 		$w->endElement(); // channel.
 		$w->endElement(); // rss.
 		$w->endDocument();
 		return $w->outputMemory();
+	}
+
+	/**
+	 * One <item>.
+	 *
+	 * @param XMLWriter $w XML writer.
+	 * @param array     $e Episode (details plus title and audio_url).
+	 */
+	private static function write_item( $w, $e ) {
+		$w->startElement( 'item' );
+		$w->writeElement( 'title', $e['title'] );
+		$w->writeElement( 'description', $e['description'] );
+		$w->writeElement( 'pubDate', gmdate( 'D, d M Y H:i:s', (int) $e['published'] ) . ' +0000' );
+		$w->startElement( 'guid' );
+		$w->writeAttribute( 'isPermaLink', 'false' );
+		$w->text( $e['guid'] );
+		$w->endElement();
+		$w->startElement( 'enclosure' );
+		$w->writeAttribute( 'url', $e['audio_url'] );
+		$w->writeAttribute( 'length', (string) (int) $e['audio_size'] );
+		$w->writeAttribute( 'type', $e['audio_type'] );
+		$w->endElement();
+		if ( (int) $e['duration'] > 0 ) {
+			$w->writeElement( 'itunes:duration', PodPub_Episodes::format_duration( $e['duration'] ) );
+		}
+		if ( (int) $e['season'] > 0 ) {
+			$w->writeElement( 'podcast:season', (string) (int) $e['season'] );
+			$w->writeElement( 'itunes:season', (string) (int) $e['season'] );
+		}
+		if ( (int) $e['episode'] > 0 ) {
+			$w->writeElement( 'podcast:episode', (string) (int) $e['episode'] );
+			$w->writeElement( 'itunes:episode', (string) (int) $e['episode'] );
+		}
+		$w->writeElement( 'itunes:episodeType', $e['type'] );
+		if ( '' !== trim( $e['show_notes'] ) ) {
+			$w->startElement( 'content:encoded' );
+			$w->writeCdata( str_replace( ']]>', ']]]]><![CDATA[>', $e['show_notes'] ) );
+			$w->endElement();
+		}
+		$w->endElement();
 	}
 
 	/**
@@ -168,6 +212,7 @@ class PodPub_FeedXml {
 				'details'   => $d,
 				'feed_url'  => '' === $base ? '' : $base . '/' . $dir . '/' . $dir . '.xml',
 				'image_url' => ( '' === $base || '' === $d['image'] ) ? '' : $base . '/' . $dir . '/' . $d['image'],
+				'episodes'  => PodPub_Episodes::feed_items( $id, $base, time() ),
 			)
 		);
 		$file  = $folder . '/' . $dir . '.xml';

@@ -22,6 +22,8 @@ class PodPub_Admin {
 		add_action( 'admin_init', array( __CLASS__, 'register_settings' ) );
 		add_action( 'admin_post_podpub_create_feed', array( __CLASS__, 'handle_create' ) );
 		add_action( 'admin_post_podpub_save_details', array( __CLASS__, 'handle_save_details' ) );
+		add_action( 'admin_post_podpub_save_episode', array( __CLASS__, 'handle_save_episode' ) );
+		add_action( 'admin_post_podpub_delete_episode', array( __CLASS__, 'handle_delete_episode' ) );
 	}
 
 	/**
@@ -146,6 +148,140 @@ class PodPub_Admin {
 		exit;
 	}
 
+	private static function feed_page_url( $podcast_id, $args = array() ) {
+		return add_query_arg( array_merge( array( 'page' => self::SLUG_FEED . (int) $podcast_id ), $args ), admin_url( 'admin.php' ) );
+	}
+
+	/**
+	 * Episode form handler.
+	 */
+	public static function handle_save_episode() {
+		if ( ! current_user_can( self::CAP ) ) {
+			wp_die( esc_html__( 'You do not have permission to do that.', 'podpublisher' ), 403 );
+		}
+		check_admin_referer( 'podpub_save_episode' );
+		$pid   = isset( $_POST['podpub_id'] ) ? (int) $_POST['podpub_id'] : 0;
+		$eid   = isset( $_POST['podpub_episode_id'] ) ? (int) $_POST['podpub_episode_id'] : 0;
+		$input = isset( $_POST['podpub_ep'] ) && is_array( $_POST['podpub_ep'] ) ? wp_unslash( $_POST['podpub_ep'] ) : array(); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput
+		$file  = null;
+		if ( isset( $_FILES['podpub_audio'] ) && is_array( $_FILES['podpub_audio'] ) ) {
+			$file = $_FILES['podpub_audio']; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput
+			if ( UPLOAD_ERR_OK === (int) $file['error'] && ! is_uploaded_file( $file['tmp_name'] ) ) {
+				$file = null;
+			}
+		}
+		$result          = PodPub_Episodes::save( $pid, $eid, $input, $file );
+		$result['input'] = $result['errors'] ? $input : null;
+		set_transient( 'podpub_notice_' . get_current_user_id(), $result, 120 );
+		$go = $result['errors'] ? ( $eid ? (string) $eid : 'new' ) : (string) $result['id'];
+		wp_safe_redirect( self::feed_page_url( $pid, array( 'episode' => $go ) ) );
+		exit;
+	}
+
+	/**
+	 * Episode delete handler.
+	 */
+	public static function handle_delete_episode() {
+		if ( ! current_user_can( self::CAP ) ) {
+			wp_die( esc_html__( 'You do not have permission to do that.', 'podpublisher' ), 403 );
+		}
+		check_admin_referer( 'podpub_delete_episode' );
+		$pid    = isset( $_POST['podpub_id'] ) ? (int) $_POST['podpub_id'] : 0;
+		$eid    = isset( $_POST['podpub_episode_id'] ) ? (int) $_POST['podpub_episode_id'] : 0;
+		$result = PodPub_Episodes::delete( $pid, $eid );
+		set_transient( 'podpub_notice_' . get_current_user_id(), $result, 120 );
+		wp_safe_redirect( self::feed_page_url( $pid ) );
+		exit;
+	}
+
+	/**
+	 * Episode list under the details form.
+	 *
+	 * @param int $id Podcast record id.
+	 */
+	private static function render_episode_list( $id ) {
+		echo '<hr><h2>Episodes <a href="' . esc_url( self::feed_page_url( $id, array( 'episode' => 'new' ) ) ) . '" class="page-title-action">Add episode</a></h2>';
+		$eps = PodPub_Episodes::all( $id );
+		if ( ! $eps ) {
+			echo '<p>No episodes yet.</p>';
+			return;
+		}
+		echo '<table class="wp-list-table widefat fixed striped"><thead><tr><th>Episode</th><th style="width:12em">Date</th><th style="width:8em">Status</th></tr></thead><tbody>';
+		foreach ( $eps as $e ) {
+			$d    = PodPub_Episodes::details( $e->ID );
+			$link = self::feed_page_url( $id, array( 'episode' => (int) $e->ID ) );
+			$stat = 'published' === $d['status'] ? ( '' === $d['audio'] ? 'Published (no audio)' : 'Published' ) : 'Draft';
+			echo '<tr><td><strong><a href="' . esc_url( $link ) . '">' . esc_html( $e->post_title ) . '</a></strong></td><td>' . esc_html( PodPub_Episodes::format_date( $d['published'] ) ) . '</td><td>' . esc_html( $stat ) . '</td></tr>';
+		}
+		echo '</tbody></table>';
+	}
+
+	/**
+	 * Episode form (new or edit).
+	 *
+	 * @param int        $id      Podcast record id.
+	 * @param WP_Post    $feed    Podcast record.
+	 * @param string     $which   'new' or an episode id.
+	 * @param array|null $notice  The notice just shown (its input refills the form after an error).
+	 */
+	private static function render_episode( $id, $feed, $which, $notice ) {
+		$eid  = 'new' === $which ? 0 : (int) $which;
+		$post = $eid ? PodPub_Episodes::get( $eid, $id ) : null;
+		echo '<p><a href="' . esc_url( self::feed_page_url( $id ) ) . '">&larr; Back to ' . esc_html( $feed->post_title ) . '</a></p>';
+		if ( $eid && ! $post ) {
+			echo '<h2>Episode not found</h2>';
+			return;
+		}
+		$d     = $post ? PodPub_Episodes::details( $eid ) : array_merge( PodPub_Episodes::defaults(), array( 'published' => time() ) );
+		$title = $post ? $post->post_title : '';
+		$in    = is_array( $notice ) && ! empty( $notice['input'] ) ? $notice['input'] : null;
+		$v     = function ( $k, $fallback ) use ( $in ) {
+			return null !== $in && isset( $in[ $k ] ) && is_scalar( $in[ $k ] ) ? (string) $in[ $k ] : (string) $fallback;
+		};
+		echo '<h2>' . ( $post ? 'Edit episode' : 'Add episode' ) . '</h2>';
+		echo '<form method="post" enctype="multipart/form-data" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '">';
+		echo '<input type="hidden" name="action" value="podpub_save_episode"><input type="hidden" name="podpub_id" value="' . (int) $id . '"><input type="hidden" name="podpub_episode_id" value="' . (int) $eid . '">';
+		wp_nonce_field( 'podpub_save_episode' );
+		echo '<table class="form-table" role="presentation">';
+		echo '<tr><th scope="row"><label for="ep_title">Title</label></th><td><input type="text" id="ep_title" class="regular-text" required name="podpub_ep[title]" value="' . esc_attr( $v( 'title', $title ) ) . '"></td></tr>';
+		echo '<tr><th scope="row"><label for="ep_desc">Description</label></th><td><textarea id="ep_desc" name="podpub_ep[description]" rows="3" class="large-text" required>' . esc_textarea( $v( 'description', $d['description'] ) ) . '</textarea><p class="description">Plain text summary shown in podcast apps.</p></td></tr>';
+		echo '<tr><th scope="row"><label for="ep_notes">Show notes</label></th><td><textarea id="ep_notes" name="podpub_ep[show_notes]" rows="8" class="large-text code">' . esc_textarea( $v( 'show_notes', $d['show_notes'] ) ) . '</textarea><p class="description">Optional. Links and simple formatting only (a, b, strong, i, em, br, p, ul, ol, li, h2-h4, blockquote); anything else is removed.</p></td></tr>';
+		echo '<tr><th scope="row"><label for="ep_audio">Audio file</label></th><td>';
+		if ( '' !== $d['audio'] ) {
+			$url = PodPub_Storage::base_url();
+			$pd  = PodPub_Feeds::dir_name( $id );
+			$ed  = PodPub_Episodes::dir_name( $eid );
+			echo '<p>Current file: <code>' . esc_html( $d['audio'] ) . '</code> (' . esc_html( size_format( $d['audio_size'] ) ) . ')';
+			if ( '' !== $url ) {
+				echo ' <a href="' . esc_url( $url . '/' . $pd . '/' . $ed . '/' . $d['audio'] ) . '" target="_blank" rel="noopener">Open</a>';
+			}
+			echo '</p>';
+		}
+		echo '<input type="file" id="ep_audio" name="podpub_audio" accept=".' . esc_attr( implode( ',.', array_keys( PodPub_Episodes::audio_types() ) ) ) . '"><p class="description">' . esc_html( strtoupper( implode( ', ', array_keys( PodPub_Episodes::audio_types() ) ) ) ) . '. Your server allows uploads up to ' . esc_html( size_format( wp_max_upload_size() ) ) . '. Uploading a new file replaces the old one.</p></td></tr>';
+		echo '<tr><th scope="row"><label for="ep_date">Date and time</label></th><td><input type="datetime-local" id="ep_date" name="podpub_ep[published]" required value="' . esc_attr( $v( 'published', PodPub_Episodes::format_date( $d['published'] ) ) ) . '"><p class="description">In the site time zone.</p></td></tr>';
+		echo '<tr><th scope="row"><label for="ep_dur">Duration</label></th><td><input type="text" id="ep_dur" class="small-text" name="podpub_ep[duration]" placeholder="1:02:30" value="' . esc_attr( $v( 'duration', $d['duration'] ? PodPub_Episodes::format_duration( $d['duration'] ) : '' ) ) . '"><p class="description">Hours:minutes:seconds. Leave empty to read it from the audio file when possible.</p></td></tr>';
+		echo '<tr><th scope="row"><label for="ep_season">Season</label></th><td><input type="number" min="1" id="ep_season" class="small-text" name="podpub_ep[season]" value="' . esc_attr( $v( 'season', $d['season'] ? $d['season'] : '' ) ) . '"></td></tr>';
+		echo '<tr><th scope="row"><label for="ep_num">Episode number</label></th><td><input type="number" min="1" id="ep_num" class="small-text" name="podpub_ep[episode]" value="' . esc_attr( $v( 'episode', $d['episode'] ? $d['episode'] : '' ) ) . '"></td></tr>';
+		$type = $v( 'type', $d['type'] );
+		echo '<tr><th scope="row"><label for="ep_type">Type</label></th><td><select id="ep_type" name="podpub_ep[type]">';
+		foreach ( array( 'full' => 'Full episode', 'trailer' => 'Trailer', 'bonus' => 'Bonus' ) as $k => $label ) {
+			echo '<option value="' . esc_attr( $k ) . '"' . selected( $type, $k, false ) . '>' . esc_html( $label ) . '</option>';
+		}
+		echo '</select></td></tr>';
+		$status = $v( 'status', $d['status'] );
+		echo '<tr><th scope="row"><label for="ep_status">Status</label></th><td><select id="ep_status" name="podpub_ep[status]"><option value="draft"' . selected( $status, 'draft', false ) . '>Draft (not in the feed)</option><option value="published"' . selected( $status, 'published', false ) . '>Published (in the feed; needs audio)</option></select></td></tr>';
+		echo '</table>';
+		submit_button( 'Save episode and write feed' );
+		echo '</form>';
+		if ( $post ) {
+			echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '" onsubmit="return confirm(\'Delete this episode and its audio file? This cannot be undone.\');">';
+			echo '<input type="hidden" name="action" value="podpub_delete_episode"><input type="hidden" name="podpub_id" value="' . (int) $id . '"><input type="hidden" name="podpub_episode_id" value="' . (int) $eid . '">';
+			wp_nonce_field( 'podpub_delete_episode' );
+			submit_button( 'Delete episode', 'delete', 'submit', false );
+			echo '</form>';
+		}
+	}
+
 	/**
 	 * Main page: list of podcasts, New podcast, Import podcast.
 	 */
@@ -237,6 +373,13 @@ class PodPub_Admin {
 			}
 		}
 
+		$which = isset( $_GET['episode'] ) ? sanitize_text_field( wp_unslash( $_GET['episode'] ) ) : '';
+		if ( '' !== $which && ( 'new' === $which || ctype_digit( $which ) ) ) {
+			self::render_episode( $id, $feed, $which, is_array( $notice ) ? $notice : null );
+			echo '</div>';
+			return;
+		}
+
 		$dir  = PodPub_Feeds::dir_name( $id );
 		$d    = PodPub_Details::get( $id );
 		$base = PodPub_Storage::base_url();
@@ -288,6 +431,7 @@ class PodPub_Admin {
 		echo '</table>';
 		submit_button( 'Save and write feed' );
 		echo '</form>';
+		self::render_episode_list( $id );
 		echo '<p><a href="' . esc_url( self::list_url() ) . '">Back to all podcasts</a></p></div>';
 	}
 
