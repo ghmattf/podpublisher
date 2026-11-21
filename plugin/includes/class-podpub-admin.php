@@ -23,6 +23,7 @@ class PodPub_Admin {
 		add_action( 'admin_post_podpub_create_feed', array( __CLASS__, 'handle_create' ) );
 		add_action( 'admin_post_podpub_save_details', array( __CLASS__, 'handle_save_details' ) );
 		add_action( 'admin_post_podpub_save_episode', array( __CLASS__, 'handle_save_episode' ) );
+		add_action( 'admin_post_podpub_save_p20', array( __CLASS__, 'handle_save_p20' ) );
 		add_action( 'admin_post_podpub_delete_episode', array( __CLASS__, 'handle_delete_episode' ) );
 	}
 
@@ -195,6 +196,161 @@ class PodPub_Admin {
 	}
 
 	/**
+	 * Podcasting 2.0 tags form handler (podcast level).
+	 */
+	public static function handle_save_p20() {
+		if ( ! current_user_can( self::CAP ) ) {
+			wp_die( esc_html__( 'You do not have permission to do that.', 'podpublisher' ), 403 );
+		}
+		check_admin_referer( 'podpub_save_p20' );
+		$id    = isset( $_POST['podpub_id'] ) ? (int) $_POST['podpub_id'] : 0;
+		$input = isset( $_POST['podpub_p20'] ) && is_array( $_POST['podpub_p20'] ) ? wp_unslash( $_POST['podpub_p20'] ) : array(); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput
+		$result          = PodPub_Feeds::save_p20( $id, $input );
+		$result['form']  = 'p20';
+		$result['input'] = $result['errors'] ? $input : null;
+		set_transient( 'podpub_notice_' . get_current_user_id(), $result, 120 );
+		wp_safe_redirect( self::feed_page_url( $id ) );
+		exit;
+	}
+
+	/**
+	 * A table of rows for a list of tags (funding links, people, recipients, ...).
+	 * Shows the saved rows plus three empty ones.
+	 *
+	 * @param string $name Field name prefix, such as podpub_p20[funding].
+	 * @param array  $rows Rows to show.
+	 * @param array  $cols Columns: key, label, type (text, select, check), options, ph, class.
+	 * @param int    $max  Most rows allowed.
+	 */
+	private static function render_rows( $name, $rows, $cols, $max ) {
+		$rows = array_values( $rows );
+		$n    = min( $max, count( $rows ) + 3 );
+		echo '<table class="widefat striped" style="max-width:70em"><thead><tr>';
+		foreach ( $cols as $c ) {
+			echo '<th>' . esc_html( $c['label'] ) . '</th>';
+		}
+		echo '</tr></thead><tbody>';
+		for ( $i = 0; $i < $n; $i++ ) {
+			$r = isset( $rows[ $i ] ) && is_array( $rows[ $i ] ) ? $rows[ $i ] : array();
+			echo '<tr>';
+			foreach ( $cols as $c ) {
+				$k   = $c['key'];
+				$val = isset( $r[ $k ] ) ? $r[ $k ] : '';
+				$nm  = esc_attr( $name . '[' . $i . '][' . $k . ']' );
+				echo '<td>';
+				if ( 'select' === $c['type'] ) {
+					echo '<select name="' . $nm . '">';
+					foreach ( $c['options'] as $ov => $ol ) {
+						echo '<option value="' . esc_attr( $ov ) . '"' . selected( (string) $val, (string) $ov, false ) . '>' . esc_html( $ol ) . '</option>';
+					}
+					echo '</select>';
+				} elseif ( 'check' === $c['type'] ) {
+					echo '<input type="checkbox" name="' . $nm . '" value="1"' . checked( ! empty( $val ), true, false ) . '>';
+				} else {
+					echo '<input type="text" class="' . esc_attr( isset( $c['class'] ) ? $c['class'] : 'regular-text' ) . '" name="' . $nm . '" value="' . esc_attr( is_scalar( $val ) ? (string) $val : '' ) . '"' . ( isset( $c['ph'] ) ? ' placeholder="' . esc_attr( $c['ph'] ) . '"' : '' ) . '>';
+				}
+				echo '</td>';
+			}
+			echo '</tr>';
+		}
+		echo '</tbody></table><p class="description">Empty rows are ignored. Save to get more empty rows.</p>';
+	}
+
+	/**
+	 * The Podcasting 2.0 sections, for a podcast (channel) or an episode (item).
+	 *
+	 * @param string     $prefix Field name prefix: podpub_p20 or podpub_ep.
+	 * @param array      $d      Saved details.
+	 * @param array|null $in     What was typed before an error (refills the form), or null.
+	 * @param bool       $item   True for an episode.
+	 */
+	private static function render_p20_fields( $prefix, $d, $in, $item ) {
+		$v    = function ( $k, $fallback ) use ( $in ) {
+			return null !== $in && isset( $in[ $k ] ) && is_scalar( $in[ $k ] ) ? (string) $in[ $k ] : (string) $fallback;
+		};
+		$rows = function ( $key, $saved ) use ( $in ) {
+			return null !== $in && isset( $in[ $key ] ) && is_array( $in[ $key ] ) ? $in[ $key ] : $saved;
+		};
+		$inherit = $item ? ' Leave this empty to use the podcast\'s.' : '';
+		$in_text = function ( $k, $label, $saved, $ph = '', $class = 'regular-text' ) use ( $prefix, $v ) {
+			echo '<tr><th scope="row"><label>' . esc_html( $label ) . '</label></th><td><input type="text" class="' . esc_attr( $class ) . '" name="' . esc_attr( $prefix . '[' . $k . ']' ) . '" value="' . esc_attr( $v( $k, $saved ) ) . '" placeholder="' . esc_attr( $ph ) . '"></td></tr>';
+		};
+
+		echo '<h3>Funding</h3><p class="description">Links where listeners can support the show.' . esc_html( $inherit ) . '</p>';
+		self::render_rows( $prefix . '[funding]', $rows( 'funding', $d['funding'] ), array(
+			array( 'key' => 'url', 'label' => 'Web address', 'type' => 'text', 'ph' => 'https://' ),
+			array( 'key' => 'message', 'label' => 'Message (up to 128 characters)', 'type' => 'text' ),
+		), PodPub_P20::MAX_FUNDING );
+
+		echo '<h3>Location</h3><p class="description">Where the ' . ( $item ? 'episode' : 'podcast' ) . ' is about (subject) or was made (creator). Add one row for each place. The name is required; the rest is recommended.' . esc_html( $inherit ) . '</p>';
+		self::render_rows( $prefix . '[locations]', $rows( 'locations', $d['locations'] ), array(
+			array( 'key' => 'name', 'label' => 'Place name', 'type' => 'text', 'ph' => 'Melbourne' ),
+			array( 'key' => 'rel', 'label' => 'Place is', 'type' => 'select', 'options' => array( '' => 'The subject (default)', 'creator' => 'Where it was made' ) ),
+			array( 'key' => 'geo', 'label' => 'Coordinates', 'type' => 'text', 'ph' => '-37.8136,144.9631', 'class' => 'regular-text code' ),
+			array( 'key' => 'osm', 'label' => 'OpenStreetMap id', 'type' => 'text', 'ph' => 'R2316741', 'class' => 'small-text code' ),
+			array( 'key' => 'country', 'label' => 'Country', 'type' => 'text', 'ph' => 'AU', 'class' => 'small-text' ),
+		), PodPub_P20::MAX_LOCATIONS );
+
+		echo '<h3>People</h3><p class="description">Hosts, guests and others, shown by podcast apps.' . esc_html( $inherit ) . ' The role and group follow the Podcast namespace people taxonomy (for example host or guest, in the group cast); other words are kept but may not be recognised by apps.</p>';
+		self::render_rows( $prefix . '[persons]', $rows( 'persons', $d['persons'] ), array(
+			array( 'key' => 'name', 'label' => 'Name', 'type' => 'text' ),
+			array( 'key' => 'role', 'label' => 'Role', 'type' => 'text', 'ph' => 'host', 'class' => 'small-text' ),
+			array( 'key' => 'group', 'label' => 'Group', 'type' => 'text', 'ph' => 'cast', 'class' => 'small-text' ),
+			array( 'key' => 'img', 'label' => 'Picture address', 'type' => 'text', 'ph' => 'https://' ),
+			array( 'key' => 'href', 'label' => 'Link', 'type' => 'text', 'ph' => 'https://' ),
+		), PodPub_P20::MAX_PERSONS );
+
+		echo '<h3>License</h3><table class="form-table" role="presentation">';
+		$in_text( 'license_name', 'License', $d['license']['name'], 'cc-by-4.0' );
+		$in_text( 'license_url', 'Address of the license', $d['license']['url'], 'https://creativecommons.org/licenses/by/4.0/' );
+		echo '</table>';
+
+		echo '<h3>Payments (value)</h3><p class="description">Listeners\' apps can send payments to the recipients while they listen. Splits are shares, in proportion to each other (they do not have to add up to 100). Tick Fee for a recipient that takes a fee off the top. A Lightning node address is the 66-character public key; a Lightning address looks like name@example.com.' . esc_html( $inherit ) . ' Check the addresses carefully: a wrong address sends money to the wrong place.</p>';
+		echo '<table class="form-table" role="presentation"><tr><th scope="row"><label>Method</label></th><td><select name="' . esc_attr( $prefix . '[value_method]' ) . '">';
+		foreach ( array( '' => 'None', 'keysend' => 'Keysend (to Lightning nodes)', 'lnaddress' => 'Lightning address' ) as $k => $label ) {
+			echo '<option value="' . esc_attr( $k ) . '"' . selected( $v( 'value_method', $d['value']['method'] ), $k, false ) . '>' . esc_html( $label ) . '</option>';
+		}
+		echo '</select></td></tr>';
+		$in_text( 'value_suggested', 'Suggested amount', $d['value']['suggested'], '0.00000015000', 'regular-text code' );
+		echo '</table>';
+		self::render_rows( $prefix . '[recipients]', $rows( 'recipients', $d['value']['recipients'] ), array(
+			array( 'key' => 'name', 'label' => 'Name', 'type' => 'text', 'class' => 'regular-text' ),
+			array( 'key' => 'type', 'label' => 'Type', 'type' => 'select', 'options' => array( '' => '', 'node' => 'Node', 'lnaddress' => 'Lightning address' ) ),
+			array( 'key' => 'address', 'label' => 'Address', 'type' => 'text', 'class' => 'large-text code' ),
+			array( 'key' => 'custom_key', 'label' => 'Custom key', 'type' => 'text', 'class' => 'small-text' ),
+			array( 'key' => 'custom_value', 'label' => 'Custom value', 'type' => 'text', 'class' => 'small-text' ),
+			array( 'key' => 'split', 'label' => 'Split', 'type' => 'text', 'class' => 'small-text' ),
+			array( 'key' => 'fee', 'label' => 'Fee', 'type' => 'check' ),
+		), PodPub_P20::MAX_RECIPIENTS );
+
+		if ( $item ) {
+			echo '<h3>Value time splits</h3><p class="description">For part of this episode, send a share of the payment to another podcast (for example a song or a guest\'s show). Times are seconds, minutes:seconds or hours:minutes:seconds. Needs the payments above. Remote start is where in the other episode the part begins; percentage is the share of the payment that goes to the other podcast (empty means 100).</p>';
+			self::render_rows( $prefix . '[timesplits]', $rows( 'timesplits', $d['timesplits'] ), array(
+				array( 'key' => 'start', 'label' => 'Start', 'type' => 'text', 'class' => 'small-text' ),
+				array( 'key' => 'duration', 'label' => 'Length', 'type' => 'text', 'class' => 'small-text' ),
+				array( 'key' => 'remote_start', 'label' => 'Remote start', 'type' => 'text', 'class' => 'small-text' ),
+				array( 'key' => 'remote_percent', 'label' => 'Percentage', 'type' => 'text', 'class' => 'small-text' ),
+				array( 'key' => 'feed_guid', 'label' => 'Other podcast\'s feed GUID', 'type' => 'text', 'class' => 'regular-text code' ),
+				array( 'key' => 'item_guid', 'label' => 'Other episode\'s GUID (optional)', 'type' => 'text', 'class' => 'regular-text code' ),
+				array( 'key' => 'feed_url', 'label' => 'Other feed address (optional)', 'type' => 'text', 'ph' => 'https://' ),
+			), PodPub_P20::MAX_SPLITS );
+		} else {
+			echo '<h3>Block</h3><p class="description">Ask podcast apps not to list this podcast. Choose yes to block, no to say it is not blocked. To block or allow just one service, enter its id.</p>';
+			self::render_rows( $prefix . '[block]', $rows( 'block', $d['block'] ), array(
+				array( 'key' => 'id', 'label' => 'Service id (optional)', 'type' => 'text', 'class' => 'regular-text' ),
+				array( 'key' => 'value', 'label' => 'Block', 'type' => 'select', 'options' => array( '' => '', 'yes' => 'Yes', 'no' => 'No' ) ),
+			), PodPub_P20::MAX_BLOCK );
+
+			echo '<h3>Podroll</h3><p class="description">Other podcasts you recommend. The feed GUID is the podcast:guid in the other podcast\'s feed.</p>';
+			self::render_rows( $prefix . '[podroll]', $rows( 'podroll', $d['podroll'] ), array(
+				array( 'key' => 'feed_guid', 'label' => 'Feed GUID', 'type' => 'text', 'class' => 'regular-text code' ),
+				array( 'key' => 'feed_url', 'label' => 'Feed address (optional)', 'type' => 'text', 'ph' => 'https://' ),
+				array( 'key' => 'title', 'label' => 'Title (optional)', 'type' => 'text' ),
+			), PodPub_P20::MAX_PODROLL );
+		}
+	}
+
+	/**
 	 * Episode list under the details form.
 	 *
 	 * @param int $id Podcast record id.
@@ -210,7 +366,7 @@ class PodPub_Admin {
 		foreach ( $eps as $e ) {
 			$d    = PodPub_Episodes::details( $e->ID );
 			$link = self::feed_page_url( $id, array( 'episode' => (int) $e->ID ) );
-			$stat = 'published' === $d['status'] ? ( '' === $d['audio'] ? 'Published (no audio)' : 'Published' ) : 'Draft';
+			$stat = 'published' === $d['status'] ? ( ! PodPub_Episodes::has_audio( $d ) ? 'Published (no audio)' : 'Published' ) : 'Draft';
 			echo '<tr><td><strong><a href="' . esc_url( $link ) . '">' . esc_html( $e->post_title ) . '</a></strong></td><td>' . esc_html( PodPub_Episodes::format_date( $d['published'] ) ) . '</td><td>' . esc_html( $stat ) . '</td></tr>';
 		}
 		echo '</tbody></table>';
@@ -311,6 +467,8 @@ class PodPub_Admin {
 		$status = $v( 'status', $d['status'] );
 		echo '<tr><th scope="row"><label for="ep_status">Status</label></th><td><select id="ep_status" name="podpub_ep[status]"><option value="draft"' . selected( $status, 'draft', false ) . '>Draft (not in the feed)</option><option value="published"' . selected( $status, 'published', false ) . '>Published (in the feed; needs audio)</option></select></td></tr>';
 		echo '</table>';
+		echo '<hr><h2>Podcasting 2.0</h2>';
+		self::render_p20_fields( 'podpub_ep', $d, $in, true );
 		submit_button( 'Save episode and write feed' );
 		echo '</form>';
 		if ( $post ) {
@@ -469,6 +627,13 @@ class PodPub_Admin {
 		}
 		echo '<input type="file" id="pp_img" name="podpub_image" accept="image/jpeg,image/png,image/gif"><p class="description">JPEG, PNG or GIF, square, between 1400 x 1400 and 3000 x 3000 pixels, up to 10 MB. Saved in the podcast folder as cover.jpg, cover.png or cover.gif. Some directories (such as Apple Podcasts and Spotify) only take JPEG or PNG.</p></td></tr>';
 		echo '</table>';
+		submit_button( 'Save and write feed' );
+		echo '</form>';
+		$p20_in = is_array( $notice ) && isset( $notice['form'] ) && 'p20' === $notice['form'] && ! empty( $notice['input'] ) ? $notice['input'] : null;
+		echo '<hr><h2>Podcasting 2.0</h2><form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '">';
+		echo '<input type="hidden" name="action" value="podpub_save_p20"><input type="hidden" name="podpub_id" value="' . (int) $id . '">';
+		wp_nonce_field( 'podpub_save_p20' );
+		self::render_p20_fields( 'podpub_p20', $d, $p20_in, false );
 		submit_button( 'Save and write feed' );
 		echo '</form>';
 		self::render_episode_list( $id );

@@ -28,6 +28,7 @@ function wp_kses( $h, $allowed ) { return strip_tags( $h, '<' . implode( '><', a
 function esc_url_raw( $u ) { return $u; }
 function is_email( $e ) { return (bool) filter_var( $e, FILTER_VALIDATE_EMAIL ); }
 function size_format( $b ) { return $b . ' B'; }
+function wp_safe_remote_head() { return new WP_Error( "x", "offline" ); }
 function wp_max_upload_size() { return 67108864; }
 function esc_html( $s ) { return htmlspecialchars( (string) $s, ENT_QUOTES ); }
 function esc_attr( $s ) { return htmlspecialchars( (string) $s, ENT_QUOTES ); }
@@ -50,7 +51,7 @@ function add_action() {}
 class WP_Error { public $m; function __construct( $c, $m ) { $this->m = $m; } function get_error_message() { return $this->m; } }
 function is_wp_error( $x ) { return $x instanceof WP_Error; }
 
-foreach ( array( 'settings', 'storage', 'details', 'episodes', 'feedxml', 'feeds', 'admin' ) as $c ) { require __DIR__ . "/../plugin/includes/class-podpub-$c.php"; }
+foreach ( array( 'settings', 'storage', 'p20', 'details', 'episodes', 'feedxml', 'feeds', 'admin' ) as $c ) { require __DIR__ . "/../plugin/includes/class-podpub-$c.php"; }
 
 $fail = 0;
 function check( $name, $ok ) { global $fail; echo ( $ok ? 'ok   ' : 'FAIL ' ) . $name . "\n"; if ( ! $ok ) { $fail = 1; } }
@@ -77,6 +78,9 @@ $eid = $r['id'];
 unset( $_GET['episode'] );
 $h = page( 5 );
 check( 'podcast page: episode listed with date and status', false !== strpos( $h, 'First One' ) && false !== strpos( $h, '2026-01-15T09:30' ) && false !== strpos( $h, 'Draft' ) && false !== strpos( $h, "episode=$eid" ) );
+$r2 = PodPub_Episodes::save( 5, 0, array( 'title' => 'Hosted Elsewhere', 'description' => 'D', 'published' => '2026-01-16T09:30', 'status' => 'published', 'audio_source' => 'external', 'audio_url' => 'https://cdn.example.net/x.mp3', 'audio_size' => '1000', 'duration' => '1:00' ) );
+$h = page( 5 );
+check( 'podcast page: published episode with an https audio address is not labelled "no audio"', $r2['errors'] === array() && false !== strpos( $h, 'Hosted Elsewhere' ) && false === strpos( $h, 'Published (no audio)' ) );
 $_GET['episode'] = (string) $eid;
 $h = page( 5 );
 check( 'edit episode form: values filled in, delete button with confirm', false !== strpos( $h, 'value="First One"' ) && false !== strpos( $h, 'value="0:12:34"' ) && false !== strpos( $h, 'podpub_delete_episode' ) && false !== strpos( $h, 'confirm(' ) );
@@ -109,6 +113,36 @@ unset( $_GET['episode'] );
 set_transient( 'podpub_notice_1', array( 'errors' => array(), 'warnings' => array( 'Careful.' ), 'written' => true ) );
 $h = page( 5 );
 check( 'success notice and warning shown', false !== strpos( $h, 'The feed file was written' ) && false !== strpos( $h, 'Careful.' ) );
+// Podcasting 2.0 forms.
+unset( $_GET['episode'] );
+PodPub_Feeds::save_p20( 5, array(
+	'funding' => array( array( 'url' => 'https://example.com/donate', 'message' => 'Fund "us"' ) ),
+	'locations' => array( array( 'name' => 'Melbourne', 'rel' => 'creator' ) ), 'persons' => array( array( 'name' => 'Jo', 'role' => 'host' ) ),
+	'value_method' => 'keysend', 'recipients' => array( array( 'name' => 'Me', 'type' => 'node', 'address' => str_repeat( 'a', 66 ), 'split' => '100', 'fee' => '1' ) ),
+	'block' => array( array( 'id' => 'google', 'value' => 'yes' ) ), 'podroll' => array( array( 'feed_guid' => '917393e3-1b1e-5cef-ace4-edaa54e1f810' ) ),
+) );
+$h = page( 5 );
+check( 'p20 form on the podcast page: own form, action and nonce', false !== strpos( $h, 'value="podpub_save_p20"' ) && false !== strpos( $h, '<h2>Podcasting 2.0</h2>' ) );
+check( 'p20 form: every podcast-level section', false !== strpos( $h, '<h3>Funding</h3>' ) && false !== strpos( $h, '<h3>Location</h3>' ) && false !== strpos( $h, '<h3>People</h3>' ) && false !== strpos( $h, '<h3>License</h3>' ) && false !== strpos( $h, '<h3>Payments (value)</h3>' ) && false !== strpos( $h, '<h3>Block</h3>' ) && false !== strpos( $h, '<h3>Podroll</h3>' ) );
+check( 'p20 form: podcast page has no time splits', false === strpos( $h, 'Value time splits' ) );
+check( 'p20 form: saved values shown, quote escaped', false !== strpos( $h, 'name="podpub_p20[funding][0][url]" value="https://example.com/donate"' ) && false !== strpos( $h, 'value="Fund &quot;us&quot;"' ) && false !== strpos( $h, 'name="podpub_p20[locations][0][name]" value="Melbourne"' ) );
+check( 'p20 form: three spare empty rows after the saved one', false !== strpos( $h, 'name="podpub_p20[funding][3][url]"' ) && false === strpos( $h, 'name="podpub_p20[funding][4][url]"' ) );
+check( 'p20 form: recipient with type chosen and fee ticked', false !== strpos( $h, 'name="podpub_p20[recipients][0][fee]" value="1" checked' ) && false !== strpos( $h, '<option value="node" selected>' ) && false !== strpos( $h, '<option value="keysend" selected>' ) );
+check( 'p20 form: block and podroll rows', false !== strpos( $h, 'name="podpub_p20[block][0][id]" value="google"' ) && false !== strpos( $h, 'name="podpub_p20[podroll][0][feed_guid]" value="917393e3-1b1e-5cef-ace4-edaa54e1f810"' ) );
+
+$_GET['episode'] = (string) $eid;
+$h = page( 5 );
+check( 'p20 on the episode form: same sections plus time splits, no block or podroll', false !== strpos( $h, '<h3>Funding</h3>' ) && false !== strpos( $h, '<h3>People</h3>' ) && false !== strpos( $h, 'Value time splits' ) && false !== strpos( $h, 'name="podpub_ep[timesplits][0][feed_guid]"' ) && false === strpos( $h, '<h3>Block</h3>' ) && false === strpos( $h, '<h3>Podroll</h3>' ) );
+check( 'p20 on the episode form: is part of the episode form, using its own field names', false !== strpos( $h, 'name="podpub_ep[funding][0][url]"' ) && false !== strpos( $h, 'name="podpub_ep[value_method]"' ) && false !== strpos( $h, 'Leave this empty to use the podcast' ) );
+
+// After an error the Podcasting 2.0 form is refilled with what was typed.
+unset( $_GET['episode'] );
+set_transient( 'podpub_notice_1', array( 'errors' => array( 'Location: the coordinates must be latitude,longitude' ), 'warnings' => array(), 'written' => false, 'form' => 'p20', 'input' => array( 'locations' => array( array( 'name' => 'Typed place', 'geo' => '999,999' ) ), 'funding' => array( array( 'url' => 'https://typed.example', 'message' => 'Typed msg' ) ) ) ) );
+$h = page( 5 );
+check( 'p20 error: message shown, typed values kept instead of the saved ones', false !== strpos( $h, 'Location: the coordinates must be' ) && false !== strpos( $h, 'value="Typed place"' ) && false !== strpos( $h, 'value="999,999"' ) && false !== strpos( $h, 'value="Typed msg"' ) && false === strpos( $h, 'value="Melbourne"' ) );
+set_transient( 'podpub_notice_1', array( 'errors' => array( 'Something else' ), 'warnings' => array(), 'written' => false, 'input' => array( 'title' => 'x' ) ) );
+check( 'a different form\'s error does not refill the p20 form', false !== strpos( page( 5 ), 'value="Melbourne"' ) );
+
 $h = page( 77 );
 check( 'unknown podcast says not found', false !== strpos( $h, 'Podcast not found' ) );
 

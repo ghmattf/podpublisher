@@ -55,7 +55,7 @@ class PodPub_Details {
 		if ( ! isset( self::languages()[ $lang ] ) ) {
 			$lang = 'en';
 		}
-		return array(
+		return array_merge( array(
 			'description' => '',
 			'language'    => $lang,
 			'category'    => '',
@@ -68,7 +68,7 @@ class PodPub_Details {
 			'copyright'   => '',
 			'image'       => '', // File name inside the podcast folder (cover.jpg or cover.png), or empty.
 			'guid'        => '', // podcast:guid, made once when the podcast is created and never changed.
-		);
+		), PodPub_P20::defaults( false ) );
 	}
 
 	/**

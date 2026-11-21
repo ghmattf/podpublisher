@@ -57,7 +57,7 @@ class PodPub_Episodes {
 	 * @return array
 	 */
 	public static function defaults() {
-		return array(
+		return array_merge( array(
 			'description' => '',
 			'show_notes'  => '',
 			'status'      => 'draft', // draft | published.
@@ -72,7 +72,7 @@ class PodPub_Episodes {
 			'audio_type'  => '',
 			'audio_size'  => 0,
 			'guid'        => '',      // Made once, never changes.
-		);
+		), PodPub_P20::defaults( true ) );
 	}
 
 	/**
@@ -251,6 +251,7 @@ class PodPub_Episodes {
 		if ( 'published' === $data['status'] && ! $has_audio_after ) {
 			$errors[] = 'Upload the audio file before publishing, or save the episode as a draft.';
 		}
+		$data = PodPub_P20::sanitize_item( $in, $data, $errors );
 		return array( 'data' => $data, 'title' => $title, 'errors' => $errors );
 	}
 

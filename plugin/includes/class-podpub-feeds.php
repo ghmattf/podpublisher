@@ -166,6 +166,36 @@ class PodPub_Feeds {
 	}
 
 	/**
+	 * Save the Podcasting 2.0 tags form for a podcast and rewrite the feed.
+	 * Nothing is changed when anything is wrong.
+	 *
+	 * @param int   $id    Record id.
+	 * @param array $input Form values (unslashed).
+	 * @return array { errors: string[], warnings: string[], written: bool }
+	 */
+	public static function save_p20( $id, $input ) {
+		$out = array( 'errors' => array(), 'warnings' => array(), 'written' => false );
+		if ( ! self::get( $id ) || '' === self::dir_name( $id ) ) {
+			$out['errors'][] = 'This podcast was not found.';
+			return $out;
+		}
+		$errors = array();
+		$data   = PodPub_P20::sanitize_channel( $input, PodPub_Details::get( $id ), $errors );
+		if ( $errors ) {
+			$out['errors'] = $errors;
+			return $out;
+		}
+		PodPub_Details::save( $id, $data );
+		$written = PodPub_FeedXml::write( $id );
+		if ( is_wp_error( $written ) ) {
+			$out['warnings'][] = 'Saved, but ' . lcfirst( $written->get_error_message() );
+		} else {
+			$out['written'] = true;
+		}
+		return $out;
+	}
+
+	/**
 	 * The folder name (not the full path) a podcast's files live in.
 	 *
 	 * @param int $id Record id.

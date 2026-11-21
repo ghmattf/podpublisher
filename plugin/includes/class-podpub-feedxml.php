@@ -134,6 +134,8 @@ class PodPub_FeedXml {
 		}
 		$w->writeElement( 'podcast:medium', 'podcast' );
 
+		PodPub_P20::write_channel( $w, $d );
+
 		foreach ( isset( $p['episodes'] ) ? $p['episodes'] : array() as $e ) {
 			self::write_item( $w, $e );
 		}
@@ -176,6 +178,7 @@ class PodPub_FeedXml {
 			$w->writeElement( 'itunes:episode', (string) (int) $e['episode'] );
 		}
 		$w->writeElement( 'itunes:episodeType', $e['type'] );
+		PodPub_P20::write_item( $w, $e );
 		if ( '' !== trim( $e['show_notes'] ) ) {
 			$w->startElement( 'content:encoded' );
 			$w->writeCdata( str_replace( ']]>', ']]]]><![CDATA[>', $e['show_notes'] ) );
