@@ -21,6 +21,7 @@ class PodPub_Admin {
 		add_action( 'admin_menu', array( __CLASS__, 'register_menu' ) );
 		add_action( 'admin_init', array( __CLASS__, 'register_settings' ) );
 		add_action( 'admin_post_podpub_create_feed', array( __CLASS__, 'handle_create' ) );
+		add_action( 'admin_post_podpub_save_details', array( __CLASS__, 'handle_save_details' ) );
 	}
 
 	/**
@@ -123,6 +124,29 @@ class PodPub_Admin {
 	}
 
 	/**
+	 * Podcast details form handler.
+	 */
+	public static function handle_save_details() {
+		if ( ! current_user_can( self::CAP ) ) {
+			wp_die( esc_html__( 'You do not have permission to do that.', 'podpublisher' ), 403 );
+		}
+		check_admin_referer( 'podpub_save_details' );
+		$id    = isset( $_POST['podpub_id'] ) ? (int) $_POST['podpub_id'] : 0;
+		$input = isset( $_POST['podpub'] ) && is_array( $_POST['podpub'] ) ? wp_unslash( $_POST['podpub'] ) : array(); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput
+		$file  = null;
+		if ( isset( $_FILES['podpub_image'] ) && is_array( $_FILES['podpub_image'] ) ) {
+			$file = $_FILES['podpub_image']; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput
+			if ( UPLOAD_ERR_OK === (int) $file['error'] && ! is_uploaded_file( $file['tmp_name'] ) ) {
+				$file = null;
+			}
+		}
+		$result = PodPub_Feeds::save_details( $id, $input, $file );
+		set_transient( 'podpub_notice_' . get_current_user_id(), $result, 120 );
+		wp_safe_redirect( add_query_arg( 'page', self::SLUG_FEED . $id, admin_url( 'admin.php' ) ) );
+		exit;
+	}
+
+	/**
 	 * Main page: list of podcasts, New podcast, Import podcast.
 	 */
 	public static function render_list() {
@@ -194,15 +218,76 @@ class PodPub_Admin {
 			return;
 		}
 		echo '<h1>' . esc_html( $feed->post_title ) . '</h1>';
-		$dir = PodPub_Feeds::dir_name( $id );
-		if ( '' !== $dir ) {
-			echo '<p>Files folder: <code>' . esc_html( PodPub_Storage::base_path() . '/' . $dir ) . '</code></p>';
-			$url = PodPub_Storage::base_url();
-			if ( '' !== $url ) {
-				echo '<p>Public address: <code>' . esc_html( $url . '/' . $dir . '/' ) . '</code></p>';
+
+		$key    = 'podpub_notice_' . get_current_user_id();
+		$notice = get_transient( $key );
+		if ( is_array( $notice ) ) {
+			delete_transient( $key );
+			if ( ! empty( $notice['errors'] ) ) {
+				echo '<div class="notice notice-error"><p>Nothing was saved:</p><ul>';
+				foreach ( $notice['errors'] as $m ) {
+					echo '<li>' . esc_html( $m ) . '</li>';
+				}
+				echo '</ul></div>';
+			} else {
+				echo '<div class="notice notice-success"><p>' . ( ! empty( $notice['written'] ) ? 'Saved. The feed file was written.' : 'Saved.' ) . '</p></div>';
+			}
+			foreach ( ! empty( $notice['warnings'] ) ? $notice['warnings'] : array() as $m ) {
+				echo '<div class="notice notice-warning"><p>' . esc_html( $m ) . '</p></div>';
 			}
 		}
-		echo '<p>Managing this podcast is not built yet.</p>';
+
+		$dir  = PodPub_Feeds::dir_name( $id );
+		$d    = PodPub_Details::get( $id );
+		$base = PodPub_Storage::base_url();
+		if ( '' !== $dir ) {
+			echo '<p>Files folder: <code>' . esc_html( PodPub_Storage::base_path() . '/' . $dir ) . '</code></p>';
+			if ( '' !== $base ) {
+				$feed_url = $base . '/' . $dir . '/' . $dir . '.xml';
+				echo '<p>Feed address: <code>' . esc_html( $feed_url ) . '</code>';
+				if ( is_file( PodPub_Storage::base_path() . '/' . $dir . '/' . $dir . '.xml' ) ) {
+					echo ' <a href="' . esc_url( $feed_url ) . '" target="_blank" rel="noopener">Open feed</a>';
+				} else {
+					echo ' (not written yet: save the details below)';
+				}
+				echo '</p>';
+			}
+		}
+
+		$f = function ( $name, $value ) {
+			return 'name="podpub[' . esc_attr( $name ) . ']" value="' . esc_attr( $value ) . '"';
+		};
+		echo '<form method="post" enctype="multipart/form-data" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '">';
+		echo '<input type="hidden" name="action" value="podpub_save_details"><input type="hidden" name="podpub_id" value="' . (int) $id . '">';
+		wp_nonce_field( 'podpub_save_details' );
+		echo '<h2>Podcast details</h2><table class="form-table" role="presentation">';
+		echo '<tr><th scope="row"><label for="pp_title">Title</label></th><td><input type="text" id="pp_title" class="regular-text" required ' . $f( 'title', $feed->post_title ) . '></td></tr>'; // phpcs:ignore WordPress.Security.EscapeOutput
+		echo '<tr><th scope="row"><label for="pp_desc">Description</label></th><td><textarea id="pp_desc" name="podpub[description]" rows="5" class="large-text" required>' . esc_textarea( $d['description'] ) . '</textarea></td></tr>';
+		echo '<tr><th scope="row"><label for="pp_lang">Language</label></th><td><select id="pp_lang" name="podpub[language]">';
+		foreach ( PodPub_Details::languages() as $code => $label ) {
+			echo '<option value="' . esc_attr( $code ) . '"' . selected( $d['language'], $code, false ) . '>' . esc_html( $label ) . '</option>';
+		}
+		echo '</select></td></tr>';
+		echo '<tr><th scope="row"><label for="pp_cat">Category</label></th><td><select id="pp_cat" name="podpub[category]"><option value="">None</option>';
+		foreach ( PodPub_Details::categories() as $c ) {
+			echo '<option value="' . esc_attr( $c ) . '"' . selected( $d['category'], $c, false ) . '>' . esc_html( $c ) . '</option>';
+		}
+		echo '</select></td></tr>';
+		echo '<tr><th scope="row">Explicit</th><td><label><input type="checkbox" name="podpub[explicit]" value="1"' . checked( ! empty( $d['explicit'] ), true, false ) . '> This podcast contains explicit content</label></td></tr>';
+		echo '<tr><th scope="row"><label for="pp_type">Type</label></th><td><select id="pp_type" name="podpub[type]"><option value="episodic"' . selected( $d['type'], 'episodic', false ) . '>Episodic (newest first)</option><option value="serial"' . selected( $d['type'], 'serial', false ) . '>Serial (in order)</option></select></td></tr>';
+		echo '<tr><th scope="row"><label for="pp_author">Author</label></th><td><input type="text" id="pp_author" class="regular-text" ' . $f( 'author', $d['author'] ) . '><p class="description">Shown to listeners in podcast apps.</p></td></tr>'; // phpcs:ignore WordPress.Security.EscapeOutput
+		echo '<tr><th scope="row"><label for="pp_link">Website</label></th><td><input type="url" id="pp_link" class="regular-text" placeholder="https://" ' . $f( 'link', $d['link'] ) . '></td></tr>'; // phpcs:ignore WordPress.Security.EscapeOutput
+		echo '<tr><th scope="row"><label for="pp_copy">Copyright</label></th><td><input type="text" id="pp_copy" class="regular-text" ' . $f( 'copyright', $d['copyright'] ) . '></td></tr>'; // phpcs:ignore WordPress.Security.EscapeOutput
+		echo '<tr><th scope="row"><label for="pp_on">Owner name</label></th><td><input type="text" id="pp_on" class="regular-text" ' . $f( 'owner_name', $d['owner_name'] ) . '><p class="description">A contact for podcast directories. Not shown to listeners.</p></td></tr>'; // phpcs:ignore WordPress.Security.EscapeOutput
+		echo '<tr><th scope="row"><label for="pp_oe">Owner email</label></th><td><input type="email" id="pp_oe" class="regular-text" ' . $f( 'owner_email', $d['owner_email'] ) . '></td></tr>'; // phpcs:ignore WordPress.Security.EscapeOutput
+		echo '<tr><th scope="row"><label for="pp_img">Show art</label></th><td>';
+		if ( '' !== $d['image'] && '' !== $base && '' !== $dir ) {
+			echo '<p><img src="' . esc_url( $base . '/' . $dir . '/' . $d['image'] ) . '" alt="" style="max-width:150px;height:auto"></p>';
+		}
+		echo '<input type="file" id="pp_img" name="podpub_image" accept="image/jpeg,image/png"><p class="description">JPEG or PNG, square, between 1400 x 1400 and 3000 x 3000 pixels, up to 10 MB. Saved in the podcast folder as cover.jpg or cover.png.</p></td></tr>';
+		echo '</table>';
+		submit_button( 'Save and write feed' );
+		echo '</form>';
 		echo '<p><a href="' . esc_url( self::list_url() ) . '">Back to all podcasts</a></p></div>';
 	}
 

@@ -14,5 +14,6 @@ step "Version agrees in plugin header, PODPUB_VERSION and readme.txt" bash -c '
   [ -n "$h" ] && [ "$h" = "$c" ] && [ "$h" = "$r" ]'
 step "Admin menu structure (stubbed WordPress)" php test_admin_menu.php
 step "Folder names and podcast/episode folder layout" php test_storage.php
+step "Podcast details, show art, feed XML and save flow" php test_feed_details.php
 echo; [ $fail -eq 0 ] && echo "ALL CHECKS PASSED" || echo "SOME CHECKS FAILED"
 exit $fail
