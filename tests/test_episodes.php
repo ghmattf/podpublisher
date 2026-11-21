@@ -30,6 +30,11 @@ function is_email( $e ) { return (bool) filter_var( $e, FILTER_VALIDATE_EMAIL );
 function size_format( $b ) { return $b . ' B'; }
 function wp_max_upload_size() { return 67108864; }
 function wp_read_audio_metadata( $p ) { return array( 'length' => 61.4 ); }
+$GLOBALS['probe_calls'] = 0;
+$GLOBALS['probe'] = array( 'code' => 200, 'headers' => array( 'content-length' => '5555', 'content-type' => 'audio/mpeg' ) );
+function wp_safe_remote_head( $u, $a = array() ) { $GLOBALS['probe_calls']++; return $GLOBALS['probe'] ? array( 'code' => $GLOBALS['probe']['code'], 'headers' => $GLOBALS['probe']['headers'] ) : new WP_Error( 'x', 'unreachable' ); }
+function wp_remote_retrieve_response_code( $r ) { return $r['code']; }
+function wp_remote_retrieve_header( $r, $h ) { return isset( $r['headers'][ $h ] ) ? $r['headers'][ $h ] : ''; }
 class WP_Error { public $m; function __construct( $c, $m ) { $this->m = $m; } function get_error_message() { return $this->m; } }
 function is_wp_error( $x ) { return $x instanceof WP_Error; }
 
@@ -161,6 +166,97 @@ $x = feed_dom( "$pf/$pdir.xml" );
 check( 'delete: item gone from the feed', $x->evaluate( 'count(//item)' ) === 1.0 && $x->evaluate( 'string(//item/title)' ) === 'Older One' );
 check( 'delete: other episodes untouched', is_dir( "$pf/Older_One" ) );
 check( 'delete: unknown episode refused', count( PodPub_Episodes::delete( 5, 99999 )['errors'] ) === 1 );
+
+// ---- Audio hosted elsewhere ----
+$cur0 = PodPub_Episodes::defaults();
+$ce = function ( $url, $size = '', $type = '' ) use ( $cur0 ) { return PodPub_Episodes::check_external( $url, $size, $type, $cur0 ); };
+$GLOBALS['probe_calls'] = 0;
+$r = $ce( 'https://cdn.example.net/ep/one.mp3', '1234' );
+check( 'external: https address with a known extension and a size ok', ! is_wp_error( $r ) && $r['type'] === 'audio/mpeg' && $r['size'] === 1234 );
+check( 'external: http refused', is_wp_error( $ce( 'http://cdn.example.net/a.mp3' ) ) );
+check( 'external: address with a space or quote refused', is_wp_error( $ce( 'https://cdn.example.net/my file.mp3' ) ) && is_wp_error( $ce( 'https://cdn.example.net/a"b.mp3' ) ) );
+check( 'external: javascript: and ftp: refused', is_wp_error( $ce( 'javascript:alert(1)' ) ) && is_wp_error( $ce( 'ftp://example.net/a.mp3' ) ) );
+check( 'external: size must be whole bytes', is_wp_error( $ce( 'https://cdn.example.net/a.mp3', '12.5' ) ) && is_wp_error( $ce( 'https://cdn.example.net/a.mp3', '-1' ) ) );
+check( 'external: unknown type chosen is refused', is_wp_error( $ce( 'https://cdn.example.net/a.mp3', '100', 'exe' ) ) );
+$r = $ce( 'https://cdn.example.net/download?id=7', '', '' );
+check( 'external: no extension, type and size come from the other server', ! is_wp_error( $r ) && $r['type'] === 'audio/mpeg' && $r['size'] === 5555 );
+$GLOBALS['probe']['headers']['content-type'] = 'text/html';
+check( 'external: no extension and server does not say audio: asked to choose', is_wp_error( $ce( 'https://cdn.example.net/download?id=7', '100' ) ) );
+check( 'external: type chosen by hand is accepted', ( $r = $ce( 'https://cdn.example.net/download?id=7', '100', 'm4a' ) ) && ! is_wp_error( $r ) && $r['type'] === 'audio/mp4' );
+$GLOBALS['probe'] = false;
+$r = $ce( 'https://cdn.example.net/a.mp3', '100' );
+check( 'external: unreachable server is a warning, not an error', ! is_wp_error( $r ) && count( $r['warnings'] ) === 1 );
+$r = $ce( 'https://cdn.example.net/a.mp3', '' );
+check( 'external: unknown size warns', ! is_wp_error( $r ) && $r['size'] === 0 && count( $r['warnings'] ) === 2 );
+$GLOBALS['probe'] = array( 'code' => 404, 'headers' => array() );
+$r = $ce( 'https://cdn.example.net/a.mp3', '100' );
+check( 'external: a 404 counts as could not check', ! is_wp_error( $r ) && count( $r['warnings'] ) === 1 );
+$GLOBALS['probe'] = array( 'code' => 200, 'headers' => array( 'content-length' => '5555', 'content-type' => 'audio/mpeg' ) );
+
+$ext = array_merge( $pub, array( 'title' => 'Hosted Elsewhere', 'audio_source' => 'external', 'audio_url' => 'https://cdn.example.net/ep/one.mp3', 'audio_size' => '', 'audio_ext_type' => '' ) );
+$GLOBALS['probe_calls'] = 0;
+$r = PodPub_Episodes::save( 5, 0, $ext );
+$h = $r['id'];
+check( 'external save: no file needed, published, feed written', $r['errors'] === array() && $r['written'] && $h > 0 );
+$d = PodPub_Episodes::details( $h );
+check( 'external save: fields stored, size read from the other server', $d['audio_source'] === 'external' && $d['external_url'] === 'https://cdn.example.net/ep/one.mp3' && $d['audio'] === '' && $d['audio_size'] === 5555 && $d['audio_type'] === 'audio/mpeg' && $GLOBALS['probe_calls'] === 1 );
+$x = feed_dom( "$pf/$pdir.xml" );
+check( 'external save: enclosure points at the other server', $x->evaluate( 'string(//item[title="Hosted Elsewhere"]/enclosure/@url)' ) === 'https://cdn.example.net/ep/one.mp3' && $x->evaluate( 'string(//item[title="Hosted Elsewhere"]/enclosure/@length)' ) === '5555' );
+check( 'external save: episode folder made but holds no audio', is_dir( "$pf/Hosted_Elsewhere" ) && count( glob( "$pf/Hosted_Elsewhere/*.{mp3,ogg,m4a}", GLOB_BRACE ) ) === 0 );
+PodPub_Episodes::save( 5, $h, array_merge( $ext, array( 'audio_size' => '5555' ) ) );
+check( 'external save: unchanged address is not checked again', $GLOBALS['probe_calls'] === 1 );
+PodPub_Episodes::save( 5, $h, array_merge( $ext, array( 'audio_url' => 'https://cdn.example.net/ep/two.mp3', 'audio_size' => '5555' ) ) );
+check( 'external save: a new address is checked', $GLOBALS['probe_calls'] === 2 && PodPub_Episodes::details( $h )['external_url'] === 'https://cdn.example.net/ep/two.mp3' );
+$r = PodPub_Episodes::save( 5, $h, array_merge( $ext, array( 'audio_url' => 'http://cdn.example.net/ep/three.mp3' ) ) );
+check( 'external save: bad address refused, old one kept', count( $r['errors'] ) === 1 && PodPub_Episodes::details( $h )['external_url'] === 'https://cdn.example.net/ep/two.mp3' );
+$r = PodPub_Episodes::save( 5, $h, array_merge( $ext, array( 'audio_url' => '', 'status' => 'published' ) ) );
+check( 'external save: empty address keeps the current audio', $r['errors'] === array() && PodPub_Episodes::details( $h )['external_url'] === 'https://cdn.example.net/ep/two.mp3' );
+$r = PodPub_Episodes::save( 5, 0, array_merge( $ext, array( 'title' => 'Hosted Nothing', 'audio_url' => '' ) ) );
+check( 'external save: published with no address and no upload is refused', count( $r['errors'] ) === 1 );
+$r = PodPub_Episodes::save( 5, $h, array_merge( $pub, array( 'title' => 'Hosted Elsewhere', 'audio_source' => 'upload' ) ), up( put( "$tmp/in/sw.mp3", $MP3 ), 's.mp3' ) );
+$d = PodPub_Episodes::details( $h );
+check( 'switch: uploading replaces the hosted address', $r['errors'] === array() && $d['audio_source'] === 'upload' && $d['external_url'] === '' && is_file( "$pf/Hosted_Elsewhere/Hosted_Elsewhere.mp3" ) );
+check( 'switch: feed now points at the local file', false !== strpos( feed_dom( "$pf/$pdir.xml" )->evaluate( 'string(//item[title="Hosted Elsewhere"]/enclosure/@url)' ), '/Hosted_Elsewhere/Hosted_Elsewhere.mp3' ) );
+PodPub_Episodes::save( 5, $h, array_merge( $ext, array( 'audio_url' => 'https://cdn.example.net/ep/back.mp3', 'audio_size' => '5555' ) ) );
+check( 'switch: going back to a hosted address clears the file name', PodPub_Episodes::details( $h )['audio'] === '' && PodPub_Episodes::details( $h )['external_url'] === 'https://cdn.example.net/ep/back.mp3' );
+
+// ---- Audio copied into the episode folder (for example by FTP) ----
+$r = PodPub_Episodes::save( 5, 0, array_merge( $good, array( 'title' => 'Big File', 'status' => 'draft', 'audio_source' => 'folder', 'audio_pick' => 'x.mp3' ) ) );
+check( 'folder: a new episode cannot pick yet (it has no folder)', count( $r['errors'] ) === 1 && false !== strpos( $r['errors'][0], 'Save the episode first' ) );
+$r = PodPub_Episodes::save( 5, 0, array_merge( $good, array( 'title' => 'Big File', 'status' => 'draft' ) ) );
+$b = $r['id'];
+$bf = "$pf/Big_File";
+check( 'folder: draft episode created with its folder', $r['errors'] === array() && is_dir( $bf ) );
+check( 'folder: nothing to pick yet', PodPub_Episodes::list_folder_audio( 5, $b ) === array() );
+put( "$bf/My Big File (final).MP3", $MP3 );
+put( "$bf/notes.txt", 'hello' );
+put( "$bf/.hidden.mp3", $MP3 );
+put( "$bf/fake.mp3", 'this is not audio, just text padding padding' );
+mkdir( "$bf/sub", 0755 );
+symlink( "$tmp/outside_audio.mp3", "$bf/link.mp3" );
+check( 'folder: list shows audio files only (no index.html, notes, hidden files, folders, links)', PodPub_Episodes::list_folder_audio( 5, $b ) === array( 'My Big File (final).MP3', 'fake.mp3' ) );
+$pick = array_merge( $pub, array( 'title' => 'Big File', 'audio_source' => 'folder' ) );
+foreach ( array( '../Hosted_Elsewhere/Hosted_Elsewhere.mp3', 'sub', 'nothere.mp3', '.hidden.mp3', 'link.mp3', 'fake.mp3', 'notes.txt' ) as $bad ) {
+	$r = PodPub_Episodes::save( 5, $b, array_merge( $pick, array( 'audio_pick' => $bad ) ) );
+	check( "folder: refuses '$bad'", count( $r['errors'] ) >= 1 && PodPub_Episodes::details( $b )['audio'] === '' );
+}
+$r = PodPub_Episodes::save( 5, $b, array_merge( $pick, array( 'audio_pick' => 'My Big File (final).MP3' ) ) );
+$d = PodPub_Episodes::details( $b );
+check( 'folder: pick saved, file renamed to a safe name', $r['errors'] === array() && $d['audio'] === 'My_Big_File_final.mp3' && is_file( "$bf/My_Big_File_final.mp3" ) && ! file_exists( "$bf/My Big File (final).MP3" ) );
+check( 'folder: type, size and source stored', $d['audio_source'] === 'folder' && $d['audio_type'] === 'audio/mpeg' && $d['audio_size'] === strlen( $MP3 ) );
+check( 'folder: feed points at the picked file', false !== strpos( feed_dom( "$pf/$pdir.xml" )->evaluate( 'string(//item[title="Big File"]/enclosure/@url)' ), '/Big_File/My_Big_File_final.mp3' ) );
+put( "$bf/Second One.mp3", $MP3 );
+put( "$bf/Second_One.mp3", $MP3 );
+$r = PodPub_Episodes::save( 5, $b, array_merge( $pick, array( 'audio_pick' => 'Second One.mp3' ) ) );
+check( 'folder: a safe name that already exists gets _2, nothing overwritten', PodPub_Episodes::details( $b )['audio'] === 'Second_One_2.mp3' && is_file( "$bf/Second_One.mp3" ) );
+put( "$bf/clean-name.mp3", $MP3 );
+PodPub_Episodes::save( 5, $b, array_merge( $pick, array( 'audio_pick' => 'clean-name.mp3' ) ) );
+check( 'folder: an already-safe name is kept as it is', PodPub_Episodes::details( $b )['audio'] === 'clean-name.mp3' );
+check( 'folder: files picked earlier are left in place', is_file( "$bf/My_Big_File_final.mp3" ) );
+check( 'folder: safe_file_name rules', PodPub_Episodes::safe_file_name( 'a-b_c.1.mp3' ) && ! PodPub_Episodes::safe_file_name( 'a b.mp3' ) && ! PodPub_Episodes::safe_file_name( '.x.mp3' ) && ! PodPub_Episodes::safe_file_name( 'a..b.mp3' ) && ! PodPub_Episodes::safe_file_name( 'é.mp3' ) );
+PodPub_Episodes::delete( 5, $b );
+check( 'folder: deleting the episode removes its folder and everything in it', ! file_exists( $bf ) );
+PodPub_Episodes::delete( 5, $h );
 
 // Clean up.
 $it = new RecursiveIteratorIterator( new RecursiveDirectoryIterator( $tmp, FilesystemIterator::SKIP_DOTS ), RecursiveIteratorIterator::CHILD_FIRST );

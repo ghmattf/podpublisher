@@ -246,18 +246,58 @@ class PodPub_Admin {
 		echo '<tr><th scope="row"><label for="ep_title">Title</label></th><td><input type="text" id="ep_title" class="regular-text" required name="podpub_ep[title]" value="' . esc_attr( $v( 'title', $title ) ) . '"></td></tr>';
 		echo '<tr><th scope="row"><label for="ep_desc">Description</label></th><td><textarea id="ep_desc" name="podpub_ep[description]" rows="3" class="large-text" required>' . esc_textarea( $v( 'description', $d['description'] ) ) . '</textarea><p class="description">Plain text summary shown in podcast apps.</p></td></tr>';
 		echo '<tr><th scope="row"><label for="ep_notes">Show notes</label></th><td><textarea id="ep_notes" name="podpub_ep[show_notes]" rows="8" class="large-text code">' . esc_textarea( $v( 'show_notes', $d['show_notes'] ) ) . '</textarea><p class="description">Optional. Links and simple formatting only (a, b, strong, i, em, br, p, ul, ol, li, h2-h4, blockquote); anything else is removed.</p></td></tr>';
-		echo '<tr><th scope="row"><label for="ep_audio">Audio file</label></th><td>';
-		if ( '' !== $d['audio'] ) {
-			$url = PodPub_Storage::base_url();
-			$pd  = PodPub_Feeds::dir_name( $id );
-			$ed  = PodPub_Episodes::dir_name( $eid );
-			echo '<p>Current file: <code>' . esc_html( $d['audio'] ) . '</code> (' . esc_html( size_format( $d['audio_size'] ) ) . ')';
-			if ( '' !== $url ) {
+		// Audio: three ways to give the episode its audio file.
+		$pd       = PodPub_Feeds::dir_name( $id );
+		$ed       = PodPub_Episodes::dir_name( $eid );
+		$url      = PodPub_Storage::base_url();
+		$src_now  = $v( 'audio_source', $d['audio_source'] ? $d['audio_source'] : ( '' !== $d['audio'] ? 'upload' : 'upload' ) );
+		echo '<tr><th scope="row"><label for="ep_src">Audio</label></th><td>';
+		if ( PodPub_Episodes::has_audio( $d ) ) {
+			if ( '' !== $d['external_url'] ) {
+				echo '<p>Current audio, hosted elsewhere: <code>' . esc_html( $d['external_url'] ) . '</code>';
+			} else {
+				echo '<p>Current file: <code>' . esc_html( $d['audio'] ) . '</code>';
+			}
+			echo ' (' . esc_html( $d['audio_size'] ? size_format( $d['audio_size'] ) : 'size unknown' ) . ', ' . esc_html( $d['audio_type'] ) . ')';
+			if ( '' !== $d['audio'] && '' !== $url ) {
 				echo ' <a href="' . esc_url( $url . '/' . $pd . '/' . $ed . '/' . $d['audio'] ) . '" target="_blank" rel="noopener">Open</a>';
 			}
 			echo '</p>';
 		}
-		echo '<input type="file" id="ep_audio" name="podpub_audio" accept=".' . esc_attr( implode( ',.', array_keys( PodPub_Episodes::audio_types() ) ) ) . '"><p class="description">' . esc_html( strtoupper( implode( ', ', array_keys( PodPub_Episodes::audio_types() ) ) ) ) . '. Your server allows uploads up to ' . esc_html( size_format( wp_max_upload_size() ) ) . '. Uploading a new file replaces the old one.</p></td></tr>';
+		echo '<select id="ep_src" name="podpub_ep[audio_source]">';
+		foreach ( array( 'upload' => 'Upload a file', 'folder' => 'Pick a file I copied into the episode folder', 'external' => 'Use a file hosted elsewhere' ) as $k => $label ) {
+			echo '<option value="' . esc_attr( $k ) . '"' . selected( $src_now, $k, false ) . '>' . esc_html( $label ) . '</option>';
+		}
+		echo '</select><p class="description">Choosing a new file, or entering a new address, replaces the current audio. Leave the fields empty to keep it.</p>';
+
+		echo '<div data-podpub-src="upload"><p><input type="file" id="ep_audio" name="podpub_audio" accept=".' . esc_attr( implode( ',.', array_keys( PodPub_Episodes::audio_types() ) ) ) . '"></p><p class="description">' . esc_html( strtoupper( implode( ', ', array_keys( PodPub_Episodes::audio_types() ) ) ) ) . '. Your server allows uploads up to ' . esc_html( size_format( wp_max_upload_size() ) ) . '. For a bigger file use the other options.</p></div>';
+
+		echo '<div data-podpub-src="folder">';
+		if ( $eid ) {
+			$files = PodPub_Episodes::list_folder_audio( $id, $eid );
+			echo '<p>Copy the audio file (for example by FTP) into this folder: <code>' . esc_html( PodPub_Storage::base_path() . '/' . $pd . '/' . $ed ) . '</code></p>';
+			if ( $files ) {
+				echo '<p><select name="podpub_ep[audio_pick]"><option value="">Choose a file&hellip;</option>';
+				foreach ( $files as $f ) {
+					echo '<option value="' . esc_attr( $f ) . '"' . selected( $v( 'audio_pick', '' ), $f, false ) . '>' . esc_html( $f . ( PodPub_Episodes::safe_file_name( $f ) ? '' : ' (will be renamed to remove spaces and special characters)' ) ) . '</option>';
+				}
+				echo '</select></p>';
+			} else {
+				echo '<p class="description">No audio files found in that folder yet. Copy one in, then reload this page.</p>';
+			}
+		} else {
+			echo '<p class="description">Save the episode first (as a draft). Its folder is made when it is saved; then copy the audio file into it and come back here to pick it.</p>';
+		}
+		echo '</div>';
+
+		echo '<div data-podpub-src="external"><p><input type="url" class="large-text code" name="podpub_ep[audio_url]" placeholder="https://" value="' . esc_attr( $v( 'audio_url', $d['external_url'] ) ) . '"></p>';
+		echo '<p>Size in bytes <input type="text" class="small-text" name="podpub_ep[audio_size]" value="' . esc_attr( $v( 'audio_size', $d['external_url'] && $d['audio_size'] ? $d['audio_size'] : '' ) ) . '"> &nbsp; Type <select name="podpub_ep[audio_ext_type]"><option value="">Work it out</option>';
+		foreach ( PodPub_Episodes::audio_types() as $k => $mime ) {
+			echo '<option value="' . esc_attr( $k ) . '"' . selected( $v( 'audio_ext_type', '' ), $k, false ) . '>' . esc_html( strtoupper( $k ) ) . '</option>';
+		}
+		echo '</select></p><p class="description">The address must start with https://. The size and type are asked from the other server when you leave them empty. The file itself is not checked, so make sure the address plays in a browser.</p></div>';
+		echo '<script>(function(){var s=document.getElementById("ep_src");if(!s)return;function f(){document.querySelectorAll("[data-podpub-src]").forEach(function(e){e.hidden=e.getAttribute("data-podpub-src")!==s.value;});}s.addEventListener("change",f);f();})();</script>';
+		echo '</td></tr>';
 		echo '<tr><th scope="row"><label for="ep_date">Date and time</label></th><td><input type="datetime-local" id="ep_date" name="podpub_ep[published]" required value="' . esc_attr( $v( 'published', PodPub_Episodes::format_date( $d['published'] ) ) ) . '"><p class="description">In the site time zone.</p></td></tr>';
 		echo '<tr><th scope="row"><label for="ep_dur">Duration</label></th><td><input type="text" id="ep_dur" class="small-text" name="podpub_ep[duration]" placeholder="1:02:30" value="' . esc_attr( $v( 'duration', $d['duration'] ? PodPub_Episodes::format_duration( $d['duration'] ) : '' ) ) . '"><p class="description">Hours:minutes:seconds. Leave empty to read it from the audio file when possible.</p></td></tr>';
 		echo '<tr><th scope="row"><label for="ep_season">Season</label></th><td><input type="number" min="1" id="ep_season" class="small-text" name="podpub_ep[season]" value="' . esc_attr( $v( 'season', $d['season'] ? $d['season'] : '' ) ) . '"></td></tr>';

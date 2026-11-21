@@ -66,7 +66,9 @@ class PodPub_Episodes {
 			'episode'     => 0,
 			'type'        => 'full',  // full | trailer | bonus.
 			'duration'    => 0,       // Seconds.
-			'audio'       => '',      // File name inside the episode folder.
+			'audio_source' => '',     // upload | folder | external ('' = no audio yet).
+			'audio'       => '',      // File name inside the episode folder (upload or folder).
+			'external_url' => '',     // https address when the audio is hosted elsewhere.
 			'audio_type'  => '',
 			'audio_size'  => 0,
 			'guid'        => '',      // Made once, never changes.
@@ -330,6 +332,205 @@ class PodPub_Episodes {
 		return $name;
 	}
 
+
+	/**
+	 * Does this episode have audio (a file here or an address elsewhere)?
+	 *
+	 * @param array $d Episode details.
+	 * @return bool
+	 */
+	public static function has_audio( $d ) {
+		return '' !== $d['audio'] || '' !== $d['external_url'];
+	}
+
+	/**
+	 * Audio files in an episode's folder (for picking after copying them in by FTP).
+	 *
+	 * @param int $podcast_id Podcast record id.
+	 * @param int $id         Episode record id.
+	 * @return string[] File names.
+	 */
+	public static function list_folder_audio( $podcast_id, $id ) {
+		$ep_dir = self::dir_name( $id );
+		$pdir   = PodPub_Feeds::dir_name( $podcast_id );
+		$dir    = PodPub_Storage::base_path() . '/' . $pdir . '/' . $ep_dir;
+		$out    = array();
+		if ( '' === $ep_dir || '' === $pdir || ! is_dir( $dir ) ) {
+			return $out;
+		}
+		foreach ( scandir( $dir ) as $f ) {
+			if ( '.' === $f[0] || is_link( $dir . '/' . $f ) || ! is_file( $dir . '/' . $f ) ) {
+				continue;
+			}
+			if ( isset( self::audio_types()[ strtolower( pathinfo( $f, PATHINFO_EXTENSION ) ) ] ) ) {
+				$out[] = $f;
+			}
+		}
+		sort( $out );
+		return $out;
+	}
+
+	/**
+	 * Is this a file name that needs no URL encoding?
+	 *
+	 * @param string $name File name.
+	 * @return bool
+	 */
+	public static function safe_file_name( $name ) {
+		return (bool) preg_match( '/^[A-Za-z0-9][A-Za-z0-9._-]*$/', $name ) && false === strpos( $name, '..' );
+	}
+
+	/**
+	 * Ask the server hosting an audio file for its size and type (a HEAD request
+	 * through WordPress's safe HTTP function: https only, no private addresses).
+	 *
+	 * @param string $url https address.
+	 * @return array|null { size: int, type: string } or null if it could not be checked.
+	 */
+	public static function probe( $url ) {
+		$r = wp_safe_remote_head( $url, array( 'timeout' => 10, 'redirection' => 3 ) );
+		if ( is_wp_error( $r ) ) {
+			return null;
+		}
+		$code = (int) wp_remote_retrieve_response_code( $r );
+		if ( $code < 200 || $code >= 300 ) {
+			return null;
+		}
+		$len  = (string) wp_remote_retrieve_header( $r, 'content-length' );
+		$ct   = strtolower( trim( explode( ';', (string) wp_remote_retrieve_header( $r, 'content-type' ) )[0] ) );
+		return array(
+			'size' => ctype_digit( $len ) ? (int) $len : 0,
+			'type' => 0 === strpos( $ct, 'audio/' ) ? $ct : '',
+		);
+	}
+
+	/**
+	 * Check an address for audio hosted elsewhere.
+	 *
+	 * @param string $url     Address typed by the user.
+	 * @param string $size_in Size in bytes typed by the user ('' = unknown).
+	 * @param string $type_in Chosen type ('' = work it out; otherwise an extension from audio_types()).
+	 * @param array  $cur     Current episode details.
+	 * @return array|WP_Error { url, type, size, warnings }
+	 */
+	public static function check_external( $url, $size_in, $type_in, $cur ) {
+		$url = trim( (string) $url );
+		if ( strlen( $url ) > 2000 || preg_match( '/[\s<>"\'\\\\]/', $url ) ) {
+			return new WP_Error( 'podpub_audio', 'The audio address is not valid.' );
+		}
+		$p = parse_url( $url );
+		if ( ! $p || empty( $p['host'] ) || 'https' !== strtolower( isset( $p['scheme'] ) ? $p['scheme'] : '' ) ) {
+			return new WP_Error( 'podpub_audio', 'The audio address must start with https://.' );
+		}
+		$size_in = trim( (string) $size_in );
+		if ( '' !== $size_in && ! ctype_digit( $size_in ) ) {
+			return new WP_Error( 'podpub_audio', 'The audio file size must be a whole number of bytes, or empty.' );
+		}
+		$types = self::audio_types();
+		$type  = '';
+		if ( '' !== $type_in ) {
+			if ( ! isset( $types[ $type_in ] ) ) {
+				return new WP_Error( 'podpub_audio', 'Choose the audio type from the list.' );
+			}
+			$type = $types[ $type_in ];
+		} else {
+			$ext = strtolower( pathinfo( isset( $p['path'] ) ? $p['path'] : '', PATHINFO_EXTENSION ) );
+			if ( isset( $types[ $ext ] ) ) {
+				$type = $types[ $ext ];
+			}
+		}
+		$size     = '' !== $size_in ? (int) $size_in : 0;
+		$warnings = array();
+		if ( $url !== $cur['external_url'] || '' === $type || 0 === $size ) {
+			$probe = self::probe( $url );
+			if ( $probe ) {
+				if ( 0 === $size && $probe['size'] ) {
+					$size = $probe['size'];
+				}
+				if ( '' === $type && $probe['type'] ) {
+					$type = $probe['type'];
+				}
+			} else {
+				$warnings[] = 'The audio address could not be checked from this server, so it was saved as entered. Make sure it works in a browser.';
+			}
+		}
+		if ( '' === $type ) {
+			return new WP_Error( 'podpub_audio', 'Choose the audio type: the address does not end in a known audio file type and the server did not say what it is.' );
+		}
+		if ( 0 === $size ) {
+			$warnings[] = 'The audio file size is not known. Enter it in bytes if you can; podcast apps use it.';
+		}
+		return array( 'url' => $url, 'type' => $type, 'size' => $size, 'warnings' => $warnings );
+	}
+
+	/**
+	 * Work out, without changing anything, what audio change the form asks for.
+	 *
+	 * @param int        $id    Episode record id (0 if new).
+	 * @param array      $input Form values.
+	 * @param array|null $file  Upload.
+	 * @param array      $cur   Current details.
+	 * @param string[]   $errors Errors (added to).
+	 * @param string[]   $warnings Warnings (added to).
+	 * @return array|null Plan: kind upload | folder | external, plus its fields; null = no change.
+	 */
+	private static function plan_audio( $podcast_id, $id, $input, $file, $cur, &$errors, &$warnings ) {
+		$get = function ( $k ) use ( $input ) {
+			return isset( $input[ $k ] ) && is_scalar( $input[ $k ] ) ? (string) $input[ $k ] : '';
+		};
+		$src = $get( 'audio_source' );
+		if ( ! in_array( $src, array( 'upload', 'folder', 'external' ), true ) ) {
+			$src = 'upload';
+		}
+		if ( 'upload' === $src ) {
+			if ( ! is_array( $file ) || ! isset( $file['error'] ) || UPLOAD_ERR_NO_FILE === (int) $file['error'] ) {
+				return null;
+			}
+			if ( UPLOAD_ERR_OK !== (int) $file['error'] ) {
+				$errors[] = 'The audio upload failed. The file may be larger than the server allows (' . size_format( wp_max_upload_size() ) . '). For a large file, copy it into the episode folder and pick it from the list, or host it elsewhere.';
+				return null;
+			}
+			$a = self::inspect_audio( $file['tmp_name'], isset( $file['name'] ) ? $file['name'] : '' );
+			if ( is_wp_error( $a ) ) {
+				$errors[] = $a->get_error_message();
+				return null;
+			}
+			return array_merge( array( 'kind' => 'upload', 'tmp' => $file['tmp_name'] ), $a );
+		}
+		if ( 'folder' === $src ) {
+			$pick = $get( 'audio_pick' );
+			if ( '' === $pick ) {
+				return null;
+			}
+			$ep_dir = $id ? self::dir_name( $id ) : '';
+			if ( '' === $ep_dir ) {
+				$errors[] = 'Save the episode first, then copy the audio file into its folder and pick it here.';
+				return null;
+			}
+			$path = PodPub_Storage::base_path() . '/' . PodPub_Feeds::dir_name( $podcast_id ) . '/' . $ep_dir . '/' . $pick;
+			if ( $pick !== basename( $pick ) || '.' === $pick[0] || is_link( $path ) || ! is_file( $path ) ) {
+				$errors[] = 'That file is not in the episode folder.';
+				return null;
+			}
+			$a = self::inspect_audio( $path, $pick );
+			if ( is_wp_error( $a ) ) {
+				$errors[] = $a->get_error_message();
+				return null;
+			}
+			return array_merge( array( 'kind' => 'folder', 'name' => $pick ), $a );
+		}
+		if ( '' === trim( $get( 'audio_url' ) ) ) {
+			return null;
+		}
+		$x = self::check_external( $get( 'audio_url' ), $get( 'audio_size' ), $get( 'audio_ext_type' ), $cur );
+		if ( is_wp_error( $x ) ) {
+			$errors[] = $x->get_error_message();
+			return null;
+		}
+		$warnings = array_merge( $warnings, $x['warnings'] );
+		return array( 'kind' => 'external', 'url' => $x['url'], 'type' => $x['type'], 'size' => $x['size'] );
+	}
+
 	/**
 	 * Create an episode (and its folder) or update one.
 	 *
@@ -352,19 +553,8 @@ class PodPub_Episodes {
 		}
 		$cur = $post ? self::details( $id ) : self::defaults();
 
-		$audio = null;
-		if ( is_array( $file ) && isset( $file['error'] ) && UPLOAD_ERR_NO_FILE !== (int) $file['error'] ) {
-			if ( UPLOAD_ERR_OK !== (int) $file['error'] ) {
-				$out['errors'][] = 'The audio upload failed. The file may be larger than the server allows (' . size_format( wp_max_upload_size() ) . ').';
-			} else {
-				$audio = self::inspect_audio( $file['tmp_name'], isset( $file['name'] ) ? $file['name'] : '' );
-				if ( is_wp_error( $audio ) ) {
-					$out['errors'][] = $audio->get_error_message();
-					$audio           = null;
-				}
-			}
-		}
-		$r = self::sanitize( $input, $cur, $audio || '' !== $cur['audio'] );
+		$plan = self::plan_audio( $podcast_id, $id, $input, $file, $cur, $out['errors'], $out['warnings'] );
+		$r = self::sanitize( $input, $cur, $plan || self::has_audio( $cur ) );
 		$out['errors'] = array_merge( $out['errors'], $r['errors'] );
 		if ( $out['errors'] ) {
 			return $out;
@@ -391,18 +581,36 @@ class PodPub_Episodes {
 		$ep_dir = self::dir_name( $id );
 		$folder = PodPub_Storage::base_path() . '/' . PodPub_Feeds::dir_name( $podcast_id ) . '/' . $ep_dir;
 
-		if ( $audio ) {
-			$name = self::store_audio( $file['tmp_name'], $folder, $ep_dir, $audio['ext'] );
+		if ( $plan ) {
+			$ok = true;
+			if ( 'upload' === $plan['kind'] ) {
+				$name = self::store_audio( $plan['tmp'], $folder, $ep_dir, $plan['ext'] );
+			} elseif ( 'folder' === $plan['kind'] ) {
+				$name = $plan['name'];
+				if ( ! self::safe_file_name( $name ) ) {
+					// A name with spaces or special characters is renamed to a safe one.
+					$base = PodPub_Storage::slug( pathinfo( $name, PATHINFO_FILENAME ), 'audio' );
+					$new  = $base . '.' . $plan['ext'];
+					for ( $n = 2; file_exists( $folder . '/' . $new ); $n++ ) {
+						$new = $base . '_' . $n . '.' . $plan['ext'];
+					}
+					$name = @rename( $folder . '/' . $name, $folder . '/' . $new ) ? $new : new WP_Error( 'podpub_audio', 'The file could not be renamed to a safe name.' ); // phpcs:ignore WordPress.PHP.NoSilencedErrors
+				}
+			} else {
+				$name = '';
+			}
 			if ( is_wp_error( $name ) ) {
 				$out['errors'][] = $name->get_error_message();
 				// A new episode was created before the file failed: keep it as a draft with no audio.
 				$data['status'] = 'draft';
 			} else {
-				$data['audio']      = $name;
-				$data['audio_type'] = $audio['type'];
-				$data['audio_size'] = $audio['size'];
-				if ( 0 === $data['duration'] && function_exists( 'wp_read_audio_metadata' ) ) {
-					$meta = @wp_read_audio_metadata( $folder . '/' . $name );
+				$data['audio_source'] = $plan['kind'];
+				$data['audio']        = $name;
+				$data['external_url'] = 'external' === $plan['kind'] ? $plan['url'] : '';
+				$data['audio_type']   = $plan['type'];
+				$data['audio_size']   = $plan['size'];
+				if ( '' !== $name && 0 === $data['duration'] && function_exists( 'wp_read_audio_metadata' ) ) {
+					$meta = @wp_read_audio_metadata( $folder . '/' . $name ); // phpcs:ignore WordPress.PHP.NoSilencedErrors
 					if ( is_array( $meta ) && ! empty( $meta['length'] ) ) {
 						$data['duration'] = (int) round( $meta['length'] );
 					}
@@ -472,14 +680,14 @@ class PodPub_Episodes {
 		foreach ( self::all( $podcast_id ) as $post ) {
 			$d      = self::details( $post->ID );
 			$ep_dir = self::dir_name( $post->ID );
-			if ( 'published' !== $d['status'] || '' === $d['audio'] || '' === $ep_dir || $d['published'] > $now ) {
+			if ( 'published' !== $d['status'] || ! self::has_audio( $d ) || '' === $ep_dir || $d['published'] > $now ) {
 				continue;
 			}
 			$items[] = array_merge(
 				$d,
 				array(
 					'title'     => $post->post_title,
-					'audio_url' => $base_url . '/' . $pdir . '/' . $ep_dir . '/' . $d['audio'],
+					'audio_url' => '' !== $d['external_url'] ? $d['external_url'] : $base_url . '/' . $pdir . '/' . $ep_dir . '/' . $d['audio'],
 				)
 			);
 		}

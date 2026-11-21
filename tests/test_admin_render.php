@@ -85,6 +85,20 @@ check( 'edit episode form: unknown episode says not found', false !== strpos( pa
 $_GET['episode'] = 'abc';
 check( 'bad episode value falls back to the podcast page', false !== strpos( page( 5 ), 'Podcast details' ) );
 
+// Audio source controls on the episode form.
+$_GET['episode'] = (string) $eid;
+$h = page( 5 );
+check( 'audio: source selector with all three ways', false !== strpos( $h, 'name="podpub_ep[audio_source]"' ) && false !== strpos( $h, 'Upload a file' ) && false !== strpos( $h, 'Pick a file I copied' ) && false !== strpos( $h, 'Use a file hosted elsewhere' ) );
+check( 'audio: shows the episode folder to copy files into, and that none are there yet', false !== strpos( $h, "podpublisher/$pdir/First_One</code>" ) && false !== strpos( $h, 'No audio files found' ) );
+check( 'audio: hosted-elsewhere fields', false !== strpos( $h, 'name="podpub_ep[audio_url]"' ) && false !== strpos( $h, 'name="podpub_ep[audio_size]"' ) && false !== strpos( $h, 'name="podpub_ep[audio_ext_type]"' ) );
+check( 'audio: one group each for upload, folder and external', 1 === substr_count( $h, '<div data-podpub-src="upload">' ) && 1 === substr_count( $h, '<div data-podpub-src="folder">' ) && 1 === substr_count( $h, '<div data-podpub-src="external">' ) );
+file_put_contents( "$tmp/uploads/podpublisher/$pdir/First_One/Raw Take.mp3", "ID3" . str_repeat( "\0", 30 ) );
+$h = page( 5 );
+check( 'audio: a copied-in file is listed, with a note when it will be renamed', false !== strpos( $h, 'value="Raw Take.mp3"' ) && false !== strpos( $h, 'will be renamed' ) && false === strpos( $h, 'No audio files found' ) );
+$_GET['episode'] = 'new';
+$h = page( 5 );
+check( 'audio: a new episode explains it must be saved before picking a file', false !== strpos( $h, 'Save the episode first' ) );
+
 // After an error the form is refilled with what was typed, and the error is shown.
 $_GET['episode'] = 'new';
 set_transient( 'podpub_notice_1', array( 'errors' => array( 'Please enter a description.' ), 'warnings' => array(), 'written' => false, 'input' => array( 'title' => 'Typed "title"', 'description' => '' ) ) );
