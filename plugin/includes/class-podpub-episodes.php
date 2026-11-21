@@ -621,6 +621,18 @@ class PodPub_Episodes {
 		update_post_meta( $id, self::META, $data );
 		$out['id'] = $id;
 
+		// The chapter list is written as chapters.json in the episode folder (removed when the list is emptied).
+		$chfile = $folder . '/chapters.json';
+		if ( $data['chapters'] ) {
+			$stage = $folder . '/.chapters_' . getmypid() . '.tmp';
+			if ( false === @file_put_contents( $stage, PodPub_P20::chapters_json( $data['chapters'] ) ) || ! @rename( $stage, $chfile ) ) { // phpcs:ignore
+				@unlink( $stage ); // phpcs:ignore
+				$out['warnings'][] = 'The chapters file could not be written to the episode folder.';
+			}
+		} elseif ( is_file( $chfile ) && ! is_link( $chfile ) ) {
+			@unlink( $chfile ); // phpcs:ignore
+		}
+
 		if ( 'published' === $data['status'] && $data['published'] > time() ) {
 			$out['warnings'][] = 'This episode is dated in the future, so it is left out of the feed until the feed is next written after that time. Automatic scheduling is not built yet.';
 		}
@@ -687,6 +699,7 @@ class PodPub_Episodes {
 			$items[] = array_merge(
 				$d,
 				array(
+					'chapters_href' => $d['chapters'] ? $base_url . '/' . $pdir . '/' . $ep_dir . '/chapters.json' : $d['chapters_url'],
 					'title'     => $post->post_title,
 					'audio_url' => '' !== $d['external_url'] ? $d['external_url'] : $base_url . '/' . $pdir . '/' . $ep_dir . '/' . $d['audio'],
 				)

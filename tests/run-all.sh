@@ -18,5 +18,6 @@ step "Podcast details, show art, feed XML and save flow" php test_feed_details.p
 step "Episodes: audio, dates, folders, feed items, delete" php test_episodes.php
 step "Admin pages render (podcast page, episode list and form)" php test_admin_render.php
 step "Podcasting 2.0 tags: checking, feed XML, saving" php test_p20.php
+step "Chunk D: chapters, transcripts, soundbites, alternate files, comments, status" php test_chunk_d.php
 echo; [ $fail -eq 0 ] && echo "ALL CHECKS PASSED" || echo "SOME CHECKS FAILED"
 exit $fail

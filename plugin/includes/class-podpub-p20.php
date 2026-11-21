@@ -18,6 +18,12 @@ class PodPub_P20 {
 
 	const MAX_FUNDING    = 10;
 	const MAX_LOCATIONS  = 10;
+	const MAX_TRANSCRIPTS = 10;
+	const MAX_SOUNDBITES = 20;
+	const MAX_ENCLOSURES = 10;
+	const MAX_SOCIAL     = 5;
+	const MAX_CHAPTERS   = 200;
+	const MAX_TXT        = 10;
 	const MAX_PERSONS    = 30;
 	const MAX_RECIPIENTS = 20;
 	const MAX_SPLITS     = 30;
@@ -37,12 +43,22 @@ class PodPub_P20 {
 			'persons'  => array(),
 			'license'  => array( 'name' => '', 'url' => '' ),
 			'value'    => array( 'method' => '', 'suggested' => '', 'recipients' => array() ),
+			'social'   => array(),
 		);
 		if ( $item ) {
-			$d['timesplits'] = array();
+			$d['timesplits']   = array();
+			$d['transcripts']  = array();
+			$d['soundbites']   = array();
+			$d['enclosures']   = array();
+			$d['chapters']     = array();
+			$d['chapters_url'] = '';
 		} else {
-			$d['block']   = array();
-			$d['podroll'] = array();
+			$d['block']        = array();
+			$d['podroll']      = array();
+			$d['complete']     = 0;
+			$d['locked']       = '';
+			$d['locked_owner'] = '';
+			$d['txt']          = array();
 		}
 		return $d;
 	}
@@ -332,6 +348,187 @@ class PodPub_P20 {
 		return $out;
 	}
 
+	/* ---------- chunk D tags ---------- */
+
+	public static function transcript_types() {
+		return array(
+			'text/plain'            => 'Plain text (.txt)',
+			'text/html'             => 'Web page (.html)',
+			'text/vtt'              => 'WebVTT (.vtt)',
+			'application/x-subrip'  => 'SubRip (.srt)',
+			'application/json'      => 'JSON (.json)',
+		);
+	}
+
+	/** Seconds as a number with up to three decimals ("73", "73.5"), or null. */
+	private static function seconds( $t ) {
+		return preg_match( '/^\d{1,6}(?:\.\d{1,3})?$/', $t ) ? $t : null;
+	}
+
+	public static function transcripts( $in, &$errors ) {
+		$out = array();
+		foreach ( self::rows( $in, 'transcripts', array( 'url', 'type', 'language', 'rel' ), self::MAX_TRANSCRIPTS, $errors, 'transcripts' ) as $n => $r ) {
+			$p = 'Transcript ' . $n . ': ';
+			if ( ! self::valid_http( $r['url'] ) ) {
+				$errors[] = $p . 'enter a web address starting with https://.';
+			} elseif ( ! isset( self::transcript_types()[ $r['type'] ] ) ) {
+				$errors[] = $p . 'choose the file type.';
+			} elseif ( '' !== $r['language'] && ! preg_match( '/^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8}){0,3}$/', $r['language'] ) ) {
+				$errors[] = $p . 'the language must be a code such as en or pt-BR.';
+			} elseif ( '' !== $r['rel'] && 'captions' !== strtolower( $r['rel'] ) ) {
+				$errors[] = $p . 'the only value for "rel" is captions (leave it empty otherwise).';
+			} else {
+				$r['rel'] = strtolower( $r['rel'] );
+				$out[]    = $r;
+			}
+		}
+		return $out;
+	}
+
+	public static function soundbites( $in, &$errors ) {
+		$out = array();
+		foreach ( self::rows( $in, 'soundbites', array( 'start', 'duration', 'title' ), self::MAX_SOUNDBITES, $errors, 'soundbites' ) as $n => $r ) {
+			$p     = 'Soundbite ' . $n . ': ';
+			$start = self::seconds( $r['start'] );
+			$dur   = self::seconds( $r['duration'] );
+			if ( null === $start || null === $dur || (float) $dur <= 0 ) {
+				$errors[] = $p . 'enter the start and the length in seconds (for example 73 and 60).';
+			} elseif ( mb_strlen( $r['title'] ) > 128 ) {
+				$errors[] = $p . 'the title must be 128 characters or fewer.';
+			} else {
+				$out[] = array( 'start' => $start, 'duration' => $dur, 'title' => $r['title'] );
+			}
+		}
+		return $out;
+	}
+
+	public static function enclosures( $in, &$errors ) {
+		$out = array();
+		foreach ( self::rows( $in, 'enclosures', array( 'uri', 'type', 'length', 'bitrate', 'height', 'lang', 'title', 'rel', 'codecs', 'default' ), self::MAX_ENCLOSURES, $errors, 'alternate files' ) as $n => $r ) {
+			$p = 'Alternate file ' . $n . ': ';
+			if ( ! self::valid_http( $r['uri'] ) ) {
+				$errors[] = $p . 'enter a web address starting with https://.';
+			} elseif ( ! preg_match( '#^[a-z]+/[a-z0-9][a-z0-9.+_-]*$#i', $r['type'] ) ) {
+				$errors[] = $p . 'enter the file type, such as video/mp4 or audio/mpeg.';
+			} elseif ( ! preg_match( '/^\d*$/', $r['length'] ) || ! preg_match( '/^\d*$/', $r['bitrate'] ) || ! preg_match( '/^\d*$/', $r['height'] ) ) {
+				$errors[] = $p . 'size, bitrate and height are whole numbers.';
+			} elseif ( '' !== $r['lang'] && ! preg_match( '/^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8}){0,3}$/', $r['lang'] ) ) {
+				$errors[] = $p . 'the language must be a code such as en or pt-BR.';
+			} elseif ( mb_strlen( $r['title'] ) > 128 || mb_strlen( $r['rel'] ) > 64 || mb_strlen( $r['codecs'] ) > 128 ) {
+				$errors[] = $p . 'the title, group or codecs text is too long.';
+			} else {
+				$r['default'] = '' === $r['default'] ? '' : '1';
+				$out[]        = $r;
+			}
+		}
+		return $out;
+	}
+
+	/**
+	 * Cross-app comments. "disabled" carries nothing else.
+	 */
+	public static function social( $in, &$errors ) {
+		$out = array();
+		foreach ( self::rows( $in, 'social', array( 'protocol', 'uri', 'account_id', 'account_url', 'priority' ), self::MAX_SOCIAL, $errors, 'comment links' ) as $n => $r ) {
+			$p        = 'Comments ' . $n . ': ';
+			$protocol = strtolower( $r['protocol'] );
+			if ( ! preg_match( '/^[a-z][a-z0-9_-]{1,29}$/', $protocol ) ) {
+				$errors[] = $p . 'enter the protocol, such as activitypub, or "disabled".';
+			} elseif ( 'disabled' === $protocol ) {
+				$out[] = array( 'protocol' => 'disabled', 'uri' => '', 'account_id' => '', 'account_url' => '', 'priority' => '' );
+			} elseif ( '' === $r['uri'] || strlen( $r['uri'] ) > 2000 || preg_match( '/[\s<>"\'\\\\]/', $r['uri'] ) ) {
+				$errors[] = $p . 'enter the address of the post that holds the comments.';
+			} elseif ( '' !== $r['account_url'] && ! self::valid_http( $r['account_url'] ) ) {
+				$errors[] = $p . 'the account address must start with https://.';
+			} elseif ( '' !== $r['priority'] && ! preg_match( '/^\d{1,4}$/', $r['priority'] ) ) {
+				$errors[] = $p . 'the priority is a whole number (1 is first).';
+			} else {
+				$out[] = array( 'protocol' => $protocol, 'uri' => $r['uri'], 'account_id' => $r['account_id'], 'account_url' => $r['account_url'], 'priority' => $r['priority'] );
+			}
+		}
+		return $out;
+	}
+
+	/**
+	 * Chapters typed into the editor (kept sorted by start time), or one address of
+	 * a chapters file hosted elsewhere. Not both.
+	 *
+	 * @return array { rows: array, url: string }
+	 */
+	public static function chapters( $in, &$errors ) {
+		$rows = array();
+		foreach ( self::rows( $in, 'chapters', array( 'start', 'title', 'img', 'url' ), self::MAX_CHAPTERS, $errors, 'chapters' ) as $n => $r ) {
+			$p     = 'Chapter ' . $n . ': ';
+			$start = PodPub_Episodes::parse_duration( $r['start'] );
+			if ( null === $start || '' === $r['start'] ) {
+				$errors[] = $p . 'enter the start time as seconds, m:ss or h:mm:ss.';
+			} elseif ( '' === $r['title'] || mb_strlen( $r['title'] ) > 255 ) {
+				$errors[] = $p . 'enter a title of up to 255 characters.';
+			} elseif ( '' !== $r['img'] && ! self::valid_http( $r['img'] ) ) {
+				$errors[] = $p . 'the picture address must start with https://.';
+			} elseif ( '' !== $r['url'] && ! self::valid_http( $r['url'] ) ) {
+				$errors[] = $p . 'the link must start with https://.';
+			} else {
+				$rows[] = array( 'start' => $start, 'title' => $r['title'], 'img' => $r['img'], 'url' => $r['url'] );
+			}
+		}
+		usort( $rows, function ( $a, $b ) {
+			return $a['start'] - $b['start'];
+		} );
+		$url = self::scalar( $in, 'chapters_url' );
+		if ( '' !== $url && ! self::valid_http( $url ) ) {
+			$errors[] = 'Chapters: the web address must start with https://.';
+			$url      = '';
+		}
+		if ( $rows && '' !== $url ) {
+			$errors[] = 'Chapters: use either the chapter list or the web address of a chapters file hosted elsewhere, not both.';
+		}
+		return array( 'rows' => $rows, 'url' => $url );
+	}
+
+	/** The chapters file (JSON chapters 1.2.0). */
+	public static function chapters_json( $rows ) {
+		$list = array();
+		foreach ( $rows as $r ) {
+			$c = array( 'startTime' => (int) $r['start'], 'title' => $r['title'] );
+			if ( '' !== $r['img'] ) {
+				$c['img'] = $r['img'];
+			}
+			if ( '' !== $r['url'] ) {
+				$c['url'] = $r['url'];
+			}
+			$list[] = $c;
+		}
+		return json_encode( array( 'version' => '1.2.0', 'chapters' => $list ), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT ) . "\n";
+	}
+
+	/** Channel: complete, locked (with owner email), txt. */
+	public static function channel_flags( $in, $cur, &$errors ) {
+		$cur['complete'] = empty( $in['complete'] ) ? 0 : 1;
+		$locked          = strtolower( self::scalar( $in, 'locked' ) );
+		if ( ! in_array( $locked, array( '', 'yes', 'no' ), true ) ) {
+			$errors[] = 'Locked: choose yes, no or leave it unset.';
+			$locked   = '';
+		}
+		$owner = self::scalar( $in, 'locked_owner' );
+		if ( '' !== $owner && ! is_email( $owner ) ) {
+			$errors[] = 'Locked: the owner email address does not look right.';
+			$owner    = '';
+		}
+		$cur['locked']       = $locked;
+		$cur['locked_owner'] = $owner;
+		$txt                 = array();
+		foreach ( self::rows( $in, 'txt', array( 'purpose', 'text' ), self::MAX_TXT, $errors, 'text records' ) as $n => $r ) {
+			if ( '' === $r['text'] || mb_strlen( $r['text'] ) > 4000 || mb_strlen( $r['purpose'] ) > 128 ) {
+				$errors[] = 'Text record ' . $n . ': enter the text (up to 4000 characters); the purpose is up to 128.';
+			} else {
+				$txt[] = $r;
+			}
+		}
+		$cur['txt'] = $txt;
+		return $cur;
+	}
+
 	/**
 	 * Check the podcast-level tags.
 	 *
@@ -349,6 +546,8 @@ class PodPub_P20 {
 		$cur['value']      = self::value( $in, $errors );
 		$cur['block']      = self::block( $in, $errors );
 		$cur['podroll']    = self::podroll( $in, $errors );
+		$cur['social']     = self::social( $in, $errors );
+		$cur                = self::channel_flags( $in, $cur, $errors );
 		return $cur;
 	}
 
@@ -363,6 +562,13 @@ class PodPub_P20 {
 		$cur['license']    = self::license( $in, $errors );
 		$cur['value']      = self::value( $in, $errors );
 		$cur['timesplits'] = self::timesplits( $in, $cur['value'], $errors );
+		$cur['social']     = self::social( $in, $errors );
+		$cur['transcripts'] = self::transcripts( $in, $errors );
+		$cur['soundbites'] = self::soundbites( $in, $errors );
+		$cur['enclosures'] = self::enclosures( $in, $errors );
+		$ch                = self::chapters( $in, $errors );
+		$cur['chapters']   = $ch['rows'];
+		$cur['chapters_url'] = $ch['url'];
 		return $cur;
 	}
 
@@ -436,12 +642,28 @@ class PodPub_P20 {
 			self::el( $w, 'podcast:license', array( 'url' => $d['license']['url'] ), $d['license']['name'] );
 		}
 		self::write_value( $w, $d['value'], $splits );
+		foreach ( $d['social'] as $c ) {
+			if ( 'disabled' === $c['protocol'] ) {
+				self::el( $w, 'podcast:socialInteract', array( 'protocol' => 'disabled' ) );
+			} else {
+				self::el( $w, 'podcast:socialInteract', array( 'protocol' => $c['protocol'], 'uri' => $c['uri'], 'accountId' => $c['account_id'], 'accountUrl' => $c['account_url'], 'priority' => $c['priority'] ) );
+			}
+		}
 	}
 
 	/**
 	 * Channel-level tags (inside <channel>).
 	 */
 	public static function write_channel( $w, $d ) {
+		if ( ! empty( $d['complete'] ) ) {
+			self::el( $w, 'podcast:complete', array(), 'yes' );
+		}
+		if ( '' !== $d['locked'] ) {
+			self::el( $w, 'podcast:locked', array( 'owner' => $d['locked_owner'] ), $d['locked'] );
+		}
+		foreach ( $d['txt'] as $t ) {
+			self::el( $w, 'podcast:txt', array( 'purpose' => $t['purpose'] ), $t['text'] );
+		}
 		self::write_common( $w, $d, array() );
 		foreach ( $d['block'] as $b ) {
 			self::el( $w, 'podcast:block', array( 'id' => $b['id'] ), $b['value'] );
@@ -460,5 +682,27 @@ class PodPub_P20 {
 	 */
 	public static function write_item( $w, $e ) {
 		self::write_common( $w, $e, isset( $e['timesplits'] ) ? $e['timesplits'] : array() );
+		if ( ! empty( $e['chapters_href'] ) ) {
+			self::el( $w, 'podcast:chapters', array( 'url' => $e['chapters_href'], 'type' => 'application/json+chapters' ) );
+		}
+		foreach ( $e['transcripts'] as $t ) {
+			self::el( $w, 'podcast:transcript', array( 'url' => $t['url'], 'type' => $t['type'], 'language' => $t['language'], 'rel' => $t['rel'] ) );
+		}
+		foreach ( $e['soundbites'] as $b ) {
+			self::el( $w, 'podcast:soundbite', array( 'startTime' => $b['start'], 'duration' => $b['duration'] ), '' === $b['title'] ? null : $b['title'] );
+		}
+		foreach ( $e['enclosures'] as $a ) {
+			$w->startElement( 'podcast:alternateEnclosure' );
+			foreach ( array( 'type' => 'type', 'length' => 'length', 'bitrate' => 'bitrate', 'height' => 'height', 'lang' => 'lang', 'title' => 'title', 'rel' => 'rel', 'codecs' => 'codecs' ) as $attr => $k ) {
+				if ( '' !== (string) $a[ $k ] ) {
+					$w->writeAttribute( $attr, (string) $a[ $k ] );
+				}
+			}
+			if ( ! empty( $a['default'] ) ) {
+				$w->writeAttribute( 'default', 'true' );
+			}
+			self::el( $w, 'podcast:source', array( 'uri' => $a['uri'] ) );
+			$w->endElement();
+		}
 	}
 }

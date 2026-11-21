@@ -93,6 +93,13 @@ check( 'bad episode value falls back to the podcast page', false !== strpos( pag
 $_GET['episode'] = (string) $eid;
 $h = page( 5 );
 check( 'audio: source selector with all three ways', false !== strpos( $h, 'name="podpub_ep[audio_source]"' ) && false !== strpos( $h, 'Upload a file' ) && false !== strpos( $h, 'Pick a file I copied' ) && false !== strpos( $h, 'Use a file hosted elsewhere' ) );
+$h = page( 5 );
+check( 'episode form: chapters, transcripts, soundbites, alternate files and comments sections', false !== strpos( $h, 'name="podpub_ep[chapters][0][start]"' ) && false !== strpos( $h, 'name="podpub_ep[chapters_url]"' ) && false !== strpos( $h, 'name="podpub_ep[transcripts][0][type]"' ) && false !== strpos( $h, 'text/vtt' ) && false !== strpos( $h, 'name="podpub_ep[soundbites][0][duration]"' ) && false !== strpos( $h, 'name="podpub_ep[enclosures][0][default]"' ) && false !== strpos( $h, 'name="podpub_ep[social][0][protocol]"' ) );
+unset( $_GET['episode'] );
+$h = page( 5 );
+check( 'podcast page: complete, locked, text records and comments sections', false !== strpos( $h, 'name="podpub_p20[complete]"' ) && false !== strpos( $h, 'name="podpub_p20[locked]"' ) && false !== strpos( $h, 'name="podpub_p20[locked_owner]"' ) && false !== strpos( $h, 'name="podpub_p20[txt][0][text]"' ) && false !== strpos( $h, 'name="podpub_p20[social][0][uri]"' ) && false === strpos( $h, 'podpub_p20[chapters]' ) );
+$_GET['episode'] = (string) $eid;
+$h = page( 5 );
 check( 'audio: shows the episode folder to copy files into, and that none are there yet', false !== strpos( $h, "podpublisher/$pdir/First_One</code>" ) && false !== strpos( $h, 'No audio files found' ) );
 check( 'audio: hosted-elsewhere fields', false !== strpos( $h, 'name="podpub_ep[audio_url]"' ) && false !== strpos( $h, 'name="podpub_ep[audio_size]"' ) && false !== strpos( $h, 'name="podpub_ep[audio_ext_type]"' ) );
 check( 'audio: one group each for upload, folder and external', 1 === substr_count( $h, '<div data-podpub-src="upload">' ) && 1 === substr_count( $h, '<div data-podpub-src="folder">' ) && 1 === substr_count( $h, '<div data-podpub-src="external">' ) );

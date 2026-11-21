@@ -348,6 +348,73 @@ class PodPub_Admin {
 				array( 'key' => 'title', 'label' => 'Title (optional)', 'type' => 'text' ),
 			), PodPub_P20::MAX_PODROLL );
 		}
+
+		if ( $item ) {
+			echo '<h3>Chapters</h3><p class="description">Chapter marks that apps show on the timeline. Type them here and PodPublisher writes <code>chapters.json</code> into the episode folder and points the feed at it. Start is seconds, m:ss or h:mm:ss. The picture and link are optional.</p>';
+			self::render_rows( $prefix . '[chapters]', $rows( 'chapters', $d['chapters'] ), array(
+				array( 'key' => 'start', 'label' => 'Start', 'type' => 'text', 'class' => 'small-text' ),
+				array( 'key' => 'title', 'label' => 'Title', 'type' => 'text' ),
+				array( 'key' => 'img', 'label' => 'Picture address', 'type' => 'text', 'ph' => 'https://' ),
+				array( 'key' => 'url', 'label' => 'Link', 'type' => 'text', 'ph' => 'https://' ),
+			), PodPub_P20::MAX_CHAPTERS );
+			echo '<table class="form-table" role="presentation">';
+			$in_text( 'chapters_url', 'Or: a chapters file hosted elsewhere', $d['chapters_url'], 'https://', 'regular-text' );
+			echo '</table><p class="description">Use the list above or this address, not both.</p>';
+
+			echo '<h3>Transcripts</h3><p class="description">Links to transcript or caption files (hosted elsewhere or copied into the episode folder). Language is optional (the podcast\'s language is assumed). Put captions in Rel if the file has timecodes and is meant as closed captions.</p>';
+			self::render_rows( $prefix . '[transcripts]', $rows( 'transcripts', $d['transcripts'] ), array(
+				array( 'key' => 'url', 'label' => 'Web address', 'type' => 'text', 'ph' => 'https://' ),
+				array( 'key' => 'type', 'label' => 'File type', 'type' => 'select', 'options' => array( '' => '' ) + PodPub_P20::transcript_types() ),
+				array( 'key' => 'language', 'label' => 'Language', 'type' => 'text', 'ph' => 'en', 'class' => 'small-text' ),
+				array( 'key' => 'rel', 'label' => 'Rel', 'type' => 'text', 'ph' => 'captions', 'class' => 'small-text' ),
+			), PodPub_P20::MAX_TRANSCRIPTS );
+
+			echo '<h3>Soundbites</h3><p class="description">Short highlights of the episode (15 to 120 seconds works best). Start and length are in seconds, for example 73 and 60; the title is optional.</p>';
+			self::render_rows( $prefix . '[soundbites]', $rows( 'soundbites', $d['soundbites'] ), array(
+				array( 'key' => 'start', 'label' => 'Start (seconds)', 'type' => 'text', 'class' => 'small-text' ),
+				array( 'key' => 'duration', 'label' => 'Length (seconds)', 'type' => 'text', 'class' => 'small-text' ),
+				array( 'key' => 'title', 'label' => 'Title (optional)', 'type' => 'text' ),
+			), PodPub_P20::MAX_SOUNDBITES );
+
+			echo '<h3>Alternate files</h3><p class="description">Other versions of the episode (for example a video or a different quality), hosted elsewhere. Tick Default if it is the same as the main audio and preferred. Size, bitrate and height are whole numbers; the title is best at 32 characters or fewer.</p>';
+			self::render_rows( $prefix . '[enclosures]', $rows( 'enclosures', $d['enclosures'] ), array(
+				array( 'key' => 'uri', 'label' => 'Web address', 'type' => 'text', 'ph' => 'https://' ),
+				array( 'key' => 'type', 'label' => 'File type', 'type' => 'text', 'ph' => 'video/mp4', 'class' => 'small-text' ),
+				array( 'key' => 'length', 'label' => 'Size (bytes)', 'type' => 'text', 'class' => 'small-text' ),
+				array( 'key' => 'bitrate', 'label' => 'Bitrate', 'type' => 'text', 'class' => 'small-text' ),
+				array( 'key' => 'height', 'label' => 'Height', 'type' => 'text', 'class' => 'small-text' ),
+				array( 'key' => 'lang', 'label' => 'Language', 'type' => 'text', 'class' => 'small-text' ),
+				array( 'key' => 'title', 'label' => 'Title', 'type' => 'text', 'class' => 'small-text' ),
+				array( 'key' => 'rel', 'label' => 'Group', 'type' => 'text', 'class' => 'small-text' ),
+				array( 'key' => 'codecs', 'label' => 'Codecs', 'type' => 'text', 'class' => 'small-text' ),
+				array( 'key' => 'default', 'label' => 'Default', 'type' => 'check' ),
+			), PodPub_P20::MAX_ENCLOSURES );
+		} else {
+			echo '<h3>Status and ownership</h3><table class="form-table" role="presentation">';
+			echo '<tr><th scope="row"><label>Complete</label></th><td><label><input type="checkbox" name="' . esc_attr( $prefix . '[complete]' ) . '" value="1"' . checked( null !== $in ? ! empty( $in['complete'] ) : ! empty( $d['complete'] ), true, false ) . '> This podcast is finished (no more episodes will be published)</label></td></tr>';
+			echo '<tr><th scope="row"><label>Locked</label></th><td><select name="' . esc_attr( $prefix . '[locked]' ) . '">';
+			foreach ( array( '' => 'Not set', 'yes' => 'Yes: ask other platforms to refuse imports of this feed', 'no' => 'No: this feed may be imported' ) as $k => $label ) {
+				echo '<option value="' . esc_attr( $k ) . '"' . selected( $v( 'locked', $d['locked'] ), $k, false ) . '>' . esc_html( $label ) . '</option>';
+			}
+			echo '</select></td></tr>';
+			$in_text( 'locked_owner', 'Owner email for moves', $d['locked_owner'], 'owner@example.com' );
+			echo '</table>';
+
+			echo '<h3>Text records</h3><p class="description">Free text for services that ask for it (for example a code that proves you own the feed). Purpose is optional, such as verify.</p>';
+			self::render_rows( $prefix . '[txt]', $rows( 'txt', $d['txt'] ), array(
+				array( 'key' => 'purpose', 'label' => 'Purpose', 'type' => 'text', 'class' => 'small-text' ),
+				array( 'key' => 'text', 'label' => 'Text (up to 4000 characters)', 'type' => 'text', 'class' => 'large-text' ),
+			), PodPub_P20::MAX_TXT );
+		}
+
+		echo '<h3>Comments (cross-app)</h3><p class="description">A social post whose replies apps can show as comments on this ' . ( $item ? 'episode' : 'podcast' ) . '. Protocol is for example activitypub; the address is the post\'s address. To say you do not want comments shown, enter the protocol disabled and nothing else.' . esc_html( $inherit ) . '</p>';
+		self::render_rows( $prefix . '[social]', $rows( 'social', $d['social'] ), array(
+			array( 'key' => 'protocol', 'label' => 'Protocol', 'type' => 'text', 'ph' => 'activitypub', 'class' => 'small-text' ),
+			array( 'key' => 'uri', 'label' => 'Address of the post', 'type' => 'text', 'ph' => 'https://' ),
+			array( 'key' => 'account_id', 'label' => 'Account id', 'type' => 'text', 'class' => 'small-text' ),
+			array( 'key' => 'account_url', 'label' => 'Account address', 'type' => 'text', 'ph' => 'https://' ),
+			array( 'key' => 'priority', 'label' => 'Priority', 'type' => 'text', 'class' => 'small-text' ),
+		), PodPub_P20::MAX_SOCIAL );
 	}
 
 	/**
