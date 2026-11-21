@@ -9,3 +9,5 @@ Wording is the owner's. Completed items are removed from this list (the history 
 6. An episode should be able to point at audio hosted elsewhere (an https address) instead of an upload. (Owner, "yes", 2026-11-21.)
 7. Large audio files should also be addable another way: copy them into the episode folder by FTP and pick them from a list. (Owner, "yes", 2026-11-21.)
 8. Chunk C of TODO 5: Podcasting 2.0 tags: funding, location, cast (person), value block and time splits, block, podroll, license. (Owner, "do chunk C", 2026-11-21.)
+9. Bug: selecting a category, I have to hold my mouse click and release on my selection. I should be able to click once to open the list and then a second time to make my selection. This should be carried across all drop-down lists for this plugin. (Owner, 2026-11-21.)
+10. Explain index.html being generated for podcasts and episodes. (Owner, 2026-11-21.)
