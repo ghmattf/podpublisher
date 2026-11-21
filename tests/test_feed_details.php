@@ -72,8 +72,17 @@ $i = PodPub_Details::inspect_image( "$tmp/in/wide.png" );
 check( 'image: not square accepted with a warning', ! is_wp_error( $i ) && count( $i['warnings'] ) === 1 );
 file_put_contents( "$tmp/in/fake.png", '<?php echo 1;' );
 check( 'image: php disguised as png refused', is_wp_error( PodPub_Details::inspect_image( "$tmp/in/fake.png" ) ) );
-file_put_contents( "$tmp/in/a.gif", "GIF89a\x01\x00\x01\x00\x00\x00\x00;" );
-check( 'image: gif refused', is_wp_error( PodPub_Details::inspect_image( "$tmp/in/a.gif" ) ) );
+function make_gif( $path, $w, $h ) { file_put_contents( $path, 'GIF89a' . pack( 'vv', $w, $h ) . "\x00\x00\x00;" ); }
+make_gif( "$tmp/in/a.gif", 1400, 1400 );
+$i = PodPub_Details::inspect_image( "$tmp/in/a.gif" );
+check( 'image: gif accepted, with a warning that some directories refuse it', ! is_wp_error( $i ) && $i['ext'] === 'gif' && count( $i['warnings'] ) === 1 && false !== strpos( $i['warnings'][0], 'GIF' ) );
+make_gif( "$tmp/in/small.gif", 100, 100 );
+$i = PodPub_Details::inspect_image( "$tmp/in/small.gif" );
+check( 'image: small gif gets both warnings', ! is_wp_error( $i ) && count( $i['warnings'] ) === 2 );
+file_put_contents( "$tmp/in/a.bmp", 'BM' . str_repeat( "\0", 60 ) );
+check( 'image: bmp still refused', is_wp_error( PodPub_Details::inspect_image( "$tmp/in/a.bmp" ) ) );
+file_put_contents( "$tmp/in/fake.gif", '<?php echo 1;' );
+check( 'image: php disguised as gif refused', is_wp_error( PodPub_Details::inspect_image( "$tmp/in/fake.gif" ) ) );
 check( 'image: missing file refused', is_wp_error( PodPub_Details::inspect_image( "$tmp/in/none.png" ) ) );
 
 // Feed XML.
@@ -128,6 +137,11 @@ if ( $im ) {
 } else {
 	echo "skip save: jpg replace (GD not installed)\n";
 }
+$r = PodPub_Feeds::save_details( 5, $good, array( 'error' => UPLOAD_ERR_OK, 'tmp_name' => "$tmp/in/a.gif", 'name' => 'Funny (1).GIF' ) );
+check( 'save: gif cover stored as cover.gif, old covers removed, warning shown', $r['errors'] === array() && is_file( "$folder/cover.gif" ) && ! is_file( "$folder/cover.jpg" ) && ! is_file( "$folder/cover.png" ) && PodPub_Details::get( 5 )['image'] === 'cover.gif' && count( $r['warnings'] ) === 1 );
+check( 'save: feed points at cover.gif', false !== strpos( file_get_contents( "$folder/$dir.xml" ), '/My_Great_Show/cover.gif' ) );
+$r = PodPub_Feeds::save_details( 5, $good, array( 'error' => UPLOAD_ERR_OK, 'tmp_name' => "$tmp/in/cover_up.png", 'name' => 'x.png' ) );
+check( 'save: png after gif removes the gif', is_file( "$folder/cover.png" ) && ! is_file( "$folder/cover.gif" ) );
 $r = PodPub_Feeds::save_details( 5, $good, array( 'error' => UPLOAD_ERR_OK, 'tmp_name' => "$tmp/in/fake.png", 'name' => 'x.png' ) );
 check( 'save: bad image refused and nothing changed', count( $r['errors'] ) === 1 );
 $r = PodPub_Feeds::save_details( 5, $good, array( 'error' => UPLOAD_ERR_INI_SIZE, 'tmp_name' => '', 'name' => 'x.png' ) );

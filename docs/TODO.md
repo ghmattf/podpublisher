@@ -6,5 +6,3 @@ Wording is the owner's. Completed items are removed from this list (the history 
 
 2. The page will show a list of the user's podcast feeds, and an option to create a new podcast, and import an existing podcast. (Done in 0.2.0: the list and "New podcast". Still to do: "Import podcast".)
 5. I want to replicate the features of https://sovereignfeeds.com or other podcast management tools. Build it. (Large: to be done in chunks, one per request; the proposed breakdown is in docs/DECISIONS.md, chunk A is done in 0.4.0; the owner picks the next chunk.)
-6. Apple Podcasts and Spotify are not podcasting2.0-compliant so these apps/services should be considered only secondary accomodations. Update the project information accordingly. (Owner, 2026-11-21.)
-7. Add GIF support for the show art. Commit, and give a test build. (Owner, 2026-11-21.)

@@ -181,9 +181,10 @@ class PodPub_Details {
 	}
 
 	/**
-	 * Check a show-art file. Only JPEG or PNG, up to 10 MB. A picture that is not
-	 * square or not 1400 to 3000 pixels is accepted with a warning (podcast apps
-	 * and directories want that size).
+	 * Check a show-art file. JPEG, PNG or GIF, up to 10 MB. A picture that is not
+	 * square or not 1400 to 3000 pixels is accepted with a warning (many podcast
+	 * apps and directories want that size). A GIF is accepted with a warning that
+	 * some directories (such as Apple Podcasts and Spotify) do not take it.
 	 *
 	 * @param string $path Path of the file to check.
 	 * @return array|WP_Error { ext: string, width: int, height: int, warnings: string[] }
@@ -197,16 +198,20 @@ class PodPub_Details {
 		}
 		$info = @getimagesize( $path );
 		if ( ! $info ) {
-			return new WP_Error( 'podpub_image', 'The file is not a picture. Use a JPEG or PNG image.' );
+			return new WP_Error( 'podpub_image', 'The file is not a picture. Use a JPEG, PNG or GIF image.' );
 		}
 		$types = array(
 			IMAGETYPE_JPEG => 'jpg',
 			IMAGETYPE_PNG  => 'png',
+			IMAGETYPE_GIF  => 'gif',
 		);
 		if ( ! isset( $types[ $info[2] ] ) ) {
-			return new WP_Error( 'podpub_image', 'The picture must be a JPEG or PNG image.' );
+			return new WP_Error( 'podpub_image', 'The picture must be a JPEG, PNG or GIF image.' );
 		}
 		$warnings = array();
+		if ( IMAGETYPE_GIF === $info[2] ) {
+			$warnings[] = 'The show art is a GIF. Podcasting 2.0 apps can show it, but some directories and apps (for example Apple Podcasts and Spotify) only take JPEG or PNG.';
+		}
 		if ( $info[0] !== $info[1] ) {
 			$warnings[] = 'The show art is ' . $info[0] . ' x ' . $info[1] . ' pixels. Podcast apps expect a square picture.';
 		} elseif ( $info[0] < 1400 || $info[0] > 3000 ) {
@@ -221,16 +226,17 @@ class PodPub_Details {
 	}
 
 	/**
-	 * Put a checked show-art file into the podcast folder as cover.jpg / cover.png
-	 * (the uploaded file's own name is never used). The old cover is removed.
+	 * Put a checked show-art file into the podcast folder as cover.jpg / cover.png /
+	 * cover.gif (the uploaded file's own name is never used). An old cover of
+	 * another type is removed.
 	 *
 	 * @param string $tmp     Path of the checked file.
 	 * @param string $dir     Full path of the podcast folder.
-	 * @param string $ext     jpg or png (from inspect_image).
+	 * @param string $ext     jpg, png or gif (from inspect_image).
 	 * @return string|WP_Error File name.
 	 */
 	public static function store_image( $tmp, $dir, $ext ) {
-		if ( ! in_array( $ext, array( 'jpg', 'png' ), true ) || ! is_dir( $dir ) ) {
+		if ( ! in_array( $ext, array( 'jpg', 'png', 'gif' ), true ) || ! is_dir( $dir ) ) {
 			return new WP_Error( 'podpub_image', 'The image could not be saved.' );
 		}
 		$name  = 'cover.' . $ext;
@@ -242,9 +248,10 @@ class PodPub_Details {
 			@unlink( $stage );
 			return new WP_Error( 'podpub_image', 'The image could not be saved.' );
 		}
-		$other = $dir . '/cover.' . ( 'jpg' === $ext ? 'png' : 'jpg' );
-		if ( is_file( $other ) ) {
-			@unlink( $other );
+		foreach ( array( 'jpg', 'png', 'gif' ) as $other_ext ) {
+			if ( $other_ext !== $ext && is_file( $dir . '/cover.' . $other_ext ) ) {
+				@unlink( $dir . '/cover.' . $other_ext );
+			}
 		}
 		return $name;
 	}

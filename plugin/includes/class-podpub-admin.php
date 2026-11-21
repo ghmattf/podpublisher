@@ -284,7 +284,7 @@ class PodPub_Admin {
 		if ( '' !== $d['image'] && '' !== $base && '' !== $dir ) {
 			echo '<p><img src="' . esc_url( $base . '/' . $dir . '/' . $d['image'] ) . '" alt="" style="max-width:150px;height:auto"></p>';
 		}
-		echo '<input type="file" id="pp_img" name="podpub_image" accept="image/jpeg,image/png"><p class="description">JPEG or PNG, square, between 1400 x 1400 and 3000 x 3000 pixels, up to 10 MB. Saved in the podcast folder as cover.jpg or cover.png.</p></td></tr>';
+		echo '<input type="file" id="pp_img" name="podpub_image" accept="image/jpeg,image/png,image/gif"><p class="description">JPEG, PNG or GIF, square, between 1400 x 1400 and 3000 x 3000 pixels, up to 10 MB. Saved in the podcast folder as cover.jpg, cover.png or cover.gif. Some directories (such as Apple Podcasts and Spotify) only take JPEG or PNG.</p></td></tr>';
 		echo '</table>';
 		submit_button( 'Save and write feed' );
 		echo '</form>';
