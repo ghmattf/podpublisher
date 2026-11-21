@@ -69,7 +69,7 @@ What sovereignfeeds.com offers, from its site (2026-11-20): create a feed (requi
 - A. **Done in 0.4.0.** Podcast details form (title, description, language, category, explicit, owner, show art uploaded into the podcast folder) and writing the feed XML to `{podcast folder}/{name}.xml`.
 - B. **Done in 0.5.0.** Episodes: list, add episode (creates its folder), upload the audio file, show notes, publish date, duration; episodes appear in the feed.
 - C. **Done in 0.7.0.** Podcasting 2.0 tags: funding, location, cast (person), value block and time splits, block, podroll, license.
-- D. **Part 1 done in 0.8.0** (chapters, transcripts, soundbites, alternate enclosures, cross-app comments, complete, locked, txt; decisions 39-46). Remaining:  the extra tags in the reference feed (decision 38): per-episode image, subtitle, summary, keywords, explicit; `podcast:complete`; `podcast:txt`; `podcast:locked`; `podcast:trailer`; `podcast:images`.
+- D. **Part 1 done in 0.8.0** (chapters, transcripts, soundbites, alternate enclosures, cross-app comments, complete, locked, txt; decisions 39-46). Remaining:  the extra tags in the reference feed (decision 38): per-episode image, subtitle, summary, keywords, explicit; `podcast:trailer`; `podcast:images`; episode-level `podcast:txt`; `podcast:liveItem`; a transcript upload or picker.
 - E. Import podcast (from a feed URL or pasted XML; see the open question).
 - F. Podcast Index: register the feed; Podping when a feed is updated and for live start/end.
 - G. Raw XML editor with checks, and download.
