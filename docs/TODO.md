@@ -14,3 +14,4 @@ Wording is the owner's. Completed items are removed from this list (the history 
 19. Make value time splits importable from a .txt file or from pasted XML.
 20. Split the podcast edit screen into tabs.
 21. Ability to delete episodes and podcasts.
+22. Update agent instructions: all changes must be updated to github so other agents can continue the work. (Owner, 2026-11-23.)
