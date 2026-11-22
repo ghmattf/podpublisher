@@ -7,17 +7,17 @@ A WordPress plugin to manage Podcasting 2.0 feeds and files. **Podcasting 2.0 co
 
 ## Layout
 - `plugin/` the WordPress plugin (this folder is what gets zipped and installed). Main file `podpublisher.php`.
-  - `includes/` PHP classes (`class-podpub-*.php`): `settings`, `shortcode`. Add new classes here and `require_once` them from the main file.
+  - `includes/` PHP classes (`class-podpub-*.php`, one per area, for example `admin`, `feeds`, `episodes`, `feedxml`, `p20`, `details`, `storage`, `images`, `settings`). Add new classes here and `require_once` them from the main file.
   - `assets/` JS and CSS, when there are any.
-- `tests/` all checks; run `tests/run-all.sh` (needs php; node 18+ once JS tests are added).
+- `tests/` all checks; run `tests/run-all.sh` (needs php with GD and DOM; node 18+ once JS tests are added). Each `test_*.php` file stands in for the few WordPress functions it uses; add a new test file to `run-all.sh`.
 - `build/` only if a JS bundle is ever generated (document how in `build/README.md`). Not created yet.
-- `docs/DECISIONS.md` decisions, assumptions, open items. `docs/TODO.md` the owner's requests not yet done.
+- `docs/DECISIONS.md` decisions, assumptions, open items. `docs/TODO.md` the owner's requests not yet done. `docs/PLANS.md` plans for work not built yet (delete a plan once it is built and its decisions are in DECISIONS.md).
 
 ## Naming scheme
 Plugin folder/slug and text domain `podpublisher`, main file `podpublisher.php`, main class `PodPublisher`, shortcode `[podpublisher]`, code prefix `podpub` / `PODPUB_` (classes `PodPub_*`, constants, options, DB tables `podpub_*`, REST namespace `podpub/v1`, JS globals `PodPub*`, CSS `.podpub-*`).
 
 ## Rules that must not be broken
-1. **Never bump the major version number (for example to 1.0.0) without the owner's explicit approval.** Current version is 0.1.0; use minor/patch bumps. Keep `Version:` and `PODPUB_VERSION` in `plugin/podpublisher.php` and `Stable tag` in `plugin/readme.txt` in step.
+1. **Never bump the major version number (for example to 1.0.0) without the owner's explicit approval.** Use minor/patch bumps (0.x.y). Keep `Version:` and `PODPUB_VERSION` in `plugin/podpublisher.php` and `Stable tag` in `plugin/readme.txt` in step.
 2. Releases are created by `.github/workflows/release.yml` when main has a plugin version with no release yet. Sessions cannot create releases or tags directly; bump the version in a PR and merge it.
 3. Anything fetched from a user-supplied URL goes through `wp_safe_remote_get` (https only, size/redirect limits). Never use plain `wp_remote_get` for user URLs.
 4. Wrap `localStorage`/`sessionStorage` use in try/catch.
@@ -28,9 +28,19 @@ Plugin folder/slug and text domain `podpublisher`, main file `podpublisher.php`,
 9. **Podcasting 2.0 first; Apple Podcasts, Spotify and similar services are secondary accommodations** (owner, 2026-11-21). Design and name things for Podcasting 2.0 apps and the podcast namespace first. Where a requirement exists only for those other services (for example image types, size ranges, `itunes:` tags, categories), support it only if it costs nothing, and as a **warning or an optional field, never as a block** and never as a reason to drop or weaken a Podcasting 2.0 feature. When writing UI text, docs or warnings, say plainly that it is those services that need it.
 
 ## Verify before you say it works
-Run `tests/run-all.sh`. For now it lints every PHP file and checks that the plugin header, `PODPUB_VERSION` and `readme.txt` agree on the version. It does **not** run a real WordPress; say so when reporting.
+Run `tests/run-all.sh` before every commit. It lints every PHP file, checks that the plugin header, `PODPUB_VERSION` and `readme.txt` agree on the version, and runs the test files (hundreds of checks). It does **not** run a real WordPress; say so when reporting. When a test fails, decide whether the test or the code is wrong; never weaken a test to make it pass.
 
 ## Working style the owner wants
 - Break larger work into small chunks and finish one per request.
 - Create issues/changes only where asked. Other repos used as references (`ghmattf/publisher-feed-generator`, `ghmattf/v4v-musiclink-pro`, `ghmattf/p20-link-resolver`) are **read-only**. Never write to them.
 - Flag assumptions plainly instead of burying them.
+
+## Working conventions for every agent
+- **Start** each task with one sentence saying what you are about to do. Use a task list for anything with several steps.
+- **Explain in plain English.** The owner is not a programmer: no unexplained jargon; say what a change means for them, and give the choice and your default when you ask a question.
+- **Record decisions.** Each change that decides something gets a numbered entry in `docs/DECISIONS.md` (with the version), including what you could not check (for example, spec pages you could not read). Update `docs/PLANS.md` when a plan changes.
+- **Commits.** Small commits with a clear message, on a branch (not straight to `main`), pushed to the same branch. End each commit message with the attribution lines the session gives you (the `Co-Authored-By` and `Claude-Session` lines).
+- **Version.** Each batch of plugin changes bumps the minor or patch version in the three places (rule 1) and is committed together with the tests and the docs.
+- **Test build zip** (rule 8): copy `plugin/` into a folder named `podpublisher`, zip that folder, name it `podpublisher-<version>-test.zip`, and send it to the owner as a file.
+- **Pull request.** Keep one open PR per branch. Update its title and body for each version (the body lists the changes and ends with the "Generated with Claude Code" line and the session link). GitHub's GraphQL is not available from sessions, so use the REST API (`gh api repos/ghmattf/podpublisher/pulls/...`).
+- **Reply when done:** what changed in a few sentences, what could not be checked, and the one natural next step. Do not recap the steps.
