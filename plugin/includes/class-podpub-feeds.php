@@ -209,4 +209,47 @@ class PodPub_Feeds {
 	public static function dir_name( $id ) {
 		return (string) get_post_meta( (int) $id, '_podpub_dir', true );
 	}
+
+	/**
+	 * Delete a podcast: all its episodes and the podcast record, and, only when asked,
+	 * its folder on disk (feed file, show art, every episode folder and audio file).
+	 * Without the folder option the files stay where they are and the feed address
+	 * keeps working. Only a folder whose name is exactly a safe name, inside the
+	 * Podcast folder, is ever removed; symbolic links are removed, never followed.
+	 *
+	 * @param int  $id           Podcast record id.
+	 * @param bool $delete_files Also delete the podcast's folder and everything in it.
+	 * @return array { errors: string[], warnings: string[], episodes: int, files_deleted: bool, folder: string }
+	 */
+	public static function delete( $id, $delete_files ) {
+		$out  = array( 'errors' => array(), 'warnings' => array(), 'episodes' => 0, 'files_deleted' => false, 'folder' => '' );
+		$feed = self::get( $id );
+		if ( ! $feed ) {
+			$out['errors'][] = 'This podcast was not found.';
+			return $out;
+		}
+		$dir  = self::dir_name( $id );
+		$base = PodPub_Storage::base_path();
+		$path = ( '' !== $dir && '' !== $base ) ? $base . '/' . $dir : '';
+		$out['folder'] = $path;
+
+		if ( $delete_files ) {
+			if ( '' === $path || $dir !== PodPub_Storage::slug( $dir, '' ) ) {
+				$out['warnings'][] = 'The podcast\'s folder name is not a safe name, so its files were not deleted.';
+			} elseif ( ! is_dir( $path ) ) {
+				$out['warnings'][] = 'The podcast\'s folder was not found in the Podcast folder, so there were no files to delete.';
+			} elseif ( PodPub_Storage::remove_tree( $path ) ) {
+				$out['files_deleted'] = true;
+			} else {
+				$out['warnings'][] = 'Some files in ' . $path . ' could not be deleted (the web server may not be allowed to). Delete that folder by hand.';
+			}
+		}
+
+		foreach ( PodPub_Episodes::all( $id ) as $episode ) {
+			wp_delete_post( (int) $episode->ID, true );
+			++$out['episodes'];
+		}
+		wp_delete_post( (int) $id, true );
+		return $out;
+	}
 }

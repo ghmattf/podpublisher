@@ -33,7 +33,7 @@ Plans for work that is not built yet. Nothing here is a decision until the owner
 - **When the post is made:** only **after the episode has been saved and published successfully**. An episode with errors that stop it publishing creates or edits no post.
 - **Existing post:** the prompt itself carries the warning that saving with "yes" overwrites the post's previous title and content, and offers "no" to leave the post alone.
 - **Podcast page:** the podcast editing screen has an option to create a **page** (not a post) for the podcast. The page lists all the podcast's episodes. The same screen has: an option to **turn off creating a post for each episode**, a list of **WordPress authors** to attribute the posts to, and **categories** for the posts.
-- **Deleting an episode** asks whether to delete the matching post as well (belongs with TODO 21, delete episodes and podcasts).
+- **Deleting an episode** asks whether to delete the matching post as well (delete episodes and podcasts, TODO 21, is built in 0.10.0 without this question; add the question when this plan is built).
 
 **How it would work (my reading; to be confirmed when built).**
 1. Episode form: Save with the status set to published asks "Create/update WordPress post?" (yes/no). With a draft status, no prompt and no post. If the podcast has posts turned off, no prompt.
