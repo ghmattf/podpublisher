@@ -14,5 +14,3 @@ Wording is the owner's. Completed items are removed from this list (the history 
 19. Make value time splits importable from a .txt file or from pasted XML.
 20. Split the podcast edit screen into tabs.
 21. Ability to delete episodes and podcasts.
-22. "are these instructions all committed in agents.md? I need this to be consistent with different agents." (Owner, 2026-11-23.) Put every working convention in AGENTS.md.
-23. Update the stale text in AGENTS.md; if the current version is not necessary, remove it. (Owner, 2026-11-23.)
