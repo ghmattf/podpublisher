@@ -98,4 +98,6 @@ What sovereignfeeds.com offers, from its site (2026-11-20): create a feed (requi
 - Owner's to-do list: see `docs/TODO.md`.
 
 ## Out of scope (do not add without asking)
-(nothing recorded yet)
+- **Favourites** (Sovereign Feeds-style) are not relevant (owner, 2026-11-23).
+- **Live value block updating** (changing the value block across podcasts or live) is out of scope at this stage (owner, 2026-11-23).
+- Not required: a raw XML editor and download (chunk G), and a separate Import podcast (chunk E), because TODO 2 (adopt a feed already on the server) covers it (owner, 2026-11-23).

@@ -53,3 +53,15 @@ Plans for work that is not built yet. Nothing here is a decision until the owner
 - Existing episodes saved before this feature: no bulk action; saving with "yes" creates the post. (Default.)
 - No audio player in the post; the episode picture is the featured image. (Default.)
 - Is the episode list on the page a plain list or does it include each episode's show notes? (Default: title, date and description only.)
+
+## TODO 2 and 12: adopt a feed already on the server, and warn before data is lost
+
+**Goal (owner, 2026-11-23).** Take a podcast feed that already exists on the server and manage it in PodPublisher. Whenever a feed is adopted, or an adopted feed is saved over its old file, the old feed is examined first for tags PodPublisher does not support, which would be lost; the details are shown and the owner confirms before anything is written.
+
+**My reading (to confirm).**
+1. **Adopt** takes the feed's address or its file on the server (an https address goes through `wp_safe_remote_get`, rule 3; a file path must be inside the Podcast folder), reads the channel and episodes into a new podcast and its episodes, and keeps the original feed address and each episode's `guid` unchanged so apps and directories see the same feed.
+2. **Lost-tag check** compares the old feed with what PodPublisher would write: every channel or item tag or attribute it does not read (for example tags from other namespaces, or attributes it does not know) is listed with its place and a short sample. Nothing is written until the owner ticks "I understand these will be lost" (or cancels). The same check runs on every later save over a feed file that was adopted.
+3. **Audio and pictures** stay where they are (the episode uses the existing https address; a file on this server can be picked as in 0.6.0).
+4. **Open questions (defaults in brackets):** adopt by address only, or by file too (both); keep the old feed file as a backup copy next to the new one (yes, `name.xml.bak`); is the adopted feed's address kept as the podcast's own address even if it differs from the Podcast folder address (yes, with `itunes:new-feed-url` not touched).
+
+**Tests.** A feed with known and unknown tags: the report lists exactly the unknown ones; cancel changes nothing; confirm writes; guids are kept; a feed with nothing unsupported needs no confirmation.
