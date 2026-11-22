@@ -106,16 +106,14 @@ $e = array(); PodPub_P20::enclosures( array( 'enclosures' => array( array_merge(
 $e = array(); PodPub_P20::enclosures( array( 'enclosures' => array( array_merge( $ae, array( 'integrity_value' => 'x' ) ) ) ), $e ); check( 'alternate file: value without a kind refused', count( $e ) === 1 );
 $e = array(); PodPub_P20::enclosures( array( 'enclosures' => array( array_merge( $ae, array( 'integrity_type' => 'md5', 'integrity_value' => 'x' ) ) ) ), $e ); check( 'alternate file: unknown kind refused', count( $e ) === 1 );
 
-// ---- the podcast page: trailers, live, txt in the feed ----
+// ---- the podcast page: trailers and live items in the feed ----
 $r = PodPub_Feeds::save_p20( $pid, array(
 	'trailers' => array( array( 'title' => 'Trailer', 'url' => 'https://cdn.example/t.mp3', 'pubdate' => '2026-03-01T10:00', 'type' => 'audio/mpeg' ) ),
 	'live' => array( $lv ),
-	'txt' => array( array( 'purpose' => 'verify', 'text' => 'tok' ) ),
 ) );
 $x = feed_dom( "$folder/$pdir.xml" );
 check( 'channel: trailer with url, pubdate, type and its title as text', $r['errors'] === array() && ev( $x, 'string(/rss/channel/podcast:trailer)' ) === 'Trailer' && ev( $x, 'string(/rss/channel/podcast:trailer/@url)' ) === 'https://cdn.example/t.mp3' && ev( $x, 'string(/rss/channel/podcast:trailer/@type)' ) === 'audio/mpeg' && 1 === preg_match( '/^\w{3}, \d\d \w{3} \d{4} \d\d:\d\d:\d\d \+0000$/', ev( $x, 'string(/rss/channel/podcast:trailer/@pubdate)' ) ) && ev( $x, 'count(/rss/channel/podcast:trailer/@season | /rss/channel/podcast:trailer/@length)' ) == 0 );
 check( 'channel: liveItem with status, start and end in UTC, title, guid, enclosure of length 0, content link', ev( $x, 'string(/rss/channel/podcast:liveItem/@status)' ) === 'live' && 1 === preg_match( '/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$/', ev( $x, 'string(/rss/channel/podcast:liveItem/@start)' ) ) && ev( $x, 'string(/rss/channel/podcast:liveItem/title)' ) === 'Launch party' && ev( $x, 'string(/rss/channel/podcast:liveItem/guid/@isPermaLink)' ) === 'false' && ev( $x, 'string(/rss/channel/podcast:liveItem/enclosure/@url)' ) === 'https://live.example/stream' && ev( $x, 'string(/rss/channel/podcast:liveItem/enclosure/@length)' ) === '0' && ev( $x, 'string(/rss/channel/podcast:liveItem/podcast:contentLink/@href)' ) === 'https://example.com/join' );
-check( 'channel: text record written', ev( $x, 'string(/rss/channel/podcast:txt)' ) === 'tok' && ev( $x, 'string(/rss/channel/podcast:txt/@purpose)' ) === 'verify' );
 $g1 = ev( $x, 'string(/rss/channel/podcast:liveItem/guid)' );
 PodPub_Feeds::save_p20( $pid, array( 'live' => array( array_merge( $lv, array( 'status' => 'ended' ) ) ) ) );
 $x = feed_dom( "$folder/$pdir.xml" );
@@ -143,12 +141,12 @@ PodPub_Episodes::save( $pid, $r1['id'], array_merge( $ep, array( 'episode' => '1
 
 // extras and picture
 $e1 = $r1['id']; $edir = PodPub_Episodes::dir_name( $e1 ); $efolder = "$folder/$edir";
-$ex = array_merge( $ep, array( 'episode' => '1', 'explicit' => 'yes', 'subtitle' => 'A line', 'summary' => 'A longer summary', 'keywords' => 'a, b', 'txt' => array( array( 'purpose' => 'x', 'text' => 'y' ) ) ) );
+$ex = array_merge( $ep, array( 'episode' => '1', 'explicit' => 'yes', 'subtitle' => 'A line', 'summary' => 'A longer summary', 'keywords' => 'a, b') );
 $r = PodPub_Episodes::save( $pid, $e1, $ex, null, $up( $jpg, 'ep art.jpg' ) );
 $x = feed_dom( "$folder/$pdir.xml" );
 $item = "//item[title='First']";
 $esrc = ev( $x, "string($item/podcast:images/@srcset)" );
-check( 'episode extras: explicit, subtitle, summary, keywords, txt in the item', $r['errors'] === array() && ev( $x, "string($item/itunes:explicit)" ) === 'true' && ev( $x, "string($item/itunes:subtitle)" ) === 'A line' && ev( $x, "string($item/itunes:summary)" ) === 'A longer summary' && ev( $x, "string($item/itunes:keywords)" ) === 'a, b' && ev( $x, "string($item/podcast:txt)" ) === 'y' && ev( $x, "string($item/podcast:txt/@purpose)" ) === 'x' );
+check( 'episode extras: explicit, subtitle, summary, keywords in the item', $r['errors'] === array() && ev( $x, "string($item/itunes:explicit)" ) === 'true' && ev( $x, "string($item/itunes:subtitle)" ) === 'A line' && ev( $x, "string($item/itunes:summary)" ) === 'A longer summary' && ev( $x, "string($item/itunes:keywords)" ) === 'a, b' );
 check( 'episode picture: image.jpg in the episode folder, itunes:image, copies, srcset', is_file( "$efolder/image.jpg" ) && is_file( "$efolder/image-300.jpg" ) && ev( $x, "string($item/itunes:image/@href)" ) === "https://example.com/wp-content/uploads/podpublisher/$pdir/$edir/image.jpg" && 0 === strpos( $esrc, "https://example.com/wp-content/uploads/podpublisher/$pdir/$edir/image-300.jpg 300w" ) && substr( $esrc, -5 ) === '1600w' );
 check( 'episode: an episode with explicit unset writes no explicit tag', ev( $x, "count(//item[title='Second']/itunes:explicit)" ) == 0 && ev( $x, "count(//item[title='Second']/itunes:image)" ) == 0 );
 $r = PodPub_Episodes::save( $pid, $e1, array_merge( $ex, array( 'remove_image' => '1' ) ) );
@@ -182,10 +180,10 @@ $r = PodPub_Episodes::save( $pid, $e1, $ex, null, null, $up( "$tmp/in/empty.txt"
 
 // copy from the latest episode
 $latest = PodPub_Episodes::all( $pid )[0];
-PodPub_Episodes::save( $pid, $latest->ID, array_merge( $ep, array( 'title' => $latest->post_title, 'published' => PodPub_Episodes::format_date( PodPub_Episodes::details( $latest->ID )['published'] ), 'explicit' => 'yes', 'keywords' => 'k1', 'season' => '2', 'episode' => '1', 'persons' => array( array( 'name' => 'Jo', 'role' => 'host' ) ), 'funding' => array( array( 'url' => 'https://f.example', 'message' => 'Fund' ) ), 'soundbites' => array( array( 'start' => '5', 'duration' => '30' ) ) ) ) );
+PodPub_Episodes::save( $pid, $latest->ID, array_merge( $ep, array( 'title' => $latest->post_title, 'published' => PodPub_Episodes::format_date( PodPub_Episodes::details( $latest->ID )['published'] ), 'explicit' => 'yes', 'subtitle' => 'Sub1', 'summary' => 'Sum1', 'show_notes' => 'Notes1', 'keywords' => 'k1', 'season' => '2', 'episode' => '1', 'persons' => array( array( 'name' => 'Jo', 'role' => 'host' ) ), 'funding' => array( array( 'url' => 'https://f.example', 'message' => 'Fund' ) ), 'soundbites' => array( array( 'start' => '5', 'duration' => '30' ) ) ) ) );
 $cd = PodPub_Episodes::copy_defaults( $pid );
-check( 'copy: keeps season, explicit, keywords, people and funding; next number carries on', $cd['season'] === 2 && $cd['explicit'] === 'yes' && $cd['keywords'] === 'k1' && $cd['persons'][0]['name'] === 'Jo' && $cd['funding'][0]['url'] === 'https://f.example' && $cd['episode'] === PodPub_Episodes::next_number( $pid, 2 ) );
-check( 'copy: leaves out title, description, audio, guid, soundbites, chapters, picture', $cd['description'] === '' && $cd['audio'] === '' && $cd['external_url'] === '' && $cd['guid'] === '' && $cd['soundbites'] === array() && $cd['chapters'] === array() && $cd['image'] === '' && $cd['status'] === 'draft' );
+check( 'copy: keeps title, description, show notes, subtitle, summary, keywords, season, people and funding; next number carries on', $cd['title'] === $latest->post_title && $cd['description'] === 'D' && $cd['show_notes'] === 'Notes1' && $cd['subtitle'] === 'Sub1' && $cd['summary'] === 'Sum1' && $cd['season'] === 2 && $cd['keywords'] === 'k1' && $cd['persons'][0]['name'] === 'Jo' && $cd['funding'][0]['url'] === 'https://f.example' && $cd['episode'] === PodPub_Episodes::next_number( $pid, 2 ) );
+check( 'copy: leaves out guid, date, explicit, audio, soundbites, chapters, picture; status draft', $cd['guid'] === '' && $cd['explicit'] === '' && $cd['published'] > time() - 5 && $cd['audio'] === '' && $cd['external_url'] === '' && $cd['soundbites'] === array() && $cd['chapters'] === array() && $cd['image'] === '' && $cd['status'] === 'draft' );
 $empty_pid = PodPub_Feeds::create( 'Empty Show' );
 check( 'copy: a podcast with no episodes has nothing to copy', PodPub_Episodes::copy_defaults( $empty_pid ) === null );
 

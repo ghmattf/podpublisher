@@ -17,13 +17,13 @@ if ( ! defined( 'ABSPATH' ) ) {
 class PodPub_P20 {
 
 	const MAX_FUNDING    = 10;
+	const FUNDING_DEFAULT = 'Support the show!';
 	const MAX_LOCATIONS  = 10;
 	const MAX_TRANSCRIPTS = 10;
 	const MAX_SOUNDBITES = 20;
 	const MAX_ENCLOSURES = 10;
 	const MAX_SOCIAL     = 5;
 	const MAX_CHAPTERS   = 200;
-	const MAX_TXT        = 10;
 	const MAX_TRAILERS   = 5;
 	const MAX_LIVE       = 10;
 	const MAX_PERSONS    = 30;
@@ -46,7 +46,6 @@ class PodPub_P20 {
 			'license'  => array( 'name' => '', 'url' => '' ),
 			'value'    => array( 'method' => '', 'suggested' => '', 'recipients' => array() ),
 			'social'   => array(),
-			'txt'      => array(),
 		);
 		if ( $item ) {
 			$d['timesplits']   = array();
@@ -134,10 +133,11 @@ class PodPub_P20 {
 			$p = 'Funding link ' . $n . ': ';
 			if ( ! self::valid_http( $r['url'] ) ) {
 				$errors[] = $p . 'enter a web address starting with https://.';
-			} elseif ( '' === $r['message'] || mb_strlen( $r['message'] ) > 128 ) {
-				$errors[] = $p . 'enter a short message of up to 128 characters.';
+			} elseif ( mb_strlen( $r['message'] ) > 128 ) {
+				$errors[] = $p . 'the message must be 128 characters or fewer.';
 			} else {
-				$out[] = $r;
+				$r['message'] = '' === $r['message'] ? self::FUNDING_DEFAULT : $r['message'];
+				$out[]        = $r;
 			}
 		}
 		return $out;
@@ -562,19 +562,6 @@ class PodPub_P20 {
 		return json_encode( array( 'version' => '1.2.0', 'chapters' => $list ), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT ) . "\n";
 	}
 
-	/** Text records (free text with an optional purpose), for the podcast or an episode. */
-	public static function txt( $in, &$errors ) {
-		$txt = array();
-		foreach ( self::rows( $in, 'txt', array( 'purpose', 'text' ), self::MAX_TXT, $errors, 'text records' ) as $n => $r ) {
-			if ( '' === $r['text'] || mb_strlen( $r['text'] ) > 4000 || mb_strlen( $r['purpose'] ) > 128 ) {
-				$errors[] = 'Text record ' . $n . ': enter the text (up to 4000 characters); the purpose is up to 128.';
-			} else {
-				$txt[] = $r;
-			}
-		}
-		return $txt;
-	}
-
 	/** A date and time typed or picked in a form ("2026-01-15T09:30" or with a space), as Unix time, or null. */
 	private static function when( $t ) {
 		return '' === trim( $t ) ? null : PodPub_Episodes::parse_date( str_replace( ' ', 'T', trim( $t ) ) );
@@ -670,7 +657,6 @@ class PodPub_P20 {
 		$cur['podroll']    = self::podroll( $in, $errors );
 		$cur['social']     = self::social( $in, $errors );
 		$cur                = self::channel_flags( $in, $cur, $errors );
-		$cur['txt']        = self::txt( $in, $errors );
 		$cur['trailers']   = self::trailers( $in, $errors );
 		$cur['live']       = self::live( $in, $errors );
 		return $cur;
@@ -688,7 +674,6 @@ class PodPub_P20 {
 		$cur['value']      = self::value( $in, $errors );
 		$cur['timesplits'] = self::timesplits( $in, $cur['value'], $errors );
 		$cur['social']     = self::social( $in, $errors );
-		$cur['txt']        = self::txt( $in, $errors );
 		$cur['transcripts'] = self::transcripts( $in, $errors );
 		$cur['soundbites'] = self::soundbites( $in, $errors );
 		$cur['enclosures'] = self::enclosures( $in, $errors );
@@ -770,9 +755,6 @@ class PodPub_P20 {
 			self::el( $w, 'podcast:license', array( 'url' => $d['license']['url'] ), $d['license']['name'] );
 		}
 		self::write_value( $w, $d['value'], $splits );
-		foreach ( $d['txt'] as $t ) {
-			self::el( $w, 'podcast:txt', array( 'purpose' => $t['purpose'] ), $t['text'] );
-		}
 		foreach ( $d['social'] as $c ) {
 			if ( 'disabled' === $c['protocol'] ) {
 				self::el( $w, 'podcast:socialInteract', array( 'protocol' => 'disabled' ) );

@@ -48,8 +48,8 @@ $r = PodPub_P20::funding( array( 'funding' => array( array( 'url' => 'https://ex
 check( 'funding: good row kept, blank row dropped', $e === array() && count( $r ) === 1 && $r[0]['message'] === 'Support & "more"' );
 $e = array(); PodPub_P20::funding( array( 'funding' => array( array( 'url' => 'javascript:alert(1)', 'message' => 'x' ) ) ), $e );
 check( 'funding: javascript: address refused', count( $e ) === 1 );
-$e = array(); PodPub_P20::funding( array( 'funding' => array( array( 'url' => 'https://example.com', 'message' => '' ) ) ), $e );
-check( 'funding: missing message refused', count( $e ) === 1 );
+$e = array(); $f = PodPub_P20::funding( array( 'funding' => array( array( 'url' => 'https://example.com', 'message' => '' ) ) ), $e );
+check( 'funding: missing message becomes the default, Support the show!', $e === array() && $f[0]['message'] === 'Support the show!' );
 $e = array(); PodPub_P20::funding( array( 'funding' => array( array( 'url' => 'https://example.com', 'message' => str_repeat( 'a', 129 ) ) ) ), $e );
 check( 'funding: message over 128 refused', count( $e ) === 1 );
 $e = array(); PodPub_P20::funding( array( 'funding' => array_fill( 0, 11, array( 'url' => 'https://example.com', 'message' => 'x' ) ) ), $e );

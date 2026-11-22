@@ -467,11 +467,14 @@ class PodPub_Episodes {
 	}
 
 	/**
-	 * Details for a new episode that starts from the podcast's latest one: what
-	 * usually stays the same (season, explicit flag, people, funding, location,
-	 * licence, payments, comments, text records, keywords) and nothing else.
+	 * Details for a new episode that starts from the podcast's latest one: the title,
+	 * description, show notes, subtitle, summary, keywords, season, type, people,
+	 * funding, location, licence, payments and comments. Not copied: the guid (every
+	 * episode needs its own), the date and time, the explicit choice, and the audio
+	 * with everything tied to it (duration, chapters, transcripts, soundbites,
+	 * alternate files, picture, time splits).
 	 *
-	 * @return array|null Details, or null when the podcast has no episodes yet.
+	 * @return array|null Details plus a "title" key, or null when the podcast has no episodes yet.
 	 */
 	public static function copy_defaults( $podcast_id ) {
 		$all = self::all( $podcast_id );
@@ -480,9 +483,10 @@ class PodPub_Episodes {
 		}
 		$last = self::details( $all[0]->ID );
 		$d    = self::defaults();
-		foreach ( array( 'season', 'explicit', 'keywords', 'funding', 'locations', 'persons', 'license', 'value', 'social', 'txt' ) as $k ) {
+		foreach ( array( 'description', 'show_notes', 'subtitle', 'summary', 'keywords', 'season', 'type', 'funding', 'locations', 'persons', 'license', 'value', 'social' ) as $k ) {
 			$d[ $k ] = $last[ $k ];
 		}
+		$d['title']     = $all[0]->post_title;
 		$d['published'] = time();
 		$d['episode']   = self::next_number( $podcast_id, $d['season'] );
 		return $d;

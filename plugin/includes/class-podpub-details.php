@@ -61,6 +61,7 @@ class PodPub_Details {
 			'category'    => '',
 			'explicit'    => '', // yes | no. Blank until the owner chooses (the form requires a choice).
 			'keywords'    => '',
+			'op3'         => 0, // 1 = count downloads with OP3 (the feed's audio addresses get the OP3 prefix).
 			'type'        => 'episodic',
 			'author'      => '',
 			'link'        => '',
@@ -164,6 +165,7 @@ class PodPub_Details {
 		}
 		$data['explicit'] = $explicit;
 		$data['keywords'] = $text( 'keywords', 255 );
+		$data['op3']      = empty( $in['op3'] ) ? 0 : 1;
 		$data['type']     = 'serial' === $get( 'type' ) ? 'serial' : 'episodic';
 		$data['author']   = $text( 'author', 255 );
 		$data['copyright'] = $text( 'copyright', 255 );

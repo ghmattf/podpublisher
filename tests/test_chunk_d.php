@@ -1,6 +1,6 @@
 <?php
 // Chunk D tags: chapters (editor writes chapters.json), transcripts, soundbites, alternate enclosures,
-// cross-app comments, and the channel complete / locked / txt tags.
+// cross-app comments, and the channel complete / locked tags.
 // Not a real WordPress: the few WordPress functions used are stood in for.
 define( 'ABSPATH', __DIR__ );
 define( 'PODPUB_VERSION', 'test' );
@@ -78,12 +78,9 @@ $e = array(); PodPub_P20::chapters( array( 'chapters' => array( array( 'start' =
 $e = array(); PodPub_P20::chapters( array( 'chapters' => array( array( 'start' => '0', 'title' => 'A' ) ), 'chapters_url' => 'https://h.example/c.json' ), $e ); check( 'chapters: list and outside address together refused', count( $e ) === 1 );
 $e = array(); $c = PodPub_P20::chapters( array( 'chapters_url' => 'http://h.example/c.json' ), $e ); check( 'chapters: http address refused', count( $e ) === 1 && $c['url'] === '' );
 
-// ---- channel flags and text records ----
+// ---- channel flags ----
 $e = array(); $d = PodPub_P20::channel_flags( array( 'complete' => '1', 'locked' => 'YES', 'locked_owner' => 'me@example.com' ), PodPub_P20::defaults( false ), $e );
 check( 'channel flags: complete, locked with owner kept', $e === array() && $d['complete'] === 1 && $d['locked'] === 'yes' && $d['locked_owner'] === 'me@example.com' );
-$e = array(); $t = PodPub_P20::txt( array( 'txt' => array( array( 'purpose' => 'verify', 'text' => 'abc123' ), array( 'purpose' => '', 'text' => '' ) ) ), $e );
-check( 'text records: kept; blank row dropped', $e === array() && count( $t ) === 1 && $t[0]['text'] === 'abc123' );
-$e = array(); PodPub_P20::txt( array( 'txt' => array( array( 'purpose' => 'x', 'text' => '' ) ) ), $e ); check( 'text records: purpose without text refused', count( $e ) === 1 );
 $e = array(); PodPub_P20::channel_flags( array( 'locked' => 'maybe' ), PodPub_P20::defaults( false ), $e ); check( 'channel flags: locked must be yes, no or unset', count( $e ) === 1 );
 $e = array(); PodPub_P20::channel_flags( array( 'locked_owner' => 'nope' ), PodPub_P20::defaults( false ), $e ); check( 'channel flags: bad owner email refused', count( $e ) === 1 );
 
@@ -91,12 +88,12 @@ $e = array(); PodPub_P20::channel_flags( array( 'locked_owner' => 'nope' ), PodP
 $pid = PodPub_Feeds::create( 'Show D' );
 $pdir = PodPub_Feeds::dir_name( $pid );
 PodPub_Feeds::save_details( $pid, array( 'title' => 'Show D', 'description' => 'About', 'language' => 'en', 'explicit' => 'no' ) );
-$r = PodPub_Feeds::save_p20( $pid, array( 'complete' => '1', 'locked' => 'no', 'locked_owner' => 'me@example.com', 'txt' => array( array( 'purpose' => 'verify', 'text' => 'code-1' ) ), 'social' => array( array( 'protocol' => 'disabled' ) ) ) );
+$r = PodPub_Feeds::save_p20( $pid, array( 'complete' => '1', 'locked' => 'no', 'locked_owner' => 'me@example.com', 'social' => array( array( 'protocol' => 'disabled' ) ) ) );
 $x = feed_dom( "$tmp/uploads/podpublisher/$pdir/$pdir.xml" );
-check( 'podcast: complete, locked (with owner), txt and disabled comments in the channel', $r['errors'] === array() && ev( $x, 'string(/rss/channel/podcast:complete)' ) === 'yes' && ev( $x, 'string(/rss/channel/podcast:locked)' ) === 'no' && ev( $x, 'string(/rss/channel/podcast:locked/@owner)' ) === 'me@example.com' && ev( $x, 'string(/rss/channel/podcast:txt/@purpose)' ) === 'verify' && ev( $x, 'string(/rss/channel/podcast:txt)' ) === 'code-1' && ev( $x, 'string(/rss/channel/podcast:socialInteract/@protocol)' ) === 'disabled' && ev( $x, 'count(/rss/channel/podcast:socialInteract/@*)' ) == 1 );
+check( 'podcast: complete, locked (with owner) and disabled comments in the channel', $r['errors'] === array() && ev( $x, 'string(/rss/channel/podcast:complete)' ) === 'yes' && ev( $x, 'string(/rss/channel/podcast:locked)' ) === 'no' && ev( $x, 'string(/rss/channel/podcast:locked/@owner)' ) === 'me@example.com' && ev( $x, 'string(/rss/channel/podcast:socialInteract/@protocol)' ) === 'disabled' && ev( $x, 'count(/rss/channel/podcast:socialInteract/@*)' ) == 1 );
 $r = PodPub_Feeds::save_p20( $pid, array() );
 $x = feed_dom( "$tmp/uploads/podpublisher/$pdir/$pdir.xml" );
-check( 'podcast: clearing the form removes complete, locked, txt and comments', $r['errors'] === array() && ev( $x, 'count(/rss/channel/podcast:complete | /rss/channel/podcast:locked | /rss/channel/podcast:txt | /rss/channel/podcast:socialInteract)' ) == 0 );
+check( 'podcast: clearing the form removes complete, locked and comments', $r['errors'] === array() && ev( $x, 'count(/rss/channel/podcast:complete | /rss/channel/podcast:locked | /rss/channel/podcast:socialInteract)' ) == 0 );
 
 $ep = array( 'title' => 'Ep D', 'description' => 'D', 'published' => '2026-01-15T09:30', 'status' => 'published', 'audio_source' => 'external', 'audio_url' => 'https://cdn.example.net/one.mp3', 'audio_size' => '1000', 'duration' => '10:00',
 	'chapters' => array( array( 'start' => '30', 'title' => 'Later' ), array( 'start' => '0', 'title' => 'Start' ) ),

@@ -289,10 +289,10 @@ class PodPub_Admin {
 			echo '<tr><th scope="row"><label>' . esc_html( $label ) . '</label></th><td><input type="text" class="' . esc_attr( $class ) . '" name="' . esc_attr( $prefix . '[' . $k . ']' ) . '" value="' . esc_attr( $v( $k, $saved ) ) . '" placeholder="' . esc_attr( $ph ) . '"></td></tr>';
 		};
 
-		echo '<h3>Funding</h3><p class="description">Links where listeners can support the show.' . esc_html( $inherit ) . '</p>';
+		echo '<h3>Funding</h3><p class="description">Links where listeners can support the show. Leave the message empty to use &ldquo;' . esc_html( PodPub_P20::FUNDING_DEFAULT ) . '&rdquo;.' . esc_html( $inherit ) . '</p>';
 		self::render_rows( $prefix . '[funding]', $rows( 'funding', $d['funding'] ), array(
 			array( 'key' => 'url', 'label' => 'Web address', 'type' => 'text', 'ph' => 'https://' ),
-			array( 'key' => 'message', 'label' => 'Message (up to 128 characters)', 'type' => 'text' ),
+			array( 'key' => 'message', 'label' => 'Message (up to 128 characters)', 'type' => 'text', 'ph' => PodPub_P20::FUNDING_DEFAULT ),
 		), PodPub_P20::MAX_FUNDING );
 
 		echo '<h3>Location</h3><p class="description">Where the ' . ( $item ? 'episode' : 'podcast' ) . ' is about (subject) or was made (creator). Add one row for each place. The name is required; the rest is recommended.' . esc_html( $inherit ) . '</p>';
@@ -460,12 +460,6 @@ class PodPub_Admin {
 			), PodPub_P20::MAX_LIVE );
 		}
 
-		echo '<h3>Text records</h3><p class="description">Free text for services that ask for it (for example a code that proves you own the feed). Purpose is optional, such as verify.</p>';
-		self::render_rows( $prefix . '[txt]', $rows( 'txt', $d['txt'] ), array(
-			array( 'key' => 'purpose', 'label' => 'Purpose', 'type' => 'text', 'class' => 'small-text' ),
-			array( 'key' => 'text', 'label' => 'Text (up to 4000 characters)', 'type' => 'text', 'class' => 'large-text' ),
-		), PodPub_P20::MAX_TXT );
-
 		echo '<h3>Comments (cross-app)</h3><p class="description">A social post whose replies apps can show as comments on this ' . ( $item ? 'episode' : 'podcast' ) . '. Protocol is for example activitypub; the address is the post\'s address. To say you do not want comments shown, enter the protocol disabled and nothing else.' . esc_html( $inherit ) . '</p>';
 		self::render_rows( $prefix . '[social]', $rows( 'social', $d['social'] ), array(
 			array( 'key' => 'protocol', 'label' => 'Protocol', 'type' => 'text', 'ph' => 'activitypub', 'class' => 'small-text' ),
@@ -519,6 +513,7 @@ class PodPub_Admin {
 			return;
 		}
 		$copied = false;
+		$title  = $post ? $post->post_title : '';
 		if ( $post ) {
 			$d = PodPub_Episodes::details( $eid );
 		} else {
@@ -526,6 +521,7 @@ class PodPub_Admin {
 			if ( ! empty( $_GET['copy'] ) && null !== ( $cd = PodPub_Episodes::copy_defaults( $id ) ) ) { // phpcs:ignore WordPress.Security.NonceVerification,WordPress.CodeAnalysis.AssignmentInCondition
 				$d      = $cd;
 				$copied = true;
+				$title  = $cd['title'];
 			} else {
 				// Starting fresh: the season and number carry on from the latest episode.
 				$all = PodPub_Episodes::all( $id );
@@ -535,14 +531,13 @@ class PodPub_Admin {
 				$d['episode'] = PodPub_Episodes::next_number( $id, $d['season'] );
 			}
 		}
-		$title = $post ? $post->post_title : '';
 		$in    = is_array( $notice ) && ! empty( $notice['input'] ) ? $notice['input'] : null;
 		$v     = function ( $k, $fallback ) use ( $in ) {
 			return null !== $in && isset( $in[ $k ] ) && is_scalar( $in[ $k ] ) ? (string) $in[ $k ] : (string) $fallback;
 		};
 		echo '<h2>' . ( $post ? 'Edit episode' : 'Add episode' ) . '</h2>';
 		if ( $copied ) {
-			echo '<p class="description">Started from the latest episode: season, people, funding, location, licence, payments, comments, keywords and the explicit flag are copied. The title, description, audio, date, chapters and the rest are empty.</p>';
+			echo '<p class="description">Started from the latest episode: the title, description, show notes, subtitle, summary, keywords, season, people, funding, location, licence, payments and comments are copied. Not copied: the guid (each episode gets its own), the date and time, the explicit choice, the audio and anything tied to the audio (chapters, transcripts, soundbites, alternate files, picture, time splits). Change the title and anything else that differs.</p>';
 		} elseif ( ! $post ) {
 			echo '<p class="description">Starting empty. The season and episode number carry on from the latest episode.</p>';
 		}
@@ -783,6 +778,11 @@ class PodPub_Admin {
 		echo '<tr><th scope="row"><label for="pp_on">Owner name</label></th><td><input type="text" id="pp_on" class="regular-text" ' . $f( 'owner_name', $d['owner_name'] ) . '><p class="description">A contact for podcast directories. Not shown to listeners. Also written as the managing editor of the feed (email and name).</p></td></tr>'; // phpcs:ignore WordPress.Security.EscapeOutput
 		echo '<tr><th scope="row"><label for="pp_oe">Owner email</label></th><td><input type="email" id="pp_oe" class="regular-text" ' . $f( 'owner_email', $d['owner_email'] ) . '></td></tr>'; // phpcs:ignore WordPress.Security.EscapeOutput
 		echo '<tr><th scope="row"><label for="pp_kw">Keywords</label></th><td><input type="text" id="pp_kw" class="regular-text" ' . $f( 'keywords', $d['keywords'] ) . '><p class="description">Optional, separated by commas.</p></td></tr>'; // phpcs:ignore WordPress.Security.EscapeOutput
+		echo '<tr><th scope="row">Download statistics</th><td><label><input type="checkbox" name="podpub[op3]" value="1"' . checked( ! empty( $d['op3'] ), true, false ) . '> Count downloads with OP3 (op3.dev)</label><p class="description">OP3 is a free, open download counter. When this is ticked the audio addresses in this podcast&rsquo;s feed start with <code>https://op3.dev/e/</code>, so a listener&rsquo;s app contacts OP3 first and is then sent on to your file. OP3 needs no account, hashes listeners&rsquo; IP addresses and does not store them. The addresses you enter for your episodes are not changed, so you can untick this at any time. It only counts audio that can be reached on the internet.';
+		if ( ! empty( $d['op3'] ) && '' !== $d['guid'] ) {
+			echo ' <a href="' . esc_url( 'https://op3.dev/show/' . $d['guid'] ) . '" target="_blank" rel="noopener">View this podcast&rsquo;s statistics</a> (they appear after a few days of downloads) &middot; <a href="https://op3.dev/setup" target="_blank" rel="noopener">Check my feed with OP3</a>';
+		}
+		echo '</p></td></tr>';
 		echo '<tr><th scope="row"><label for="pp_img">Show art</label></th><td>';
 		if ( '' !== $d['image'] && '' !== $base && '' !== $dir ) {
 			echo '<p><img src="' . esc_url( $base . '/' . $dir . '/' . $d['image'] ) . '" alt="" style="max-width:150px;height:auto"></p>';

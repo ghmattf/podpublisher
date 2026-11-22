@@ -47,6 +47,24 @@ class PodPub_FeedXml {
 	}
 
 	/**
+	 * The address of an audio file with the OP3 (op3.dev) download counter in front:
+	 * https://op3.dev/e/ then the address without its https:// (an http:// address
+	 * keeps it), and ",pg=<podcast guid>" after the e when the guid is known. An
+	 * address that already has the OP3 prefix, or is not http or https, is returned as it is.
+	 *
+	 * @param string $url  Audio address.
+	 * @param string $guid The podcast's podcast:guid.
+	 * @return string
+	 */
+	public static function op3_url( $url, $guid ) {
+		if ( ! preg_match( '#^https?://#i', $url ) || preg_match( '#^https://op3\.dev/e[,/]#i', $url ) ) {
+			return $url;
+		}
+		$param = preg_match( '/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i', $guid ) ? ',pg=' . strtolower( $guid ) : '';
+		return 'https://op3.dev/e' . $param . '/' . preg_replace( '#^https://#i', '', $url );
+	}
+
+	/**
 	 * Build the feed.
 	 *
 	 * @param array $p {
@@ -150,6 +168,9 @@ class PodPub_FeedXml {
 		PodPub_P20::write_channel( $w, $d );
 
 		foreach ( isset( $p['episodes'] ) ? $p['episodes'] : array() as $e ) {
+			if ( ! empty( $d['op3'] ) ) {
+				$e['audio_url'] = self::op3_url( $e['audio_url'], $d['guid'] );
+			}
 			self::write_item( $w, $e );
 		}
 

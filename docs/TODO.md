@@ -9,7 +9,6 @@ Wording is the owner's. Completed items are removed from this list (the history 
 9. Bug: selecting a category, I have to hold my mouse click and release on my selection. I should be able to click once to open the list and then a second time to make my selection. This should be carried across all drop-down lists for this plugin. (Owner, 2026-11-21.) (Investigated 2026-11-21: not reproduced; see docs/DECISIONS.md, open items. Waiting for the owner's browser and system.)
 10. Location tags: https://podcasting2.org/docs/podcast-namespace/tags/location (Done in 0.7.0: rel, geo, osm, country, several locations.)
 12. What happens if I import a feed that has tags the plugin does not handle? What happens when I re-save? (Answer needed before building Import podcast: unknown tags would be lost on the next save unless kept as raw XML.)
-14. Option to log downloads with op3.dev. It should be set at the podcast feed level. (Plan in docs/PLANS.md.)
 15. Use this feed as the reference for all tags and features to include: https://phafe.com/wp-content/uploads/rssfeed/v4v_music_spotlight/V4V_Music_Spotlight.xml (Listed in docs/DECISIONS.md, decision 38.)
 17. Need a way to search for a location (to fill in the name, coordinates, OpenStreetMap id and country). (Plan in docs/PLANS.md.)
 19. Make value time splits importable from a .txt file or from pasted XML.
