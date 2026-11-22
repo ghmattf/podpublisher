@@ -1,6 +1,6 @@
 # Decisions, assumptions and open items
 
-Status: v0.6.0. The plugin has its own admin menu (podcast list, New podcast, one sub-item per podcast, Settings). A podcast has its details form, show art and a feed file (chunk A) and episodes with audio upload (chunk B); Podcasting 2.0 tags beyond the basics, Import podcast, Podcast Index and Podping are not built.
+Status: v0.9.1. The plugin has its own admin menu (podcast list, New podcast, one sub-item per podcast, Settings). Built: podcast details, show art and feed file (chunk A); episodes with audio upload, external audio and picked files (chunk B, 0.6.0); Podcasting 2.0 tags (chunk C, 0.7.0); chapters, transcripts, soundbites, alternate files, comments, pictures, trailers, live items and OP3 counting (chunk D, 0.8.0 to 0.9.1). Not built: Import podcast, Podcast Index and Podping, raw XML editor, podcast delete, location search, tabs. See `docs/TODO.md`.
 
 ## Product decisions (stated by the owner)
 - **Podcasting 2.0 first** (owner, 2026-11-21): the target is Podcasting 2.0 apps and the podcast namespace. Apple Podcasts, Spotify and similar services are not Podcasting 2.0 compliant and are **secondary accommodations**: their extra requirements are supported only as warnings or optional fields, never as blockers, and never at the cost of a Podcasting 2.0 feature. Written into `AGENTS.md` as rule 9.
