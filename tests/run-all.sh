@@ -12,5 +12,14 @@ step "Version agrees in plugin header, PODPUB_VERSION and readme.txt" bash -c '
   r=$(sed -n "s/^Stable tag:[[:space:]]*//p" ../plugin/readme.txt | head -n1 | tr -d "[:space:]")
   echo "header=$h constant=$c readme=$r"
   [ -n "$h" ] && [ "$h" = "$c" ] && [ "$h" = "$r" ]'
+step "Admin menu structure (stubbed WordPress)" php test_admin_menu.php
+step "Folder names and podcast/episode folder layout" php test_storage.php
+step "Podcast details, show art, feed XML and save flow" php test_feed_details.php
+step "Episodes: audio, dates, folders, feed items, delete" php test_episodes.php
+step "Admin pages render (podcast page, episode list and form)" php test_admin_render.php
+step "Podcasting 2.0 tags: checking, feed XML, saving" php test_p20.php
+step "Chunk D: chapters, transcripts, soundbites, alternate files, comments, status" php test_chunk_d.php
+step "Chunk D part 2: pictures and sizes, explicit, trailers, live, numbers, people" php test_chunk_d2.php
+step "OP3 download counting" php test_op3.php
 echo; [ $fail -eq 0 ] && echo "ALL CHECKS PASSED" || echo "SOME CHECKS FAILED"
 exit $fail

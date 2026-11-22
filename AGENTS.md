@@ -3,7 +3,7 @@
 Read this first, then `docs/DECISIONS.md`. Together they are the full context a new agent needs.
 
 ## What this is
-A WordPress plugin to manage Podcasting 2.0 feeds and files. (Owner: refine this paragraph once the scope is decided, and record the scope in `docs/DECISIONS.md`.)
+A WordPress plugin to manage Podcasting 2.0 feeds and files. **Podcasting 2.0 comes first**: the target is Podcasting 2.0 apps and the podcast namespace. Apple Podcasts, Spotify and similar services are not Podcasting 2.0 compliant, so they are secondary accommodations (see rule 9). (Owner: refine this paragraph once the scope is decided, and record the scope in `docs/DECISIONS.md`.)
 
 ## Layout
 - `plugin/` the WordPress plugin (this folder is what gets zipped and installed). Main file `podpublisher.php`.
@@ -25,6 +25,7 @@ Plugin folder/slug and text domain `podpublisher`, main file `podpublisher.php`,
 6. Completed items are deleted from `docs/TODO.md` (not ticked off).
 7. **Every owner request goes into `docs/TODO.md` first, before any work on it starts** (one entry per item, in the owner's wording). Then work on it, and delete the entries when done (rule 6). Requests that are only questions need no entry.
 8. **Commit every new TODO item** as soon as it is added to `docs/TODO.md`. A commit triggers a **new test build zip** (the contents of `plugin/` inside a `podpublisher/` folder, built from the committed code, named with the version and "test") only if the commit changes plugin code (anything under `plugin/`); commits that change only docs, tests or the TODO get no zip. When a release has been triggered (the owner said "release"), do **not** make a test build zip: keep the usual reply with the release URL and the changes.
+9. **Podcasting 2.0 first; Apple Podcasts, Spotify and similar services are secondary accommodations** (owner, 2026-11-21). Design and name things for Podcasting 2.0 apps and the podcast namespace first. Where a requirement exists only for those other services (for example image types, size ranges, `itunes:` tags, categories), support it only if it costs nothing, and as a **warning or an optional field, never as a block** and never as a reason to drop or weaken a Podcasting 2.0 feature. When writing UI text, docs or warnings, say plainly that it is those services that need it.
 
 ## Verify before you say it works
 Run `tests/run-all.sh`. For now it lints every PHP file and checks that the plugin header, `PODPUB_VERSION` and `readme.txt` agree on the version. It does **not** run a real WordPress; say so when reporting.
