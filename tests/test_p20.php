@@ -110,28 +110,23 @@ $e = array(); PodPub_P20::license( array( 'license_name' => 'x', 'license_url' =
 check( 'license: bad address refused', count( $e ) === 1 );
 
 // ---- value ----
-$rec = function ( $o = array() ) use ( $NODE ) { return array_merge( array( 'name' => 'Host', 'type' => 'node', 'address' => $NODE, 'custom_key' => '', 'custom_value' => '', 'split' => '99', 'fee' => '' ), $o ); };
+$rec = function ( $o = array() ) { return array_merge( array( 'name' => 'Host', 'address' => 'host@example.com', 'split' => '99', 'fee' => '' ), $o ); };
 $e = array();
-$r = PodPub_P20::value( array( 'value_method' => 'keysend', 'value_suggested' => '0.00000015000', 'recipients' => array( $rec(), $rec( array( 'name' => 'Fee', 'split' => '1', 'fee' => '1', 'custom_key' => '696969', 'custom_value' => 'abc' ) ) ) ), $e );
-check( 'value: keysend with two recipients, fee flag and custom record kept', $e === array() && $r['method'] === 'keysend' && count( $r['recipients'] ) === 2 && $r['recipients'][1]['fee'] === true && $r['recipients'][0]['fee'] === false && $r['recipients'][1]['custom_key'] === '696969' );
-$e = array();
-$r = PodPub_P20::value( array( 'value_method' => 'lnaddress', 'recipients' => array( $rec( array( 'type' => 'lnaddress', 'address' => 'jo@example.com' ) ) ) ), $e );
-check( 'value: lightning address recipient ok', $e === array() && $r['recipients'][0]['address'] === 'jo@example.com' );
-$bad = function ( $o, $in = array() ) use ( $rec ) { $e = array(); PodPub_P20::value( array_merge( array( 'value_method' => 'keysend', 'recipients' => array( $rec( $o ) ) ), $in ), $e ); return count( $e ) === 1; };
-check( 'value: node address must be 66 hex characters', $bad( array( 'address' => 'abc123' ) ) && $bad( array( 'address' => str_repeat( 'z', 66 ) ) ) );
-check( 'value: lightning address must look like an address', $bad( array( 'type' => 'lnaddress', 'address' => 'not an address' ) ) );
-check( 'value: recipient type must be chosen', $bad( array( 'type' => '' ) ) );
+$r = PodPub_P20::value( array( 'value_suggested' => '0.00000015000', 'recipients' => array( $rec(), $rec( array( 'name' => 'Fee', 'address' => 'fee@example.org', 'split' => '1', 'fee' => '1' ) ) ) ), $e );
+check( 'value: two Lightning address recipients, fee flag kept, method is lnaddress', $e === array() && $r['method'] === 'lnaddress' && count( $r['recipients'] ) === 2 && $r['recipients'][1]['fee'] === true && $r['recipients'][0]['fee'] === false && $r['recipients'][0]['type'] === 'lnaddress' );
+$bad = function ( $o, $in = array() ) use ( $rec ) { $e = array(); PodPub_P20::value( array_merge( array( 'recipients' => array( $rec( $o ) ) ), $in ), $e ); return count( $e ) === 1; };
+check( 'value: address must look like name@example.com (a node key is refused)', $bad( array( 'address' => 'not an address' ) ) && $bad( array( 'address' => substr( '02' . str_repeat( 'ab', 33 ), 0, 66 ) ) ) && $bad( array( 'address' => '' ) ) );
 check( 'value: split must be above 0 and a number', $bad( array( 'split' => '0' ) ) && $bad( array( 'split' => 'x' ) ) && $bad( array( 'split' => '' ) ) );
-check( 'value: custom value needs a custom key; key must be a number', $bad( array( 'custom_value' => 'v' ) ) && $bad( array( 'custom_key' => 'k' ) ) );
 check( 'value: bad suggested amount', $bad( array(), array( 'value_suggested' => 'lots' ) ) );
-check( 'value: method must be chosen when there are recipients', $bad( array(), array( 'value_method' => '' ) ) && $bad( array(), array( 'value_method' => 'bitcoin' ) ) );
-$e = array(); $r = PodPub_P20::value( array( 'value_method' => 'keysend' ), $e );
-check( 'value: method with no recipients is simply no value block', $e === array() && $r['recipients'] === array() );
+$e = array(); $r = PodPub_P20::value( array(), $e );
+check( 'value: no recipients is simply no value block', $e === array() && $r['recipients'] === array() && $r['method'] === '' );
 $e = array(); PodPub_P20::value( array( 'value_suggested' => '0.1' ), $e );
 check( 'value: a suggested amount with no recipients is refused', count( $e ) === 1 );
+$e = array(); $r = PodPub_P20::value( array( 'value_method' => 'keysend', 'recipients' => array( array( 'name' => 'X', 'type' => 'node', 'custom_key' => '696969', 'address' => 'x@example.com', 'split' => '1' ) ) ), $e );
+check( 'value: old keysend fields in a form are ignored, nothing keysend is kept', $e === array() && $r['method'] === 'lnaddress' && $r['recipients'][0]['type'] === 'lnaddress' && ! isset( $r['recipients'][0]['custom_key'] ) );
 
 // ---- time splits ----
-$good_value = array( 'method' => 'keysend', 'suggested' => '', 'recipients' => array( $rec() ) );
+$good_value = array( 'method' => 'lnaddress', 'suggested' => '', 'recipients' => array( array( 'name' => 'Host', 'type' => 'lnaddress', 'address' => 'host@example.com', 'split' => '99', 'fee' => false ) ) );
 $ts = function ( $o = array() ) use ( $G1 ) { return array_merge( array( 'start' => '1:00', 'duration' => '237', 'remote_start' => '', 'remote_percent' => '', 'feed_guid' => $G1, 'item_guid' => '', 'feed_url' => '' ), $o ); };
 $e = array(); $r = PodPub_P20::timesplits( array( 'timesplits' => array( $ts( array( 'remote_start' => '0:01', 'remote_percent' => '95', 'item_guid' => 'ep-7' ) ), $ts( array( 'start' => '', 'duration' => '' , 'feed_guid' => '' ) ) ) ), $good_value, $e );
 check( 'timesplit: times parsed, percent kept, blank row dropped', $e === array() && count( $r ) === 1 && $r[0]['start'] === 60 && $r[0]['duration'] === 237 && $r[0]['remote_start'] === 1 && $r[0]['remote_percent'] === 95 && $r[0]['item_guid'] === 'ep-7' );
@@ -177,8 +172,8 @@ $in = array(
 	'locations' => array( array( 'name' => 'Melbourne', 'rel' => 'creator', 'geo' => '-37.8136,144.9631', 'osm' => 'R2316741', 'country' => 'AU' ), array( 'name' => 'Dreamworld', 'country' => 'AU' ) ),
 	'persons'  => array( array( 'name' => 'Jo', 'role' => 'host', 'group' => 'cast', 'img' => 'https://example.com/jo.jpg', 'href' => 'https://example.com/jo' ) ),
 	'license_name' => 'cc-by-4.0', 'license_url' => 'https://creativecommons.org/licenses/by/4.0/',
-	'value_method' => 'keysend', 'value_suggested' => '0.00000015000',
-	'recipients' => array( $rec( array( 'name' => 'Host', 'split' => '99' ) ), $rec( array( 'name' => 'Index', 'split' => '1', 'fee' => '1', 'custom_key' => '696969', 'custom_value' => 'xyz' ) ) ),
+	'value_suggested' => '0.00000015000',
+	'recipients' => array( $rec( array( 'name' => 'Host', 'split' => '99' ) ), $rec( array( 'name' => 'Index', 'address' => 'index@example.org', 'split' => '1', 'fee' => '1' ) ) ),
 	'block'    => array( array( 'id' => '', 'value' => 'no' ), array( 'id' => 'google', 'value' => 'yes' ) ),
 	'podroll'  => array( array( 'feed_guid' => $G1, 'feed_url' => 'https://example.com/feed.xml', 'title' => 'Friends' ) ),
 );
@@ -191,9 +186,9 @@ check( 'feed: location with rel, geo, osm and country', $x->evaluate( 'string(/r
 check( 'feed: second location, rel defaults to subject, no empty attributes', $x->evaluate( 'string(/rss/channel/podcast:location[2])' ) === 'Dreamworld' && $x->evaluate( 'string(/rss/channel/podcast:location[2]/@rel)' ) === 'subject' && $x->evaluate( 'count(/rss/channel/podcast:location[2]/@geo | /rss/channel/podcast:location[2]/@osm)' ) == 0 );
 check( 'feed: person', $x->evaluate( 'string(/rss/channel/podcast:person)' ) === 'Jo' && $x->evaluate( 'string(/rss/channel/podcast:person/@role)' ) === 'host' && $x->evaluate( 'string(/rss/channel/podcast:person/@group)' ) === 'cast' && $x->evaluate( 'string(/rss/channel/podcast:person/@img)' ) === 'https://example.com/jo.jpg' && $x->evaluate( 'string(/rss/channel/podcast:person/@href)' ) === 'https://example.com/jo' );
 check( 'feed: license', $x->evaluate( 'string(/rss/channel/podcast:license)' ) === 'cc-by-4.0' && $x->evaluate( 'string(/rss/channel/podcast:license/@url)' ) === 'https://creativecommons.org/licenses/by/4.0/' );
-check( 'feed: value block attributes', $x->evaluate( 'string(/rss/channel/podcast:value/@type)' ) === 'lightning' && $x->evaluate( 'string(/rss/channel/podcast:value/@method)' ) === 'keysend' && $x->evaluate( 'string(/rss/channel/podcast:value/@suggested)' ) === '0.00000015000' );
-check( 'feed: recipients', n( $x->evaluate( 'count(/rss/channel/podcast:value/podcast:valueRecipient)' ) ) === 2.0 && $x->evaluate( 'string(/rss/channel/podcast:value/podcast:valueRecipient[1]/@address)' ) === $NODE && $x->evaluate( 'string(/rss/channel/podcast:value/podcast:valueRecipient[1]/@split)' ) === '99' );
-check( 'feed: fee and custom record only where set', $x->evaluate( 'string(/rss/channel/podcast:value/podcast:valueRecipient[2]/@fee)' ) === 'true' && $x->evaluate( 'string(/rss/channel/podcast:value/podcast:valueRecipient[2]/@customKey)' ) === '696969' && $x->evaluate( 'string(/rss/channel/podcast:value/podcast:valueRecipient[2]/@customValue)' ) === 'xyz' && ! $x->evaluate( 'boolean(/rss/channel/podcast:value/podcast:valueRecipient[1]/@fee)' ) && ! $x->evaluate( 'boolean(/rss/channel/podcast:value/podcast:valueRecipient[1]/@customKey)' ) );
+check( 'feed: value block attributes', $x->evaluate( 'string(/rss/channel/podcast:value/@type)' ) === 'lightning' && $x->evaluate( 'string(/rss/channel/podcast:value/@method)' ) === 'lnaddress' && $x->evaluate( 'string(/rss/channel/podcast:value/@suggested)' ) === '0.00000015000' );
+check( 'feed: recipients', n( $x->evaluate( 'count(/rss/channel/podcast:value/podcast:valueRecipient)' ) ) === 2.0 && $x->evaluate( 'string(/rss/channel/podcast:value/podcast:valueRecipient[1]/@address)' ) === 'host@example.com' && $x->evaluate( 'string(/rss/channel/podcast:value/podcast:valueRecipient[1]/@type)' ) === 'lnaddress' && $x->evaluate( 'string(/rss/channel/podcast:value/podcast:valueRecipient[1]/@split)' ) === '99' );
+check( 'feed: fee only where set, no keysend custom record attributes', $x->evaluate( 'string(/rss/channel/podcast:value/podcast:valueRecipient[2]/@fee)' ) === 'true' && ! $x->evaluate( 'boolean(/rss/channel/podcast:value/podcast:valueRecipient[1]/@fee)' ) && n( $x->evaluate( 'count(//@customKey | //@customValue)' ) ) === 0.0 );
 check( 'feed: block, with and without a service id', $x->evaluate( 'string(/rss/channel/podcast:block[1])' ) === 'no' && ! $x->evaluate( 'boolean(/rss/channel/podcast:block[1]/@id)' ) && $x->evaluate( 'string(/rss/channel/podcast:block[2]/@id)' ) === 'google' && $x->evaluate( 'string(/rss/channel/podcast:block[2])' ) === 'yes' );
 check( 'feed: podroll', $x->evaluate( 'string(/rss/channel/podcast:podroll/podcast:remoteItem/@feedGuid)' ) === $G1 && $x->evaluate( 'string(/rss/channel/podcast:podroll/podcast:remoteItem/@feedUrl)' ) === 'https://example.com/feed.xml' && $x->evaluate( 'string(/rss/channel/podcast:podroll/podcast:remoteItem/@title)' ) === 'Friends' );
 
@@ -204,6 +199,12 @@ $r = PodPub_Feeds::save_p20( 5, array() );
 $x = feed_dom( "$pf/$pdir.xml" );
 check( 'podcast: clearing the form removes every tag from the feed', $r['errors'] === array() && n( $x->evaluate( 'count(/rss/channel/podcast:funding | /rss/channel/podcast:location | /rss/channel/podcast:person | /rss/channel/podcast:license | /rss/channel/podcast:value | /rss/channel/podcast:block | /rss/channel/podcast:podroll)' ) ) === 0.0 );
 check( 'podcast: the guid and medium are still there', $x->evaluate( 'string(/rss/channel/podcast:medium)' ) === 'podcast' && $x->evaluate( 'string-length(/rss/channel/podcast:guid)' ) > 30 );
+$legacy = PodPub_Details::get( 5 );
+$legacy['value'] = array( 'method' => 'keysend', 'suggested' => '', 'recipients' => array( array( 'name' => 'Old', 'type' => 'node', 'address' => str_repeat( 'a', 66 ), 'custom_key' => '1', 'custom_value' => 'v', 'split' => '100', 'fee' => false ) ) );
+PodPub_Details::save( 5, $legacy );
+PodPub_FeedXml::write( 5 );
+$x = feed_dom( "$pf/$pdir.xml" );
+check( 'podcast: a keysend value block saved by 0.7.0 is left out of the feed', n( $x->evaluate( 'count(/rss/channel/podcast:value)' ) ) === 0.0 );
 check( 'podcast: unknown podcast refused', count( PodPub_Feeds::save_p20( 99, $in )['errors'] ) === 1 );
 
 // ---- saving for an episode ----

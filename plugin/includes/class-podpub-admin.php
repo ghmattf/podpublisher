@@ -305,20 +305,16 @@ class PodPub_Admin {
 		$in_text( 'license_url', 'Address of the license', $d['license']['url'], 'https://creativecommons.org/licenses/by/4.0/' );
 		echo '</table>';
 
-		echo '<h3>Payments (value)</h3><p class="description">Listeners\' apps can send payments to the recipients while they listen. Splits are shares, in proportion to each other (they do not have to add up to 100). Tick Fee for a recipient that takes a fee off the top. A Lightning node address is the 66-character public key; a Lightning address looks like name@example.com.' . esc_html( $inherit ) . ' Check the addresses carefully: a wrong address sends money to the wrong place.</p>';
-		echo '<table class="form-table" role="presentation"><tr><th scope="row"><label>Method</label></th><td><select name="' . esc_attr( $prefix . '[value_method]' ) . '">';
-		foreach ( array( '' => 'None', 'keysend' => 'Keysend (to Lightning nodes)', 'lnaddress' => 'Lightning address' ) as $k => $label ) {
-			echo '<option value="' . esc_attr( $k ) . '"' . selected( $v( 'value_method', $d['value']['method'] ), $k, false ) . '>' . esc_html( $label ) . '</option>';
-		}
-		echo '</select></td></tr>';
+		$lnrows = array_values( array_filter( $d['value']['recipients'], function ( $r ) {
+			return isset( $r['type'] ) && 'lnaddress' === $r['type'];
+		} ) );
+		echo '<h3>Payments (value)</h3><p class="description">Listeners\' apps can send payments to the recipients while they listen. Each recipient is a Lightning address, which looks like name@example.com. Splits are shares, in proportion to each other (they do not have to add up to 100). Tick Fee for a recipient that takes a fee off the top.' . esc_html( $inherit ) . ' Check the addresses carefully: a wrong address sends money to the wrong place.</p>';
+		echo '<table class="form-table" role="presentation">';
 		$in_text( 'value_suggested', 'Suggested amount', $d['value']['suggested'], '0.00000015000', 'regular-text code' );
 		echo '</table>';
-		self::render_rows( $prefix . '[recipients]', $rows( 'recipients', $d['value']['recipients'] ), array(
+		self::render_rows( $prefix . '[recipients]', $rows( 'recipients', $lnrows ), array(
 			array( 'key' => 'name', 'label' => 'Name', 'type' => 'text', 'class' => 'regular-text' ),
-			array( 'key' => 'type', 'label' => 'Type', 'type' => 'select', 'options' => array( '' => '', 'node' => 'Node', 'lnaddress' => 'Lightning address' ) ),
-			array( 'key' => 'address', 'label' => 'Address', 'type' => 'text', 'class' => 'large-text code' ),
-			array( 'key' => 'custom_key', 'label' => 'Custom key', 'type' => 'text', 'class' => 'small-text' ),
-			array( 'key' => 'custom_value', 'label' => 'Custom value', 'type' => 'text', 'class' => 'small-text' ),
+			array( 'key' => 'address', 'label' => 'Lightning address', 'type' => 'text', 'ph' => 'name@example.com', 'class' => 'regular-text code' ),
 			array( 'key' => 'split', 'label' => 'Split', 'type' => 'text', 'class' => 'small-text' ),
 			array( 'key' => 'fee', 'label' => 'Fee', 'type' => 'check' ),
 		), PodPub_P20::MAX_RECIPIENTS );

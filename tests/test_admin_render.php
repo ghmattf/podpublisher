@@ -125,7 +125,7 @@ unset( $_GET['episode'] );
 PodPub_Feeds::save_p20( 5, array(
 	'funding' => array( array( 'url' => 'https://example.com/donate', 'message' => 'Fund "us"' ) ),
 	'locations' => array( array( 'name' => 'Melbourne', 'rel' => 'creator' ) ), 'persons' => array( array( 'name' => 'Jo', 'role' => 'host' ) ),
-	'value_method' => 'keysend', 'recipients' => array( array( 'name' => 'Me', 'type' => 'node', 'address' => str_repeat( 'a', 66 ), 'split' => '100', 'fee' => '1' ) ),
+	'recipients' => array( array( 'name' => 'Me', 'address' => 'me@example.com', 'split' => '100', 'fee' => '1' ) ),
 	'block' => array( array( 'id' => 'google', 'value' => 'yes' ) ), 'podroll' => array( array( 'feed_guid' => '917393e3-1b1e-5cef-ace4-edaa54e1f810' ) ),
 ) );
 $h = page( 5 );
@@ -134,13 +134,13 @@ check( 'p20 form: every podcast-level section', false !== strpos( $h, '<h3>Fundi
 check( 'p20 form: podcast page has no time splits', false === strpos( $h, 'Value time splits' ) );
 check( 'p20 form: saved values shown, quote escaped', false !== strpos( $h, 'name="podpub_p20[funding][0][url]" value="https://example.com/donate"' ) && false !== strpos( $h, 'value="Fund &quot;us&quot;"' ) && false !== strpos( $h, 'name="podpub_p20[locations][0][name]" value="Melbourne"' ) );
 check( 'p20 form: three spare empty rows after the saved one', false !== strpos( $h, 'name="podpub_p20[funding][3][url]"' ) && false === strpos( $h, 'name="podpub_p20[funding][4][url]"' ) );
-check( 'p20 form: recipient with type chosen and fee ticked', false !== strpos( $h, 'name="podpub_p20[recipients][0][fee]" value="1" checked' ) && false !== strpos( $h, '<option value="node" selected>' ) && false !== strpos( $h, '<option value="keysend" selected>' ) );
+check( 'p20 form: Lightning address recipient with fee ticked, and no keysend, node or custom record fields', false !== strpos( $h, 'name="podpub_p20[recipients][0][fee]" value="1" checked' ) && false !== strpos( $h, 'name="podpub_p20[recipients][0][address]" value="me@example.com"' ) && false === stripos( $h, 'keysend' ) && false === strpos( $h, 'value_method' ) && false === strpos( $h, '[custom_key]' ) && false === strpos( $h, '<option value="node"' ) );
 check( 'p20 form: block and podroll rows', false !== strpos( $h, 'name="podpub_p20[block][0][id]" value="google"' ) && false !== strpos( $h, 'name="podpub_p20[podroll][0][feed_guid]" value="917393e3-1b1e-5cef-ace4-edaa54e1f810"' ) );
 
 $_GET['episode'] = (string) $eid;
 $h = page( 5 );
 check( 'p20 on the episode form: same sections plus time splits, no block or podroll', false !== strpos( $h, '<h3>Funding</h3>' ) && false !== strpos( $h, '<h3>People</h3>' ) && false !== strpos( $h, 'Value time splits' ) && false !== strpos( $h, 'name="podpub_ep[timesplits][0][feed_guid]"' ) && false === strpos( $h, '<h3>Block</h3>' ) && false === strpos( $h, '<h3>Podroll</h3>' ) );
-check( 'p20 on the episode form: is part of the episode form, using its own field names', false !== strpos( $h, 'name="podpub_ep[funding][0][url]"' ) && false !== strpos( $h, 'name="podpub_ep[value_method]"' ) && false !== strpos( $h, 'Leave this empty to use the podcast' ) );
+check( 'p20 on the episode form: is part of the episode form, using its own field names', false !== strpos( $h, 'name="podpub_ep[funding][0][url]"' ) && false !== strpos( $h, 'name="podpub_ep[value_suggested]"' ) && false !== strpos( $h, 'Leave this empty to use the podcast' ) );
 
 // After an error the Podcasting 2.0 form is refilled with what was typed.
 unset( $_GET['episode'] );

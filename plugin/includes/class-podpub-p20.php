@@ -220,21 +220,17 @@ class PodPub_P20 {
 	}
 
 	/**
-	 * The value block: payment method, suggested amount and who gets paid.
+	 * The value block: suggested amount and who gets paid. Recipients are Lightning
+	 * addresses (name@example.com); the feed always says method="lnaddress".
 	 */
 	public static function value( $in, &$errors ) {
 		$empty     = array( 'method' => '', 'suggested' => '', 'recipients' => array() );
-		$method    = self::scalar( $in, 'value_method' );
 		$suggested = self::scalar( $in, 'value_suggested' );
-		$rows      = self::rows( $in, 'recipients', array( 'name', 'type', 'address', 'custom_key', 'custom_value', 'split', 'fee' ), self::MAX_RECIPIENTS, $errors, 'payment recipients' );
+		$rows      = self::rows( $in, 'recipients', array( 'name', 'address', 'split', 'fee' ), self::MAX_RECIPIENTS, $errors, 'payment recipients' );
 		if ( ! $rows ) {
 			if ( '' !== $suggested ) {
 				$errors[] = 'Payments: add at least one recipient, or clear the suggested amount.';
 			}
-			return $empty;
-		}
-		if ( ! in_array( $method, array( 'keysend', 'lnaddress' ), true ) ) {
-			$errors[] = 'Payments: choose the payment method.';
 			return $empty;
 		}
 		if ( '' !== $suggested && ! preg_match( '/^\d{1,3}(?:\.\d{1,12})?$/', $suggested ) ) {
@@ -244,26 +240,17 @@ class PodPub_P20 {
 		$out = array();
 		foreach ( $rows as $n => $r ) {
 			$p = 'Recipient ' . $n . ': ';
-			if ( ! in_array( $r['type'], array( 'node', 'lnaddress' ), true ) ) {
-				$errors[] = $p . 'choose the type.';
-			} elseif ( 'node' === $r['type'] && ! preg_match( '/^[0-9a-fA-F]{66}$/', $r['address'] ) ) {
-				$errors[] = $p . 'a node address is the 66-character public key of the Lightning node.';
-			} elseif ( 'lnaddress' === $r['type'] && ( strlen( $r['address'] ) > 200 || ! preg_match( '/^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/', $r['address'] ) ) ) {
+			if ( strlen( $r['address'] ) > 200 || ! preg_match( '/^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/', $r['address'] ) ) {
 				$errors[] = $p . 'a Lightning address looks like name@example.com.';
 			} elseif ( mb_strlen( $r['name'] ) > 128 ) {
 				$errors[] = $p . 'the name is too long (up to 128 characters).';
-			} elseif ( '' !== $r['custom_key'] && ! preg_match( '/^\d{1,20}$/', $r['custom_key'] ) ) {
-				$errors[] = $p . 'the custom key must be a number.';
-			} elseif ( '' !== $r['custom_value'] && ( '' === $r['custom_key'] || mb_strlen( $r['custom_value'] ) > 200 ) ) {
-				$errors[] = $p . 'a custom value needs a custom key, and is up to 200 characters.';
 			} elseif ( ! preg_match( '/^\d{1,7}(?:\.\d{1,6})?$/', $r['split'] ) || (float) $r['split'] <= 0 ) {
 				$errors[] = $p . 'the split must be a number above 0.';
 			} else {
-				$r['fee'] = '' !== $r['fee'];
-				$out[]    = $r;
+				$out[] = array( 'name' => $r['name'], 'type' => 'lnaddress', 'address' => $r['address'], 'split' => $r['split'], 'fee' => '' !== $r['fee'] );
 			}
 		}
-		return array( 'method' => $method, 'suggested' => $suggested, 'recipients' => $out );
+		return array( 'method' => 'lnaddress', 'suggested' => $suggested, 'recipients' => $out );
 	}
 
 	/**
@@ -588,27 +575,29 @@ class PodPub_P20 {
 	}
 
 	private static function write_value( $w, $v, $splits ) {
-		if ( empty( $v['recipients'] ) ) {
+		// Only Lightning-address recipients are written (an older keysend recipient is left out).
+		$recipients = array_values( array_filter( $v['recipients'], function ( $r ) {
+			return isset( $r['type'] ) && 'lnaddress' === $r['type'];
+		} ) );
+		if ( ! $recipients ) {
 			return;
 		}
 		$w->startElement( 'podcast:value' );
 		$w->writeAttribute( 'type', 'lightning' );
-		$w->writeAttribute( 'method', $v['method'] );
+		$w->writeAttribute( 'method', 'lnaddress' );
 		if ( '' !== $v['suggested'] ) {
 			$w->writeAttribute( 'suggested', $v['suggested'] );
 		}
-		foreach ( $v['recipients'] as $r ) {
+		foreach ( $recipients as $r ) {
 			self::el(
 				$w,
 				'podcast:valueRecipient',
 				array(
-					'name'        => $r['name'],
-					'type'        => $r['type'],
-					'address'     => $r['address'],
-					'customKey'   => $r['custom_key'],
-					'customValue' => $r['custom_value'],
-					'split'       => $r['split'],
-					'fee'         => ! empty( $r['fee'] ) ? 'true' : '',
+					'name'    => $r['name'],
+					'type'    => 'lnaddress',
+					'address' => $r['address'],
+					'split'   => $r['split'],
+					'fee'     => ! empty( $r['fee'] ) ? 'true' : '',
 				)
 			);
 		}

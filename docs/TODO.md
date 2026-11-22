@@ -12,3 +12,7 @@ Wording is the owner's. Completed items are removed from this list (the history 
 12. What happens if I import a feed that has tags the plugin does not handle? What happens when I re-save? (Answer needed before building Import podcast: unknown tags would be lost on the next save unless kept as raw XML.)
 14. Option to log downloads with op3.dev.
 15. Use this feed as the reference for all tags and features to include: https://phafe.com/wp-content/uploads/rssfeed/v4v_music_spotlight/V4V_Music_Spotlight.xml (Listed in docs/DECISIONS.md, decision 38.)
+16. People "Role" and "Group" should be drop-down lists based on the spec's values (the Podcast namespace people taxonomy).
+17. Need a way to search for a location (to fill in the name, coordinates, OpenStreetMap id and country).
+18. Episode numbers should be automatic.
+19. Make value time splits importable from a .txt file or from pasted XML.

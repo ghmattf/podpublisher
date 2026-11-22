@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       PodPublisher
  * Description:       Manage Podcasting 2.0 feeds and files. Use the [podpublisher] shortcode.
- * Version:           0.8.0
+ * Version:           0.8.1
  * Requires at least: 5.8
  * Requires PHP:      7.4
  * Author:            Phafe
@@ -16,7 +16,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'PODPUB_VERSION', '0.8.0' );
+define( 'PODPUB_VERSION', '0.8.1' );
 define( 'PODPUB_FILE', __FILE__ );
 define( 'PODPUB_DIR', plugin_dir_path( __FILE__ ) );
 define( 'PODPUB_URL', plugin_dir_url( __FILE__ ) );
