@@ -25,26 +25,31 @@ Plans for work that is not built yet. Nothing here is a decision until the owner
 
 **Answers from the owner (2026-11-22).** The plugin and its code are public but not planned for the WordPress plugin store, so shipping with the public Nominatim as the default is acceptable. Nominatim is the chosen service. Names: place, region and country, editable (default, not yet confirmed).
 
-## TODO 22: publish a WordPress post for each episode (and podcast)
+## TODO 22: WordPress posts for episodes and a page for the podcast
 
-**Owner's answers (2026-11-23).**
-- It is an **ordinary WordPress post** (not a custom post type).
-- The show notes go **in both places**: in the post, and in the feed (the post's link is also given to the feed; the notes stay in the feed).
-- **Editing an episode with the plugin updates the post**, overwriting what the post had, with a **warning** and an **option not to update the post**.
-- A post is created **only when an episode is saved**, controlled by a **"Create/update WordPress post" yes/no** prompt on the episode form.
+**Owner's answers (2026-11-23, two rounds).**
+- Each episode can have an **ordinary WordPress post**. The show notes go **in both places**: in the post, and in the feed (the feed item also links to the post).
+- **When the prompt appears:** only when the episode is being **published** (not a draft) and the owner clicks Save. The prompt is "Create/update WordPress post" yes/no. It is not shown for drafts.
+- **When the post is made:** only **after the episode has been saved and published successfully**. An episode with errors that stop it publishing creates or edits no post.
+- **Existing post:** the prompt itself carries the warning that saving with "yes" overwrites the post's previous title and content, and offers "no" to leave the post alone.
+- **Podcast page:** the podcast editing screen has an option to create a **page** (not a post) for the podcast. The page lists all the podcast's episodes. The same screen has: an option to **turn off creating a post for each episode**, a list of **WordPress authors** to attribute the posts to, and **categories** for the posts.
+- **Deleting an episode** asks whether to delete the matching post as well (belongs with TODO 21, delete episodes and podcasts).
 
-**How it would work (my reading).**
-1. Episode form: a "Create/update WordPress post" yes/no select. The first "yes" on save creates the post; the post's id is stored with the episode (`_podpub_ep`), so later saves update the same post instead of making another.
-2. Post: title = episode title; content = show notes (the same cleaned links-and-simple-formatting HTML); status follows the episode (draft or published; the publish date follows the episode date). Author = the person saving.
-3. Feed: the item's `<link>` is the post's address, once a post exists. Show notes stay in `content:encoded` and the description as now.
-4. When the episode already has a post, the form warns in plain words that saving with "yes" will overwrite the post's title and content with the plugin's, discarding edits made in WordPress, and the select can be set to "no" to leave the post alone. Default for an episode that already has a post: **no**, so nobody overwrites by accident (my default, to confirm).
-5. If the post is deleted or trashed in WordPress, saving with "yes" makes a new one. Deleting the episode does not delete the post (my default; relates to TODO 21).
-6. Needs the `publish_posts` rights of the person saving; if they lack them, the select is hidden or the save says why it did not make the post.
+**How it would work (my reading; to be confirmed when built).**
+1. Episode form: Save with the status set to published asks "Create/update WordPress post?" (yes/no). With a draft status, no prompt and no post. If the podcast has posts turned off, no prompt.
+2. Order on save: check and save the episode, write the feed; only if that succeeds and the episode is published, and the answer is yes, create or update the post. Any error: nothing is done to the post.
+3. Post: title = episode title; content = the show notes (the same cleaned HTML); published with the episode date; author and categories from the podcast's settings; the episode picture as the featured image if there is one. The post's id is stored with the episode so later saves update the same post.
+4. Feed: the item's `<link>` is the post's address once there is a post; the show notes stay in the feed.
+5. Existing post: the prompt text says the post's title and content will be overwritten by the plugin's version and any edits made in WordPress will be lost. Default answer when a post already exists: **no** (my default, to confirm).
+6. Podcast page: a yes/no "Create a page for this podcast" on the podcast screen. The page's content lists the episodes (title linked to its post if it has one, date), newest first, and is kept up to date when episodes are published. Stored page id with the podcast; if the page is deleted in WordPress, saving with "yes" makes a new one.
+7. Podcast screen settings: "Create a WordPress post for each episode" (on or off), "Author for the posts" (a drop-down of WordPress users who can publish posts), "Categories" (tick list of WordPress categories). These are the defaults used in step 3.
+8. Delete episode (with TODO 21): the confirmation asks "Also delete the WordPress post?" (yes/no).
+9. Needs the rights to publish posts and pages for the person saving; if they lack them, the plugin says why no post or page was made.
 
-**Tests.** First save with yes creates one post; second save with yes updates the same post; no leaves it alone; feed link is the post address; post gone, new one made; status and date follow the episode; show notes in both places.
+**Tests.** Draft save: no post, no prompt. Published save with yes: one post, correct title, notes, date, author, categories; second save with yes updates the same post; no leaves it alone. An episode with an error creates or changes no post. Feed link is the post address. Posts turned off: no prompt. Podcast page lists the episodes and updates. Deleting with and without the post.
 
 **Not yet answered (defaults in brackets).**
-- Does "each new podcast" also mean a post for the podcast itself? The owner's answers only describe episodes. (Default: episodes only.)
-- Existing episodes: should there be a way to create posts for episodes saved before this? (Default: no bulk action; saving an existing episode with "yes" creates its post.)
-- Should the post's category, featured image (episode picture) or an audio player be included? (Default: episode picture as the featured image if there is one; no player, no category; WordPress's own settings decide.)
-
+- What does the podcast page show besides the episode list (the podcast description, show art, subscribe links)? (Default: the description and the show art above the list.)
+- Existing episodes saved before this feature: no bulk action; saving with "yes" creates the post. (Default.)
+- No audio player in the post; the episode picture is the featured image. (Default.)
+- Is the episode list on the page a plain list or does it include each episode's show notes? (Default: title, date and description only.)
