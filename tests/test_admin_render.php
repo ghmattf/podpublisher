@@ -36,7 +36,7 @@ function esc_textarea( $s ) { return htmlspecialchars( (string) $s, ENT_QUOTES )
 function esc_url( $s ) { return htmlspecialchars( (string) $s, ENT_QUOTES ); }
 function esc_html__( $s ) { return $s; }
 function admin_url( $p = '' ) { return 'https://example.com/wp-admin/' . $p; }
-function add_query_arg( $a, $u ) { return $u . ( false === strpos( $u, '?' ) ? '?' : '&' ) . http_build_query( $a ); }
+function add_query_arg( $a, $u, $v = null ) { if ( ! is_array( $a ) ) { $a = array( $a => $u ); $u = $v; } return $u . ( false === strpos( $u, '?' ) ? '?' : '&' ) . http_build_query( $a ); }
 function wp_nonce_field() { echo '<input type="hidden" name="_wpnonce" value="n">'; }
 function submit_button( $t = 'Save', $type = 'primary', $name = 'submit', $wrap = true ) { echo '<button class="' . $type . '">' . esc_html( $t ) . '</button>'; }
 function selected( $a, $b, $e = true ) { return (string) $a === (string) $b ? ' selected' : ''; }
@@ -47,6 +47,7 @@ function get_transient( $k ) { return isset( $GLOBALS['trans'][ $k ] ) ? $GLOBAL
 function set_transient( $k, $v ) { $GLOBALS['trans'][ $k ] = $v; }
 function delete_transient( $k ) { unset( $GLOBALS['trans'][ $k ] ); }
 function wp_unslash( $v ) { return $v; }
+function wp_json_encode( $v ) { return json_encode( $v ); }
 function add_action() {}
 class WP_Error { public $m; function __construct( $c, $m ) { $this->m = $m; } function get_error_message() { return $this->m; } }
 function is_wp_error( $x ) { return $x instanceof WP_Error; }
@@ -66,6 +67,7 @@ check( 'podcast page: details form, upload enabled, nonce and action', false !==
 check( 'podcast page: GIF offered for show art', false !== strpos( $h, 'image/gif' ) );
 check( 'podcast page: feed address shown', false !== strpos( $h, "https://example.com/wp-content/uploads/podpublisher/$pdir/$pdir.xml" ) && false !== strpos( $h, 'not written yet' ) );
 check( 'podcast page: episodes section with Add episode', false !== strpos( $h, '<h2>Episodes' ) && false !== strpos( $h, 'episode=new' ) && false !== strpos( $h, 'No episodes yet' ) );
+check( 'podcast page: delete podcast form, files box not ticked by default, confirmation text', false !== strpos( $h, 'value="podpub_delete_podcast"' ) && false !== strpos( $h, 'name="podpub_delete_files" value="1">' ) && false === strpos( $h, 'podpub_delete_files" value="1" checked' ) && false !== strpos( $h, 'onsubmit="return confirm(' ) && false !== strpos( $h, 'This cannot be undone' ) );
 
 PodPub_Feeds::save_details( 5, array( 'title' => 'My Show', 'description' => 'About', 'language' => 'en', 'explicit' => 'no' ) );
 $_GET['episode'] = 'new';
@@ -170,6 +172,17 @@ unset( $_GET['copy'], $_GET['episode'] );
 
 $h = page( 77 );
 check( 'unknown podcast says not found', false !== strpos( $h, 'Podcast not found' ) );
+
+
+// List page after a podcast was deleted: says what happened, once.
+$GLOBALS['trans']['podpub_notice_1'] = array( 'errors' => array(), 'warnings' => array( 'Some files could not be deleted.' ), 'episodes' => 3, 'files_deleted' => false, 'folder' => '/x/My_Show', 'deleted_podcast' => true );
+ob_start(); PodPub_Admin::render_list(); $h = ob_get_clean();
+check( 'list page: delete notice (files left, feed keeps working) and warning', false !== strpos( $h, 'Podcast deleted (3 episodes removed)' ) && false !== strpos( $h, 'files were left on the server in /x/My_Show' ) && false !== strpos( $h, 'Some files could not be deleted.' ) );
+ob_start(); PodPub_Admin::render_list(); $h = ob_get_clean();
+check( 'list page: delete notice is shown only once', false === strpos( $h, 'Podcast deleted' ) );
+$GLOBALS['trans']['podpub_notice_1'] = array( 'errors' => array(), 'warnings' => array(), 'episodes' => 1, 'files_deleted' => true, 'folder' => '/x/My_Show', 'deleted_podcast' => true );
+ob_start(); PodPub_Admin::render_list(); $h = ob_get_clean();
+check( 'list page: delete notice (files deleted, one episode)', false !== strpos( $h, 'Podcast deleted (1 episode removed)' ) && false !== strpos( $h, 'folder and files were deleted too' ) );
 
 $it = new RecursiveIteratorIterator( new RecursiveDirectoryIterator( $tmp, FilesystemIterator::SKIP_DOTS ), RecursiveIteratorIterator::CHILD_FIRST );
 foreach ( $it as $f ) { $f->isDir() ? rmdir( $f ) : unlink( $f ); }

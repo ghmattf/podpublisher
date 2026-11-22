@@ -25,6 +25,7 @@ class PodPub_Admin {
 		add_action( 'admin_post_podpub_save_episode', array( __CLASS__, 'handle_save_episode' ) );
 		add_action( 'admin_post_podpub_save_p20', array( __CLASS__, 'handle_save_p20' ) );
 		add_action( 'admin_post_podpub_delete_episode', array( __CLASS__, 'handle_delete_episode' ) );
+		add_action( 'admin_post_podpub_delete_podcast', array( __CLASS__, 'handle_delete_podcast' ) );
 	}
 
 	/**
@@ -201,6 +202,23 @@ class PodPub_Admin {
 		$result = PodPub_Episodes::delete( $pid, $eid );
 		set_transient( 'podpub_notice_' . get_current_user_id(), $result, 120 );
 		wp_safe_redirect( self::feed_page_url( $pid ) );
+		exit;
+	}
+
+	/**
+	 * Podcast delete handler. The folder is only deleted when the box was ticked.
+	 */
+	public static function handle_delete_podcast() {
+		if ( ! current_user_can( self::CAP ) ) {
+			wp_die( esc_html__( 'You do not have permission to do that.', 'podpublisher' ), 403 );
+		}
+		check_admin_referer( 'podpub_delete_podcast' );
+		$pid    = isset( $_POST['podpub_id'] ) ? (int) $_POST['podpub_id'] : 0;
+		$files  = ! empty( $_POST['podpub_delete_files'] );
+		$result = PodPub_Feeds::delete( $pid, $files );
+		$result['deleted_podcast'] = ! $result['errors'];
+		set_transient( 'podpub_notice_' . get_current_user_id(), $result, 120 );
+		wp_safe_redirect( $result['errors'] ? self::feed_page_url( $pid ) : self::list_url() );
 		exit;
 	}
 
@@ -648,6 +666,7 @@ class PodPub_Admin {
 		echo ' <a href="' . esc_url( self::list_url( array( 'action' => 'new' ) ) ) . '" class="page-title-action">New podcast</a>';
 		echo ' <a href="' . esc_url( self::list_url( array( 'action' => 'import' ) ) ) . '" class="page-title-action">Import podcast</a>';
 		echo '<hr class="wp-header-end">';
+		self::render_delete_notice();
 
 		if ( 'new' === $action ) {
 			self::render_new();
@@ -657,6 +676,50 @@ class PodPub_Admin {
 			self::render_table();
 		}
 		echo '</div>';
+	}
+
+	/**
+	 * After a podcast was deleted: say what happened (shown on the list page).
+	 */
+	private static function render_delete_notice() {
+		$key    = 'podpub_notice_' . get_current_user_id();
+		$notice = get_transient( $key );
+		if ( ! is_array( $notice ) || empty( $notice['deleted_podcast'] ) ) {
+			return;
+		}
+		delete_transient( $key );
+		$n    = (int) $notice['episodes'];
+		$text = 'Podcast deleted (' . $n . ( 1 === $n ? ' episode' : ' episodes' ) . ' removed). ';
+		$text .= ! empty( $notice['files_deleted'] )
+			? 'Its folder and files were deleted too.'
+			: 'Its files were left on the server' . ( '' !== $notice['folder'] ? ' in ' . $notice['folder'] : '' ) . ', so the feed address still works.';
+		echo '<div class="notice notice-success"><p>' . esc_html( $text ) . '</p></div>';
+		foreach ( $notice['warnings'] as $m ) {
+			echo '<div class="notice notice-warning"><p>' . esc_html( $m ) . '</p></div>';
+		}
+	}
+
+	/**
+	 * "Delete podcast" section at the bottom of a podcast's page.
+	 *
+	 * @param int     $id   Podcast record id.
+	 * @param WP_Post $feed Podcast record.
+	 */
+	private static function render_delete_podcast( $id, $feed ) {
+		$n   = count( PodPub_Episodes::all( $id ) );
+		$dir = PodPub_Feeds::dir_name( $id );
+		$msg = 'Delete this podcast and its ' . $n . ( 1 === $n ? ' episode' : ' episodes' ) . ' from PodPublisher? This cannot be undone. If you ticked the box to delete the files, the feed, show art and audio files are deleted from the server too, and apps or directories that use this feed will stop working.';
+		echo '<hr><h2>Delete podcast</h2>';
+		echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '" onsubmit="return confirm(' . esc_attr( wp_json_encode( $msg ) ) . ');">';
+		echo '<input type="hidden" name="action" value="podpub_delete_podcast"><input type="hidden" name="podpub_id" value="' . (int) $id . '">';
+		wp_nonce_field( 'podpub_delete_podcast' );
+		echo '<p>Removes this podcast and all of its episodes from PodPublisher.</p>';
+		if ( '' !== $dir ) {
+			echo '<p><label><input type="checkbox" name="podpub_delete_files" value="1"> Also delete its folder on the server: <code>' . esc_html( PodPub_Storage::base_path() . '/' . $dir ) . '</code> (the feed file, show art, and every episode folder with its audio, chapters and other files)</label></p>';
+			echo '<p class="description">Left unticked, the files stay on the server and the feed address keeps working, so listeners are not cut off. Ticked, they are gone for good.</p>';
+		}
+		submit_button( 'Delete podcast', 'delete', 'submit', false );
+		echo '</form>';
 	}
 
 	private static function render_table() {
@@ -799,6 +862,7 @@ class PodPub_Admin {
 		submit_button( 'Save and write feed' );
 		echo '</form>';
 		self::render_episode_list( $id );
+		self::render_delete_podcast( $id, $feed );
 		echo '<p><a href="' . esc_url( self::list_url() ) . '">Back to all podcasts</a></p></div>';
 	}
 
