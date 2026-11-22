@@ -146,7 +146,12 @@ class PodPub_Feeds {
 				$out['warnings'] = array();
 				return $out;
 			}
-			$data['image'] = $name;
+			$data['image']       = $name;
+			$data['image_w']     = $image['width'];
+			$data['image_sizes'] = PodPub_Images::build( $folder, $name, $image['width'] );
+			if ( 'gif' === $image['ext'] ) {
+				$out['warnings'][] = 'Smaller copies of the show art were not made, because it is a GIF (resizing would stop it moving).';
+			}
 		}
 		if ( '' === $data['guid'] ) {
 			$base         = PodPub_Storage::base_url();

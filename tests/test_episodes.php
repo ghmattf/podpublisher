@@ -38,7 +38,7 @@ function wp_remote_retrieve_header( $r, $h ) { return isset( $r['headers'][ $h ]
 class WP_Error { public $m; function __construct( $c, $m ) { $this->m = $m; } function get_error_message() { return $this->m; } }
 function is_wp_error( $x ) { return $x instanceof WP_Error; }
 
-foreach ( array( 'settings', 'storage', 'p20', 'details', 'episodes', 'feedxml', 'feeds' ) as $c ) { require __DIR__ . "/../plugin/includes/class-podpub-$c.php"; }
+foreach ( array( 'settings', 'storage', 'p20', 'images', 'details', 'episodes', 'feedxml', 'feeds' ) as $c ) { require __DIR__ . "/../plugin/includes/class-podpub-$c.php"; }
 
 $fail = 0;
 function check( $name, $ok ) { global $fail; echo ( $ok ? 'ok   ' : 'FAIL ' ) . $name . "\n"; if ( ! $ok ) { $fail = 1; } }
@@ -98,7 +98,7 @@ check( 'form: audio fields and guid cannot be set from the form', $r['data']['au
 $pdir = PodPub_Storage::create_podcast_dir( 'My Show' );
 update_post_meta( 5, '_podpub_dir', $pdir );
 $pf = "$tmp/uploads/podpublisher/$pdir";
-$sd = PodPub_Feeds::save_details( 5, array( 'title' => 'My Show', 'description' => 'About', 'language' => 'en' ) );
+$sd = PodPub_Feeds::save_details( 5, array( 'title' => 'My Show', 'description' => 'About', 'language' => 'en', 'explicit' => 'no' ) );
 check( 'setup: podcast feed written with no items', $sd['written'] && feed_dom( "$pf/$pdir.xml" )->evaluate( 'count(/rss/channel/item)' ) === 0.0 );
 $odir = PodPub_Storage::create_podcast_dir( 'Other Show' );
 update_post_meta( 6, '_podpub_dir', $odir );

@@ -51,7 +51,7 @@ function add_action() {}
 class WP_Error { public $m; function __construct( $c, $m ) { $this->m = $m; } function get_error_message() { return $this->m; } }
 function is_wp_error( $x ) { return $x instanceof WP_Error; }
 
-foreach ( array( 'settings', 'storage', 'p20', 'details', 'episodes', 'feedxml', 'feeds', 'admin' ) as $c ) { require __DIR__ . "/../plugin/includes/class-podpub-$c.php"; }
+foreach ( array( 'settings', 'storage', 'p20', 'images', 'details', 'episodes', 'feedxml', 'feeds', 'admin' ) as $c ) { require __DIR__ . "/../plugin/includes/class-podpub-$c.php"; }
 
 $fail = 0;
 function check( $name, $ok ) { global $fail; echo ( $ok ? 'ok   ' : 'FAIL ' ) . $name . "\n"; if ( ! $ok ) { $fail = 1; } }
@@ -67,7 +67,7 @@ check( 'podcast page: GIF offered for show art', false !== strpos( $h, 'image/gi
 check( 'podcast page: feed address shown', false !== strpos( $h, "https://example.com/wp-content/uploads/podpublisher/$pdir/$pdir.xml" ) && false !== strpos( $h, 'not written yet' ) );
 check( 'podcast page: episodes section with Add episode', false !== strpos( $h, '<h2>Episodes' ) && false !== strpos( $h, 'episode=new' ) && false !== strpos( $h, 'No episodes yet' ) );
 
-PodPub_Feeds::save_details( 5, array( 'title' => 'My Show', 'description' => 'About', 'language' => 'en' ) );
+PodPub_Feeds::save_details( 5, array( 'title' => 'My Show', 'description' => 'About', 'language' => 'en', 'explicit' => 'no' ) );
 $_GET['episode'] = 'new';
 $h = page( 5 );
 check( 'new episode form: fields, upload, status, no delete button', false !== strpos( $h, 'value="podpub_save_episode"' ) && false !== strpos( $h, 'name="podpub_audio"' ) && false !== strpos( $h, 'name="podpub_ep[published]"' ) && false !== strpos( $h, 'datetime-local' ) && false === strpos( $h, 'podpub_delete_episode' ) );
@@ -95,9 +95,16 @@ $h = page( 5 );
 check( 'audio: source selector with all three ways', false !== strpos( $h, 'name="podpub_ep[audio_source]"' ) && false !== strpos( $h, 'Upload a file' ) && false !== strpos( $h, 'Pick a file I copied' ) && false !== strpos( $h, 'Use a file hosted elsewhere' ) );
 $h = page( 5 );
 check( 'episode form: chapters, transcripts, soundbites, alternate files and comments sections', false !== strpos( $h, 'name="podpub_ep[chapters][0][start]"' ) && false !== strpos( $h, 'name="podpub_ep[chapters_url]"' ) && false !== strpos( $h, 'name="podpub_ep[transcripts][0][type]"' ) && false !== strpos( $h, 'text/vtt' ) && false !== strpos( $h, 'name="podpub_ep[soundbites][0][duration]"' ) && false !== strpos( $h, 'name="podpub_ep[enclosures][0][default]"' ) && false !== strpos( $h, 'name="podpub_ep[social][0][protocol]"' ) );
+check( 'episode form: subtitle, summary, keywords, explicit select, picture and transcript upload', false !== strpos( $h, 'name="podpub_ep[subtitle]"' ) && false !== strpos( $h, 'name="podpub_ep[summary]"' ) && false !== strpos( $h, 'name="podpub_ep[keywords]"' ) && false !== strpos( $h, '<option value="" selected>Same as the podcast</option>' ) && false !== strpos( $h, 'name="podpub_ep_image"' ) && false !== strpos( $h, 'name="podpub_transcript"' ) && false !== strpos( $h, 'name="podpub_ep[enclosures][0][integrity_type]"' ) && false !== strpos( $h, 'name="podpub_ep[txt][0][text]"' ) );
+check( 'episode form: people role and group are drop-down lists from the taxonomy', false !== strpos( $h, '<select name="podpub_ep[persons][0][role]">' ) && false !== strpos( $h, '<option value="host">Host</option>' ) && false !== strpos( $h, '<option value="cover art designer">Cover Art Designer</option>' ) && false !== strpos( $h, '<select name="podpub_ep[persons][0][group]"><option value="" selected>Automatic (from the role)</option>' ) && false !== strpos( $h, '<option value="audio post-production">Audio Post-Production</option>' ) && false === strpos( $h, 'name="podpub_ep[persons][0][role]" value' ) );
 unset( $_GET['episode'] );
 $h = page( 5 );
 check( 'podcast page: complete, locked, text records and comments sections', false !== strpos( $h, 'name="podpub_p20[complete]"' ) && false !== strpos( $h, 'name="podpub_p20[locked]"' ) && false !== strpos( $h, 'name="podpub_p20[locked_owner]"' ) && false !== strpos( $h, 'name="podpub_p20[txt][0][text]"' ) && false !== strpos( $h, 'name="podpub_p20[social][0][uri]"' ) && false === strpos( $h, 'podpub_p20[chapters]' ) );
+$blank = PodPub_Feeds::create( 'Blank Show' );
+$hb    = page( $blank );
+check( 'podcast page: explicit is a required yes/no select; a new podcast starts on Choose, a saved one shows its answer', false !== strpos( $hb, '<select id="pp_explicit" name="podpub[explicit]" required><option value="" selected>Choose&hellip;</option><option value="yes">Yes</option><option value="no">No</option>' ) && false !== strpos( $h, '<option value="no" selected>No</option>' ) && false !== strpos( $h, 'This feed contains explicit content' ) && false !== strpos( $h, 'name="podpub[keywords]"' ) && false !== strpos( $h, 'managing editor' ) );
+check( 'podcast page: trailers and live episodes with date pickers and a status list', false !== strpos( $h, 'name="podpub_p20[trailers][0][pubdate]"' ) && false !== strpos( $h, '<input type="datetime-local" name="podpub_p20[live][0][start]"' ) && false !== strpos( $h, '<select name="podpub_p20[live][0][status]">' ) && false !== strpos( $h, '<option value="pending">Pending</option>' ) );
+check( 'podcast page: add-episode link, and the copy link once there is an episode', false !== strpos( $h, 'class="page-title-action">Add episode</a>' ) && false !== strpos( $h, 'Add episode, copying details from the latest' ) && false !== strpos( $h, 'copy=1' ) );
 $_GET['episode'] = (string) $eid;
 $h = page( 5 );
 check( 'audio: shows the episode folder to copy files into, and that none are there yet', false !== strpos( $h, "podpublisher/$pdir/First_One</code>" ) && false !== strpos( $h, 'No audio files found' ) );
@@ -149,6 +156,16 @@ $h = page( 5 );
 check( 'p20 error: message shown, typed values kept instead of the saved ones', false !== strpos( $h, 'Location: the coordinates must be' ) && false !== strpos( $h, 'value="Typed place"' ) && false !== strpos( $h, 'value="999,999"' ) && false !== strpos( $h, 'value="Typed msg"' ) && false === strpos( $h, 'value="Melbourne"' ) );
 set_transient( 'podpub_notice_1', array( 'errors' => array( 'Something else' ), 'warnings' => array(), 'written' => false, 'input' => array( 'title' => 'x' ) ) );
 check( 'a different form\'s error does not refill the p20 form', false !== strpos( page( 5 ), 'value="Melbourne"' ) );
+
+// New episode: starting fresh carries the season and number on; copying also keeps people, funding and so on.
+PodPub_Episodes::save( 5, $eid, array( 'title' => 'First <b>One</b>', 'description' => 'D', 'published' => '2026-03-01T09:30', 'status' => 'draft', 'duration' => '12:34', 'season' => '1', 'episode' => '3', 'explicit' => 'yes', 'persons' => array( array( 'name' => 'Pat', 'role' => 'guest' ) ) ) );
+$_GET['episode'] = 'new';
+$h = page( 5 );
+check( 'new episode, fresh: says so, season carried on and the next number filled in, nothing copied', false !== strpos( $h, 'Starting empty' ) && false !== strpos( $h, 'name="podpub_ep[season]" value="1"' ) && false !== strpos( $h, 'name="podpub_ep[episode]" value="4"' ) && false === strpos( $h, 'value="Pat"' ) );
+$_GET['copy'] = '1';
+$h = page( 5 );
+check( 'new episode, copied: says so, keeps the season, explicit flag and people, next number filled in, title empty', false !== strpos( $h, 'Started from the latest episode' ) && false !== strpos( $h, 'name="podpub_ep[season]" value="1"' ) && false !== strpos( $h, 'name="podpub_ep[episode]" value="4"' ) && false !== strpos( $h, 'value="Pat"' ) && false !== strpos( $h, '<option value="yes" selected>Yes, this episode is explicit</option>' ) && false !== strpos( $h, 'name="podpub_ep[title]" value=""' ) );
+unset( $_GET['copy'], $_GET['episode'] );
 
 $h = page( 77 );
 check( 'unknown podcast says not found', false !== strpos( $h, 'Podcast not found' ) );

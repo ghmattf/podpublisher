@@ -72,6 +72,13 @@ class PodPub_Episodes {
 			'audio_type'  => '',
 			'audio_size'  => 0,
 			'guid'        => '',      // Made once, never changes.
+			'explicit'    => '',      // '' = same as the podcast, yes, no.
+			'subtitle'    => '',
+			'summary'     => '',
+			'keywords'    => '',
+			'image'       => '',      // Episode picture inside the episode folder (image.jpg / .png / .gif).
+			'image_w'     => 0,
+			'image_sizes' => array(),
 		), PodPub_P20::defaults( true ) );
 	}
 
@@ -247,6 +254,20 @@ class PodPub_Episodes {
 			$data['duration'] = $dur;
 		}
 
+		$explicit = strtolower( $get( 'explicit' ) );
+		if ( ! in_array( $explicit, array( '', 'yes', 'no' ), true ) ) {
+			$errors[]  = 'Choose yes, no or "same as the podcast" for explicit content.';
+			$explicit = '';
+		}
+		$data['explicit'] = $explicit;
+		$data['subtitle'] = mb_substr( trim( PodPub_Details::xml_clean( sanitize_text_field( $get( 'subtitle' ) ) ) ), 0, 255 );
+		$data['keywords'] = mb_substr( trim( PodPub_Details::xml_clean( sanitize_text_field( $get( 'keywords' ) ) ) ), 0, 255 );
+		$summary          = trim( PodPub_Details::xml_clean( sanitize_textarea_field( $get( 'summary' ) ) ) );
+		if ( mb_strlen( $summary ) > self::MAX_DESCRIPTION ) {
+			$errors[] = 'The summary is too long (the limit is ' . self::MAX_DESCRIPTION . ' characters).';
+		}
+		$data['summary'] = $summary;
+
 		$data['status'] = 'published' === $get( 'status' ) ? 'published' : 'draft';
 		if ( 'published' === $data['status'] && ! $has_audio_after ) {
 			$errors[] = 'Upload the audio file before publishing, or save the episode as a draft.';
@@ -369,6 +390,102 @@ class PodPub_Episodes {
 		}
 		sort( $out );
 		return $out;
+	}
+
+	/**
+	 * Transcript files that can be uploaded or picked: extension => type.
+	 *
+	 * @return array
+	 */
+	public static function transcript_exts() {
+		return array(
+			'txt'  => 'text/plain',
+			'html' => 'text/html',
+			'vtt'  => 'text/vtt',
+			'srt'  => 'application/x-subrip',
+			'json' => 'application/json',
+		);
+	}
+
+	/**
+	 * Transcript files already in an episode folder (safe names only).
+	 *
+	 * @return string[]
+	 */
+	public static function list_folder_transcripts( $podcast_id, $id ) {
+		$ep_dir = self::dir_name( $id );
+		$pdir   = PodPub_Feeds::dir_name( $podcast_id );
+		$dir    = PodPub_Storage::base_path() . '/' . $pdir . '/' . $ep_dir;
+		$out    = array();
+		if ( '' === $ep_dir || '' === $pdir || ! is_dir( $dir ) ) {
+			return $out;
+		}
+		foreach ( scandir( $dir ) as $f ) {
+			if ( '.' === $f[0] || 'chapters.json' === $f || 'index.html' === $f || is_link( $dir . '/' . $f ) || ! is_file( $dir . '/' . $f ) || ! self::safe_file_name( $f ) ) {
+				continue;
+			}
+			if ( isset( self::transcript_exts()[ strtolower( pathinfo( $f, PATHINFO_EXTENSION ) ) ] ) ) {
+				$out[] = $f;
+			}
+		}
+		sort( $out );
+		return $out;
+	}
+
+	/**
+	 * Check an uploaded transcript file (by its extension and size, up to 5 MB).
+	 *
+	 * @return array|WP_Error { ext, type }
+	 */
+	public static function inspect_transcript( $path, $original_name ) {
+		$ext = strtolower( pathinfo( (string) $original_name, PATHINFO_EXTENSION ) );
+		if ( ! isset( self::transcript_exts()[ $ext ] ) ) {
+			return new WP_Error( 'podpub_transcript', 'The transcript must be one of: ' . implode( ', ', array_keys( self::transcript_exts() ) ) . '.' );
+		}
+		if ( ! is_file( $path ) || ! filesize( $path ) ) {
+			return new WP_Error( 'podpub_transcript', 'The transcript file is empty or was not received.' );
+		}
+		if ( filesize( $path ) > 5242880 ) {
+			return new WP_Error( 'podpub_transcript', 'The transcript is too large (the limit is 5 MB).' );
+		}
+		return array( 'ext' => $ext, 'type' => self::transcript_exts()[ $ext ] );
+	}
+
+	/**
+	 * The episode number a new episode in a season gets: one more than the highest
+	 * number used in that season (season 0 = episodes with no season).
+	 */
+	public static function next_number( $podcast_id, $season ) {
+		$max = 0;
+		foreach ( self::all( $podcast_id ) as $post ) {
+			$d = self::details( $post->ID );
+			if ( (int) $d['season'] === (int) $season && (int) $d['episode'] > $max ) {
+				$max = (int) $d['episode'];
+			}
+		}
+		return $max + 1;
+	}
+
+	/**
+	 * Details for a new episode that starts from the podcast's latest one: what
+	 * usually stays the same (season, explicit flag, people, funding, location,
+	 * licence, payments, comments, text records, keywords) and nothing else.
+	 *
+	 * @return array|null Details, or null when the podcast has no episodes yet.
+	 */
+	public static function copy_defaults( $podcast_id ) {
+		$all = self::all( $podcast_id );
+		if ( ! $all ) {
+			return null;
+		}
+		$last = self::details( $all[0]->ID );
+		$d    = self::defaults();
+		foreach ( array( 'season', 'explicit', 'keywords', 'funding', 'locations', 'persons', 'license', 'value', 'social', 'txt' ) as $k ) {
+			$d[ $k ] = $last[ $k ];
+		}
+		$d['published'] = time();
+		$d['episode']   = self::next_number( $podcast_id, $d['season'] );
+		return $d;
 	}
 
 	/**
@@ -541,7 +658,7 @@ class PodPub_Episodes {
 	 * @param array|null $file       $_FILES entry for the audio (already confirmed to be an upload), or null.
 	 * @return array { errors, warnings, written, id }
 	 */
-	public static function save( $podcast_id, $id, $input, $file = null ) {
+	public static function save( $podcast_id, $id, $input, $file = null, $image = null, $transcript = null ) {
 		$out = array( 'errors' => array(), 'warnings' => array(), 'written' => false, 'id' => (int) $id );
 		if ( ! PodPub_Feeds::get( $podcast_id ) || '' === PodPub_Feeds::dir_name( $podcast_id ) ) {
 			$out['errors'][] = 'This podcast was not found.';
@@ -555,12 +672,52 @@ class PodPub_Episodes {
 		$cur = $post ? self::details( $id ) : self::defaults();
 
 		$plan = self::plan_audio( $podcast_id, $id, $input, $file, $cur, $out['errors'], $out['warnings'] );
+
+		// Episode picture and transcript file: checked before anything is created.
+		$img = null;
+		if ( is_array( $image ) && isset( $image['error'] ) && UPLOAD_ERR_NO_FILE !== (int) $image['error'] ) {
+			if ( UPLOAD_ERR_OK !== (int) $image['error'] ) {
+				$out['errors'][] = 'The episode picture upload failed. Try a smaller picture.';
+			} else {
+				$img = PodPub_Details::inspect_image( $image['tmp_name'] );
+				if ( is_wp_error( $img ) ) {
+					$out['errors'][] = $img->get_error_message();
+					$img             = null;
+				} else {
+					$out['warnings'] = array_merge( $out['warnings'], $img['warnings'] );
+				}
+			}
+		}
+		$tup = null;
+		if ( is_array( $transcript ) && isset( $transcript['error'] ) && UPLOAD_ERR_NO_FILE !== (int) $transcript['error'] ) {
+			if ( UPLOAD_ERR_OK !== (int) $transcript['error'] ) {
+				$out['errors'][] = 'The transcript upload failed.';
+			} else {
+				$tup = self::inspect_transcript( $transcript['tmp_name'], isset( $transcript['name'] ) ? $transcript['name'] : '' );
+				if ( is_wp_error( $tup ) ) {
+					$out['errors'][] = $tup->get_error_message();
+					$tup             = null;
+				}
+			}
+		}
+		$tpick = isset( $input['transcript_pick'] ) && is_scalar( $input['transcript_pick'] ) ? (string) $input['transcript_pick'] : '';
+		if ( '' !== $tpick && ( ! $id || ! in_array( $tpick, self::list_folder_transcripts( $podcast_id, $id ), true ) ) ) {
+			$out['errors'][] = 'The transcript file you picked is not in the episode folder.';
+			$tpick           = '';
+		}
+		if ( ( $tup || '' !== $tpick ) && '' === PodPub_Storage::base_url() ) {
+			$out['errors'][] = 'Set the public address of the files in Settings before adding a transcript file (the feed needs its web address).';
+		}
 		$r = self::sanitize( $input, $cur, $plan || self::has_audio( $cur ) );
 		$out['errors'] = array_merge( $out['errors'], $r['errors'] );
 		if ( $out['errors'] ) {
 			return $out;
 		}
 		$data = $r['data'];
+		// A new full episode with no number gets the next one automatically.
+		if ( ! $post && 'full' === $data['type'] && 0 === (int) $data['episode'] ) {
+			$data['episode'] = self::next_number( $podcast_id, $data['season'] );
+		}
 
 		if ( ! $post ) {
 			$ep_dir = PodPub_Storage::create_episode_dir( PodPub_Feeds::dir_name( $podcast_id ), $r['title'] );
@@ -618,6 +775,57 @@ class PodPub_Episodes {
 				}
 			}
 		}
+		// Episode picture (smaller copies are made for podcast:images), or removal.
+		if ( $img ) {
+			$name = PodPub_Details::store_image( $image['tmp_name'], $folder, $img['ext'], 'image' );
+			if ( is_wp_error( $name ) ) {
+				$out['warnings'][] = 'The episode was saved, but the picture was not: ' . lcfirst( $name->get_error_message() );
+			} else {
+				$data['image']       = $name;
+				$data['image_w']     = $img['width'];
+				$data['image_sizes'] = PodPub_Images::build( $folder, $name, $img['width'] );
+				if ( 'gif' === $img['ext'] ) {
+					$out['warnings'][] = 'Smaller copies of the episode picture were not made, because it is a GIF (resizing would stop it moving).';
+				}
+			}
+		} elseif ( ! empty( $input['remove_image'] ) && '' !== $data['image'] ) {
+			if ( self::safe_file_name( $data['image'] ) && is_file( $folder . '/' . $data['image'] ) ) {
+				@unlink( $folder . '/' . $data['image'] ); // phpcs:ignore WordPress.PHP.NoSilencedErrors
+			}
+			PodPub_Images::remove_sizes( $folder, 'image' );
+			$data['image']       = '';
+			$data['image_w']     = 0;
+			$data['image_sizes'] = array();
+		}
+
+		// A transcript file picked from the folder or uploaded is added to the transcript list.
+		$tname = '';
+		if ( '' !== $tpick ) {
+			$tname = $tpick;
+		} elseif ( $tup ) {
+			$base  = PodPub_Storage::slug( pathinfo( $transcript['name'], PATHINFO_FILENAME ), 'transcript' );
+			$tname = $base . '.' . $tup['ext'];
+			for ( $n = 2; file_exists( $folder . '/' . $tname ); $n++ ) {
+				$tname = $base . '_' . $n . '.' . $tup['ext'];
+			}
+			if ( ! @copy( $transcript['tmp_name'], $folder . '/' . $tname ) ) { // phpcs:ignore WordPress.PHP.NoSilencedErrors
+				$out['warnings'][] = 'The episode was saved, but the transcript file could not be copied into its folder.';
+				$tname             = '';
+			}
+		}
+		if ( '' !== $tname ) {
+			if ( count( $data['transcripts'] ) >= PodPub_P20::MAX_TRANSCRIPTS ) {
+				$out['warnings'][] = 'The transcript file is in the episode folder but was not added to the list (at most ' . PodPub_P20::MAX_TRANSCRIPTS . ' transcripts).';
+			} else {
+				$data['transcripts'][] = array(
+					'url'      => PodPub_Storage::base_url() . '/' . PodPub_Feeds::dir_name( $podcast_id ) . '/' . $ep_dir . '/' . $tname,
+					'type'     => self::transcript_exts()[ strtolower( pathinfo( $tname, PATHINFO_EXTENSION ) ) ],
+					'language' => '',
+					'rel'      => '',
+				);
+			}
+		}
+
 		update_post_meta( $id, self::META, $data );
 		$out['id'] = $id;
 
@@ -699,6 +907,8 @@ class PodPub_Episodes {
 			$items[] = array_merge(
 				$d,
 				array(
+					'image_url'     => '' !== $d['image'] ? $base_url . '/' . $pdir . '/' . $ep_dir . '/' . $d['image'] : '',
+					'images_srcset' => PodPub_Images::srcset( $base_url . '/' . $pdir . '/' . $ep_dir, $d['image'], $d['image_w'], $d['image_sizes'] ),
 					'chapters_href' => $d['chapters'] ? $base_url . '/' . $pdir . '/' . $ep_dir . '/chapters.json' : $d['chapters_url'],
 					'title'     => $post->post_title,
 					'audio_url' => '' !== $d['external_url'] ? $d['external_url'] : $base_url . '/' . $pdir . '/' . $ep_dir . '/' . $d['audio'],

@@ -59,14 +59,17 @@ class PodPub_Details {
 			'description' => '',
 			'language'    => $lang,
 			'category'    => '',
-			'explicit'    => 0,
+			'explicit'    => '', // yes | no. Blank until the owner chooses (the form requires a choice).
+			'keywords'    => '',
 			'type'        => 'episodic',
 			'author'      => '',
 			'link'        => '',
 			'owner_name'  => '',
 			'owner_email' => '',
 			'copyright'   => '',
-			'image'       => '', // File name inside the podcast folder (cover.jpg or cover.png), or empty.
+			'image'       => '', // File name inside the podcast folder (cover.jpg, cover.png or cover.gif), or empty.
+			'image_w'     => 0,  // Its width in pixels.
+			'image_sizes' => array(), // Smaller copies made on upload: { file, width } each.
 			'guid'        => '', // podcast:guid, made once when the podcast is created and never changed.
 		), PodPub_P20::defaults( false ) );
 	}
@@ -91,7 +94,12 @@ class PodPub_Details {
 	 */
 	public static function get( $id ) {
 		$saved = get_post_meta( (int) $id, self::META, true );
-		return array_merge( self::defaults(), is_array( $saved ) ? $saved : array() );
+		$d     = array_merge( self::defaults(), is_array( $saved ) ? $saved : array() );
+		// Before 0.9.0 "explicit" was a tick box saved as 0 or 1.
+		if ( ! in_array( $d['explicit'], array( 'yes', 'no', '' ), true ) ) {
+			$d['explicit'] = $d['explicit'] ? 'yes' : 'no';
+		}
+		return $d;
 	}
 
 	/**
@@ -149,7 +157,13 @@ class PodPub_Details {
 			$data['category'] = $cat;
 		}
 
-		$data['explicit'] = empty( $in['explicit'] ) ? 0 : 1;
+		$explicit = strtolower( $get( 'explicit' ) );
+		if ( ! in_array( $explicit, array( 'yes', 'no' ), true ) ) {
+			$errors[]  = 'Please say whether this podcast contains explicit content (yes or no).';
+			$explicit = '';
+		}
+		$data['explicit'] = $explicit;
+		$data['keywords'] = $text( 'keywords', 255 );
 		$data['type']     = 'serial' === $get( 'type' ) ? 'serial' : 'episodic';
 		$data['author']   = $text( 'author', 255 );
 		$data['copyright'] = $text( 'copyright', 255 );
@@ -233,14 +247,15 @@ class PodPub_Details {
 	 * @param string $tmp     Path of the checked file.
 	 * @param string $dir     Full path of the podcast folder.
 	 * @param string $ext     jpg, png or gif (from inspect_image).
+	 * @param string $base    File name without extension (cover for the show art, image for an episode).
 	 * @return string|WP_Error File name.
 	 */
-	public static function store_image( $tmp, $dir, $ext ) {
+	public static function store_image( $tmp, $dir, $ext, $base = 'cover' ) {
 		if ( ! in_array( $ext, array( 'jpg', 'png', 'gif' ), true ) || ! is_dir( $dir ) ) {
 			return new WP_Error( 'podpub_image', 'The image could not be saved.' );
 		}
-		$name  = 'cover.' . $ext;
-		$stage = $dir . '/.cover_upload_' . getmypid();
+		$name  = $base . '.' . $ext;
+		$stage = $dir . '/.image_upload_' . getmypid();
 		if ( ! @copy( $tmp, $stage ) ) {
 			return new WP_Error( 'podpub_image', 'The image could not be saved. Check that the podcast folder is writable.' );
 		}
@@ -249,8 +264,8 @@ class PodPub_Details {
 			return new WP_Error( 'podpub_image', 'The image could not be saved.' );
 		}
 		foreach ( array( 'jpg', 'png', 'gif' ) as $other_ext ) {
-			if ( $other_ext !== $ext && is_file( $dir . '/cover.' . $other_ext ) ) {
-				@unlink( $dir . '/cover.' . $other_ext );
+			if ( $other_ext !== $ext && is_file( $dir . '/' . $base . '.' . $other_ext ) ) {
+				@unlink( $dir . '/' . $base . '.' . $other_ext );
 			}
 		}
 		return $name;

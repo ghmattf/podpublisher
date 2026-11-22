@@ -24,6 +24,8 @@ class PodPub_P20 {
 	const MAX_SOCIAL     = 5;
 	const MAX_CHAPTERS   = 200;
 	const MAX_TXT        = 10;
+	const MAX_TRAILERS   = 5;
+	const MAX_LIVE       = 10;
 	const MAX_PERSONS    = 30;
 	const MAX_RECIPIENTS = 20;
 	const MAX_SPLITS     = 30;
@@ -44,6 +46,7 @@ class PodPub_P20 {
 			'license'  => array( 'name' => '', 'url' => '' ),
 			'value'    => array( 'method' => '', 'suggested' => '', 'recipients' => array() ),
 			'social'   => array(),
+			'txt'      => array(),
 		);
 		if ( $item ) {
 			$d['timesplits']   = array();
@@ -58,7 +61,8 @@ class PodPub_P20 {
 			$d['complete']     = 0;
 			$d['locked']       = '';
 			$d['locked_owner'] = '';
-			$d['txt']          = array();
+			$d['trailers']     = array();
+			$d['live']         = array();
 		}
 		return $d;
 	}
@@ -176,19 +180,86 @@ class PodPub_P20 {
 		return $out;
 	}
 
+	/**
+	 * The people taxonomy (groups and the roles in each), as in the Podcast namespace
+	 * "person" tag. The lists were taken from a parser's copy of the taxonomy (the
+	 * official file could not be read), in the official order.
+	 *
+	 * @return array group => string[] roles
+	 */
+	public static function taxonomy() {
+		return array(
+			'creative direction'    => array( 'director', 'assistant director', 'executive producer', 'senior producer', 'producer', 'associate producer', 'development producer', 'creative director' ),
+			'cast'                  => array( 'host', 'co-host', 'guest host', 'guest', 'voice actor', 'narrator', 'announcer', 'reporter', 'author', 'editorial director' ),
+			'writing'               => array( 'co-writer', 'writer', 'songwriter', 'guest writer', 'story editor', 'managing editor', 'script editor', 'script coordinator', 'researcher', 'editor', 'fact checker', 'translator', 'transcriber', 'logger' ),
+			'audio production'      => array( 'studio coordinator', 'technical director', 'technical manager', 'audio engineer', 'remote recording engineer' ),
+			'audio post-production' => array( 'post production engineer', 'audio editor', 'sound designer', 'foley artist', 'composer', 'theme music', 'music production', 'music contributor' ),
+			'administration'        => array( 'production coordinator', 'booking coordinator', 'production assistant', 'content manager', 'marketing manager', 'sales representative', 'sales manager' ),
+			'visuals'               => array( 'graphic designer', 'cover art designer' ),
+			'community'             => array( 'social media manager', 'consultant', 'intern' ),
+			'misc'                  => array(),
+			'video production'      => array( 'camera operator', 'lighting designer', 'camera grip', 'assistant camera' ),
+			'video post-production' => array( 'editor', 'assistant editor' ),
+		);
+	}
+
+	/** Display text for a group or role ("audio post-production" becomes "Audio Post-Production"). */
+	public static function label( $slug ) {
+		return ucwords( $slug, ' -' );
+	}
+
+	/** All roles for a drop-down, each once, in taxonomy order. */
+	public static function all_roles() {
+		$out = array();
+		foreach ( self::taxonomy() as $roles ) {
+			foreach ( $roles as $r ) {
+				$out[ $r ] = $r;
+			}
+		}
+		return array_values( $out );
+	}
+
+	/**
+	 * People. Role and group must come from the taxonomy; with a role and no group
+	 * the group is worked out from the role (nothing is written for the default,
+	 * cast). A role must belong to the group chosen with it.
+	 */
 	public static function persons( $in, &$errors ) {
 		$out = array();
+		$tax = self::taxonomy();
 		foreach ( self::rows( $in, 'persons', array( 'name', 'role', 'group', 'img', 'href' ), self::MAX_PERSONS, $errors, 'people' ) as $n => $r ) {
 			$p = 'Person ' . $n . ': ';
 			if ( '' === $r['name'] || mb_strlen( $r['name'] ) > 128 ) {
 				$errors[] = $p . 'enter a name of up to 128 characters.';
 				continue;
 			}
-			foreach ( array( 'role', 'group' ) as $f ) {
-				$r[ $f ] = strtolower( $r[ $f ] );
-				if ( '' !== $r[ $f ] && ! preg_match( '/^[a-z0-9][a-z0-9 _-]{0,39}$/', $r[ $f ] ) ) {
-					$errors[] = $p . 'the ' . $f . ' may only use letters, numbers, spaces, - and _ (up to 40 characters).';
-					continue 2;
+			$r['role']  = strtolower( $r['role'] );
+			$r['group'] = strtolower( $r['group'] );
+			if ( '' !== $r['group'] && ! isset( $tax[ $r['group'] ] ) ) {
+				$errors[] = $p . 'choose a group from the list.';
+				continue;
+			}
+			if ( '' !== $r['role'] && ! in_array( $r['role'], self::all_roles(), true ) ) {
+				$errors[] = $p . 'choose a role from the list.';
+				continue;
+			}
+			if ( '' === $r['role'] && '' !== $r['group'] ) {
+				$errors[] = $p . 'choose a role as well as the group, or leave the group on Automatic.';
+				continue;
+			}
+			if ( '' !== $r['role'] ) {
+				if ( '' !== $r['group'] ) {
+					if ( ! in_array( $r['role'], $tax[ $r['group'] ], true ) ) {
+						$errors[] = $p . 'the role "' . self::label( $r['role'] ) . '" is not in the group "' . self::label( $r['group'] ) . '".';
+						continue;
+					}
+				} else {
+					foreach ( $tax as $g => $roles ) {
+						if ( in_array( $r['role'], $roles, true ) ) {
+							$r['group'] = 'cast' === $g ? '' : $g;
+							break;
+						}
+					}
 				}
 			}
 			foreach ( array( 'img' => 'picture', 'href' => 'link' ) as $f => $label ) {
@@ -391,7 +462,7 @@ class PodPub_P20 {
 
 	public static function enclosures( $in, &$errors ) {
 		$out = array();
-		foreach ( self::rows( $in, 'enclosures', array( 'uri', 'type', 'length', 'bitrate', 'height', 'lang', 'title', 'rel', 'codecs', 'default' ), self::MAX_ENCLOSURES, $errors, 'alternate files' ) as $n => $r ) {
+		foreach ( self::rows( $in, 'enclosures', array( 'uri', 'type', 'length', 'bitrate', 'height', 'lang', 'title', 'rel', 'codecs', 'default', 'integrity_type', 'integrity_value' ), self::MAX_ENCLOSURES, $errors, 'alternate files' ) as $n => $r ) {
 			$p = 'Alternate file ' . $n . ': ';
 			if ( ! self::valid_http( $r['uri'] ) ) {
 				$errors[] = $p . 'enter a web address starting with https://.';
@@ -403,6 +474,8 @@ class PodPub_P20 {
 				$errors[] = $p . 'the language must be a code such as en or pt-BR.';
 			} elseif ( mb_strlen( $r['title'] ) > 128 || mb_strlen( $r['rel'] ) > 64 || mb_strlen( $r['codecs'] ) > 128 ) {
 				$errors[] = $p . 'the title, group or codecs text is too long.';
+			} elseif ( ! in_array( $r['integrity_type'], array( '', 'sri', 'pgp' ), true ) || ( '' === $r['integrity_type'] ) !== ( '' === $r['integrity_value'] ) || mb_strlen( $r['integrity_value'] ) > 4000 ) {
+				$errors[] = $p . 'for a checksum, choose the kind (sri or pgp) and enter its value, or leave both empty.';
 			} else {
 				$r['default'] = '' === $r['default'] ? '' : '1';
 				$out[]        = $r;
@@ -489,7 +562,78 @@ class PodPub_P20 {
 		return json_encode( array( 'version' => '1.2.0', 'chapters' => $list ), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT ) . "\n";
 	}
 
-	/** Channel: complete, locked (with owner email), txt. */
+	/** Text records (free text with an optional purpose), for the podcast or an episode. */
+	public static function txt( $in, &$errors ) {
+		$txt = array();
+		foreach ( self::rows( $in, 'txt', array( 'purpose', 'text' ), self::MAX_TXT, $errors, 'text records' ) as $n => $r ) {
+			if ( '' === $r['text'] || mb_strlen( $r['text'] ) > 4000 || mb_strlen( $r['purpose'] ) > 128 ) {
+				$errors[] = 'Text record ' . $n . ': enter the text (up to 4000 characters); the purpose is up to 128.';
+			} else {
+				$txt[] = $r;
+			}
+		}
+		return $txt;
+	}
+
+	/** A date and time typed or picked in a form ("2026-01-15T09:30" or with a space), as Unix time, or null. */
+	private static function when( $t ) {
+		return '' === trim( $t ) ? null : PodPub_Episodes::parse_date( str_replace( ' ', 'T', trim( $t ) ) );
+	}
+
+	/** Trailers (a short promo clip for the podcast). */
+	public static function trailers( $in, &$errors ) {
+		$out = array();
+		foreach ( self::rows( $in, 'trailers', array( 'title', 'url', 'pubdate', 'length', 'type', 'season' ), self::MAX_TRAILERS, $errors, 'trailers' ) as $n => $r ) {
+			$p  = 'Trailer ' . $n . ': ';
+			$ts = self::when( $r['pubdate'] );
+			if ( '' === $r['title'] || mb_strlen( $r['title'] ) > 128 ) {
+				$errors[] = $p . 'enter a title of up to 128 characters.';
+			} elseif ( ! self::valid_http( $r['url'] ) ) {
+				$errors[] = $p . 'enter the address of the audio or video, starting with https://.';
+			} elseif ( null === $ts ) {
+				$errors[] = $p . 'enter the date and time it was published.';
+			} elseif ( ! preg_match( '/^\d*$/', $r['length'] ) || ! preg_match( '/^\d*$/', $r['season'] ) ) {
+				$errors[] = $p . 'size and season are whole numbers.';
+			} elseif ( '' !== $r['type'] && ! preg_match( '#^[a-z]+/[a-z0-9][a-z0-9.+_-]*$#i', $r['type'] ) ) {
+				$errors[] = $p . 'enter the file type, such as audio/mpeg.';
+			} else {
+				$r['pubdate'] = $ts;
+				$out[]        = $r;
+			}
+		}
+		return $out;
+	}
+
+	/** Live episodes (podcast:liveItem): a stream address and when it starts and ends. */
+	public static function live( $in, &$errors ) {
+		$out = array();
+		foreach ( self::rows( $in, 'live', array( 'title', 'status', 'start', 'end', 'url', 'type', 'link' ), self::MAX_LIVE, $errors, 'live episodes' ) as $n => $r ) {
+			$p     = 'Live episode ' . $n . ': ';
+			$start = self::when( $r['start'] );
+			$end   = self::when( $r['end'] );
+			$type  = '' === $r['type'] ? 'audio/mpeg' : $r['type'];
+			if ( '' === $r['title'] || mb_strlen( $r['title'] ) > 128 ) {
+				$errors[] = $p . 'enter a title of up to 128 characters.';
+			} elseif ( ! in_array( $r['status'], array( 'pending', 'live', 'ended' ), true ) ) {
+				$errors[] = $p . 'choose the status.';
+			} elseif ( null === $start ) {
+				$errors[] = $p . 'enter the start date and time.';
+			} elseif ( '' !== trim( $r['end'] ) && ( null === $end || $end <= $start ) ) {
+				$errors[] = $p . 'the end must be a date and time after the start (or empty).';
+			} elseif ( ! self::valid_http( $r['url'] ) ) {
+				$errors[] = $p . 'enter the address of the stream, starting with https://.';
+			} elseif ( ! preg_match( '#^[a-z]+/[a-z0-9][a-z0-9.+_-]*$#i', $type ) ) {
+				$errors[] = $p . 'enter the stream type, such as audio/mpeg.';
+			} elseif ( '' !== $r['link'] && ! self::valid_http( $r['link'] ) ) {
+				$errors[] = $p . 'the link must start with https://.';
+			} else {
+				$out[] = array( 'title' => $r['title'], 'status' => $r['status'], 'start' => $start, 'end' => $end, 'url' => $r['url'], 'type' => $type, 'link' => $r['link'] );
+			}
+		}
+		return $out;
+	}
+
+	/** Channel: complete, locked (with owner email). */
 	public static function channel_flags( $in, $cur, &$errors ) {
 		$cur['complete'] = empty( $in['complete'] ) ? 0 : 1;
 		$locked          = strtolower( self::scalar( $in, 'locked' ) );
@@ -504,15 +648,6 @@ class PodPub_P20 {
 		}
 		$cur['locked']       = $locked;
 		$cur['locked_owner'] = $owner;
-		$txt                 = array();
-		foreach ( self::rows( $in, 'txt', array( 'purpose', 'text' ), self::MAX_TXT, $errors, 'text records' ) as $n => $r ) {
-			if ( '' === $r['text'] || mb_strlen( $r['text'] ) > 4000 || mb_strlen( $r['purpose'] ) > 128 ) {
-				$errors[] = 'Text record ' . $n . ': enter the text (up to 4000 characters); the purpose is up to 128.';
-			} else {
-				$txt[] = $r;
-			}
-		}
-		$cur['txt'] = $txt;
 		return $cur;
 	}
 
@@ -535,6 +670,9 @@ class PodPub_P20 {
 		$cur['podroll']    = self::podroll( $in, $errors );
 		$cur['social']     = self::social( $in, $errors );
 		$cur                = self::channel_flags( $in, $cur, $errors );
+		$cur['txt']        = self::txt( $in, $errors );
+		$cur['trailers']   = self::trailers( $in, $errors );
+		$cur['live']       = self::live( $in, $errors );
 		return $cur;
 	}
 
@@ -550,6 +688,7 @@ class PodPub_P20 {
 		$cur['value']      = self::value( $in, $errors );
 		$cur['timesplits'] = self::timesplits( $in, $cur['value'], $errors );
 		$cur['social']     = self::social( $in, $errors );
+		$cur['txt']        = self::txt( $in, $errors );
 		$cur['transcripts'] = self::transcripts( $in, $errors );
 		$cur['soundbites'] = self::soundbites( $in, $errors );
 		$cur['enclosures'] = self::enclosures( $in, $errors );
@@ -631,6 +770,9 @@ class PodPub_P20 {
 			self::el( $w, 'podcast:license', array( 'url' => $d['license']['url'] ), $d['license']['name'] );
 		}
 		self::write_value( $w, $d['value'], $splits );
+		foreach ( $d['txt'] as $t ) {
+			self::el( $w, 'podcast:txt', array( 'purpose' => $t['purpose'] ), $t['text'] );
+		}
 		foreach ( $d['social'] as $c ) {
 			if ( 'disabled' === $c['protocol'] ) {
 				self::el( $w, 'podcast:socialInteract', array( 'protocol' => 'disabled' ) );
@@ -650,10 +792,28 @@ class PodPub_P20 {
 		if ( '' !== $d['locked'] ) {
 			self::el( $w, 'podcast:locked', array( 'owner' => $d['locked_owner'] ), $d['locked'] );
 		}
-		foreach ( $d['txt'] as $t ) {
-			self::el( $w, 'podcast:txt', array( 'purpose' => $t['purpose'] ), $t['text'] );
-		}
 		self::write_common( $w, $d, array() );
+		foreach ( $d['trailers'] as $t ) {
+			self::el( $w, 'podcast:trailer', array( 'url' => $t['url'], 'pubdate' => gmdate( 'D, d M Y H:i:s', (int) $t['pubdate'] ) . ' +0000', 'length' => $t['length'], 'type' => $t['type'], 'season' => $t['season'] ), $t['title'] );
+		}
+		foreach ( $d['live'] as $l ) {
+			$w->startElement( 'podcast:liveItem' );
+			$w->writeAttribute( 'status', $l['status'] );
+			$w->writeAttribute( 'start', gmdate( 'Y-m-d\TH:i:s\Z', (int) $l['start'] ) );
+			if ( $l['end'] ) {
+				$w->writeAttribute( 'end', gmdate( 'Y-m-d\TH:i:s\Z', (int) $l['end'] ) );
+			}
+			$w->writeElement( 'title', $l['title'] );
+			$w->startElement( 'guid' );
+			$w->writeAttribute( 'isPermaLink', 'false' );
+			$w->text( PodPub_FeedXml::guid_for_url( $d['guid'] . '/live/' . $l['title'] ) );
+			$w->endElement();
+			self::el( $w, 'enclosure', array( 'url' => $l['url'], 'type' => $l['type'], 'length' => '0' ) );
+			if ( '' !== $l['link'] ) {
+				self::el( $w, 'podcast:contentLink', array( 'href' => $l['link'] ), $l['title'] );
+			}
+			$w->endElement();
+		}
 		foreach ( $d['block'] as $b ) {
 			self::el( $w, 'podcast:block', array( 'id' => $b['id'] ), $b['value'] );
 		}
@@ -691,6 +851,9 @@ class PodPub_P20 {
 				$w->writeAttribute( 'default', 'true' );
 			}
 			self::el( $w, 'podcast:source', array( 'uri' => $a['uri'] ) );
+			if ( '' !== $a['integrity_type'] ) {
+				self::el( $w, 'podcast:integrity', array( 'type' => $a['integrity_type'], 'value' => $a['integrity_value'] ) );
+			}
 			$w->endElement();
 		}
 	}

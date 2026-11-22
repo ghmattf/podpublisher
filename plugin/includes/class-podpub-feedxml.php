@@ -86,6 +86,9 @@ class PodPub_FeedXml {
 		if ( '' !== $d['copyright'] ) {
 			$w->writeElement( 'copyright', $d['copyright'] );
 		}
+		if ( '' !== $d['owner_email'] ) {
+			$w->writeElement( 'managingEditor', $d['owner_email'] . ( '' !== $d['owner_name'] ? ' (' . $d['owner_name'] . ')' : '' ) );
+		}
 		$w->writeElement( 'lastBuildDate', gmdate( 'D, d M Y H:i:s', $now ) . ' +0000' );
 		$w->writeElement( 'generator', 'PodPublisher ' . ( defined( 'PODPUB_VERSION' ) ? PODPUB_VERSION : '' ) );
 
@@ -114,6 +117,11 @@ class PodPub_FeedXml {
 			$w->startElement( 'itunes:image' );
 			$w->writeAttribute( 'href', $img );
 			$w->endElement();
+			if ( ! empty( $p['images_srcset'] ) ) {
+				$w->startElement( 'podcast:images' );
+				$w->writeAttribute( 'srcset', $p['images_srcset'] );
+				$w->endElement();
+			}
 			$w->startElement( 'image' );
 			$w->writeElement( 'url', $img );
 			$w->writeElement( 'title', $p['title'] );
@@ -127,7 +135,12 @@ class PodPub_FeedXml {
 			$w->writeAttribute( 'text', $d['category'] );
 			$w->endElement();
 		}
-		$w->writeElement( 'itunes:explicit', $d['explicit'] ? 'true' : 'false' );
+		if ( '' !== $d['explicit'] ) {
+			$w->writeElement( 'itunes:explicit', 'yes' === $d['explicit'] ? 'true' : 'false' );
+		}
+		if ( '' !== $d['keywords'] ) {
+			$w->writeElement( 'itunes:keywords', $d['keywords'] );
+		}
 		$w->writeElement( 'itunes:type', $d['type'] );
 		if ( '' !== $d['guid'] ) {
 			$w->writeElement( 'podcast:guid', $d['guid'] );
@@ -178,6 +191,28 @@ class PodPub_FeedXml {
 			$w->writeElement( 'itunes:episode', (string) (int) $e['episode'] );
 		}
 		$w->writeElement( 'itunes:episodeType', $e['type'] );
+		if ( '' !== $e['explicit'] ) {
+			$w->writeElement( 'itunes:explicit', 'yes' === $e['explicit'] ? 'true' : 'false' );
+		}
+		if ( '' !== $e['subtitle'] ) {
+			$w->writeElement( 'itunes:subtitle', $e['subtitle'] );
+		}
+		if ( '' !== $e['summary'] ) {
+			$w->writeElement( 'itunes:summary', $e['summary'] );
+		}
+		if ( '' !== $e['keywords'] ) {
+			$w->writeElement( 'itunes:keywords', $e['keywords'] );
+		}
+		if ( '' !== $e['image_url'] ) {
+			$w->startElement( 'itunes:image' );
+			$w->writeAttribute( 'href', $e['image_url'] );
+			$w->endElement();
+			if ( '' !== $e['images_srcset'] ) {
+				$w->startElement( 'podcast:images' );
+				$w->writeAttribute( 'srcset', $e['images_srcset'] );
+				$w->endElement();
+			}
+		}
 		PodPub_P20::write_item( $w, $e );
 		if ( '' !== trim( $e['show_notes'] ) ) {
 			$w->startElement( 'content:encoded' );
@@ -215,6 +250,7 @@ class PodPub_FeedXml {
 				'details'   => $d,
 				'feed_url'  => '' === $base ? '' : $base . '/' . $dir . '/' . $dir . '.xml',
 				'image_url' => ( '' === $base || '' === $d['image'] ) ? '' : $base . '/' . $dir . '/' . $d['image'],
+				'images_srcset' => '' === $base ? '' : PodPub_Images::srcset( $base . '/' . $dir, $d['image'], $d['image_w'], $d['image_sizes'] ),
 				'episodes'  => PodPub_Episodes::feed_items( $id, $base, time() ),
 			)
 		);

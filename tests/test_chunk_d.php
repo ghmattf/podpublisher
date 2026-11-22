@@ -32,7 +32,7 @@ function wp_max_upload_size() { return 67108864; }
 class WP_Error { public $m; function __construct( $c, $m ) { $this->m = $m; } function get_error_message() { return $this->m; } }
 function is_wp_error( $x ) { return $x instanceof WP_Error; }
 
-foreach ( array( 'settings', 'storage', 'p20', 'details', 'episodes', 'feedxml', 'feeds' ) as $c ) { require __DIR__ . "/../plugin/includes/class-podpub-$c.php"; }
+foreach ( array( 'settings', 'storage', 'p20', 'images', 'details', 'episodes', 'feedxml', 'feeds' ) as $c ) { require __DIR__ . "/../plugin/includes/class-podpub-$c.php"; }
 
 $fail = 0;
 function check( $name, $ok ) { global $fail; echo ( $ok ? 'ok   ' : 'FAIL ' ) . $name . "\n"; if ( ! $ok ) { $fail = 1; } }
@@ -78,16 +78,19 @@ $e = array(); PodPub_P20::chapters( array( 'chapters' => array( array( 'start' =
 $e = array(); PodPub_P20::chapters( array( 'chapters' => array( array( 'start' => '0', 'title' => 'A' ) ), 'chapters_url' => 'https://h.example/c.json' ), $e ); check( 'chapters: list and outside address together refused', count( $e ) === 1 );
 $e = array(); $c = PodPub_P20::chapters( array( 'chapters_url' => 'http://h.example/c.json' ), $e ); check( 'chapters: http address refused', count( $e ) === 1 && $c['url'] === '' );
 
-// ---- channel flags ----
-$e = array(); $d = PodPub_P20::channel_flags( array( 'complete' => '1', 'locked' => 'YES', 'locked_owner' => 'me@example.com', 'txt' => array( array( 'purpose' => 'verify', 'text' => 'abc123' ), array( 'purpose' => '', 'text' => '' ) ) ), PodPub_P20::defaults( false ), $e );
-check( 'channel flags: complete, locked with owner, txt kept; blank txt dropped', $e === array() && $d['complete'] === 1 && $d['locked'] === 'yes' && $d['locked_owner'] === 'me@example.com' && count( $d['txt'] ) === 1 );
+// ---- channel flags and text records ----
+$e = array(); $d = PodPub_P20::channel_flags( array( 'complete' => '1', 'locked' => 'YES', 'locked_owner' => 'me@example.com' ), PodPub_P20::defaults( false ), $e );
+check( 'channel flags: complete, locked with owner kept', $e === array() && $d['complete'] === 1 && $d['locked'] === 'yes' && $d['locked_owner'] === 'me@example.com' );
+$e = array(); $t = PodPub_P20::txt( array( 'txt' => array( array( 'purpose' => 'verify', 'text' => 'abc123' ), array( 'purpose' => '', 'text' => '' ) ) ), $e );
+check( 'text records: kept; blank row dropped', $e === array() && count( $t ) === 1 && $t[0]['text'] === 'abc123' );
+$e = array(); PodPub_P20::txt( array( 'txt' => array( array( 'purpose' => 'x', 'text' => '' ) ) ), $e ); check( 'text records: purpose without text refused', count( $e ) === 1 );
 $e = array(); PodPub_P20::channel_flags( array( 'locked' => 'maybe' ), PodPub_P20::defaults( false ), $e ); check( 'channel flags: locked must be yes, no or unset', count( $e ) === 1 );
 $e = array(); PodPub_P20::channel_flags( array( 'locked_owner' => 'nope' ), PodPub_P20::defaults( false ), $e ); check( 'channel flags: bad owner email refused', count( $e ) === 1 );
 
 // ---- saving and the feed ----
 $pid = PodPub_Feeds::create( 'Show D' );
 $pdir = PodPub_Feeds::dir_name( $pid );
-PodPub_Feeds::save_details( $pid, array( 'title' => 'Show D', 'description' => 'About', 'language' => 'en' ) );
+PodPub_Feeds::save_details( $pid, array( 'title' => 'Show D', 'description' => 'About', 'language' => 'en', 'explicit' => 'no' ) );
 $r = PodPub_Feeds::save_p20( $pid, array( 'complete' => '1', 'locked' => 'no', 'locked_owner' => 'me@example.com', 'txt' => array( array( 'purpose' => 'verify', 'text' => 'code-1' ) ), 'social' => array( array( 'protocol' => 'disabled' ) ) ) );
 $x = feed_dom( "$tmp/uploads/podpublisher/$pdir/$pdir.xml" );
 check( 'podcast: complete, locked (with owner), txt and disabled comments in the channel', $r['errors'] === array() && ev( $x, 'string(/rss/channel/podcast:complete)' ) === 'yes' && ev( $x, 'string(/rss/channel/podcast:locked)' ) === 'no' && ev( $x, 'string(/rss/channel/podcast:locked/@owner)' ) === 'me@example.com' && ev( $x, 'string(/rss/channel/podcast:txt/@purpose)' ) === 'verify' && ev( $x, 'string(/rss/channel/podcast:txt)' ) === 'code-1' && ev( $x, 'string(/rss/channel/podcast:socialInteract/@protocol)' ) === 'disabled' && ev( $x, 'count(/rss/channel/podcast:socialInteract/@*)' ) == 1 );

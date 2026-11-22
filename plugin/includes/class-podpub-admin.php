@@ -171,7 +171,16 @@ class PodPub_Admin {
 				$file = null;
 			}
 		}
-		$result          = PodPub_Episodes::save( $pid, $eid, $input, $file );
+		$upload = function ( $field ) {
+			if ( isset( $_FILES[ $field ] ) && is_array( $_FILES[ $field ] ) ) {
+				$f = $_FILES[ $field ]; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput
+				if ( UPLOAD_ERR_OK !== (int) $f['error'] || is_uploaded_file( $f['tmp_name'] ) ) {
+					return $f;
+				}
+			}
+			return null;
+		};
+		$result          = PodPub_Episodes::save( $pid, $eid, $input, $file, $upload( 'podpub_ep_image' ), $upload( 'podpub_transcript' ) );
 		$result['input'] = $result['errors'] ? $input : null;
 		set_transient( 'podpub_notice_' . get_current_user_id(), $result, 120 );
 		$go = $result['errors'] ? ( $eid ? (string) $eid : 'new' ) : (string) $result['id'];
@@ -244,6 +253,9 @@ class PodPub_Admin {
 						echo '<option value="' . esc_attr( $ov ) . '"' . selected( (string) $val, (string) $ov, false ) . '>' . esc_html( $ol ) . '</option>';
 					}
 					echo '</select>';
+				} elseif ( 'datetime' === $c['type'] ) {
+					$when = is_numeric( $val ) && (int) $val > 0 ? PodPub_Episodes::format_date( (int) $val ) : ( is_scalar( $val ) ? (string) $val : '' );
+					echo '<input type="datetime-local" name="' . $nm . '" value="' . esc_attr( $when ) . '">';
 				} elseif ( 'check' === $c['type'] ) {
 					echo '<input type="checkbox" name="' . $nm . '" value="1"' . checked( ! empty( $val ), true, false ) . '>';
 				} else {
@@ -263,8 +275,9 @@ class PodPub_Admin {
 	 * @param array      $d      Saved details.
 	 * @param array|null $in     What was typed before an error (refills the form), or null.
 	 * @param bool       $item   True for an episode.
+	 * @param array|null $ctx    For a saved episode: { podcast, episode } ids (to list files in its folder).
 	 */
-	private static function render_p20_fields( $prefix, $d, $in, $item ) {
+	private static function render_p20_fields( $prefix, $d, $in, $item, $ctx = null ) {
 		$v    = function ( $k, $fallback ) use ( $in ) {
 			return null !== $in && isset( $in[ $k ] ) && is_scalar( $in[ $k ] ) ? (string) $in[ $k ] : (string) $fallback;
 		};
@@ -291,11 +304,27 @@ class PodPub_Admin {
 			array( 'key' => 'country', 'label' => 'Country', 'type' => 'text', 'ph' => 'AU', 'class' => 'small-text' ),
 		), PodPub_P20::MAX_LOCATIONS );
 
-		echo '<h3>People</h3><p class="description">Hosts, guests and others, shown by podcast apps.' . esc_html( $inherit ) . ' The role and group follow the Podcast namespace people taxonomy (for example host or guest, in the group cast); other words are kept but may not be recognised by apps.</p>';
-		self::render_rows( $prefix . '[persons]', $rows( 'persons', $d['persons'] ), array(
+		$prows      = $rows( 'persons', $d['persons'] );
+		$role_opts  = array( '' => 'None' );
+		$group_opts = array( '' => 'Automatic (from the role)' );
+		foreach ( PodPub_P20::taxonomy() as $g => $roles ) {
+			$group_opts[ $g ] = PodPub_P20::label( $g );
+		}
+		foreach ( PodPub_P20::all_roles() as $r ) {
+			$role_opts[ $r ] = PodPub_P20::label( $r );
+		}
+		foreach ( $prows as $pr ) { // A value saved before these lists existed stays visible (and is refused until changed).
+			foreach ( array( 'role' => 'role_opts', 'group' => 'group_opts' ) as $k => $var ) {
+				if ( is_array( $pr ) && ! empty( $pr[ $k ] ) && is_scalar( $pr[ $k ] ) && ! isset( ${$var}[ strtolower( (string) $pr[ $k ] ) ] ) ) {
+					${$var}[ strtolower( (string) $pr[ $k ] ) ] = (string) $pr[ $k ] . ' (not in the list)';
+				}
+			}
+		}
+		echo '<h3>People</h3><p class="description">Hosts, guests and others, shown by podcast apps.' . esc_html( $inherit ) . ' Role and group come from the Podcast namespace people taxonomy. Choose a role and the group is filled in for you (hosts and guests are in the group Cast, which is the default); choose a group only to put a role that appears in two groups (such as Editor) in the one you mean.</p>';
+		self::render_rows( $prefix . '[persons]', $prows, array(
 			array( 'key' => 'name', 'label' => 'Name', 'type' => 'text' ),
-			array( 'key' => 'role', 'label' => 'Role', 'type' => 'text', 'ph' => 'host', 'class' => 'small-text' ),
-			array( 'key' => 'group', 'label' => 'Group', 'type' => 'text', 'ph' => 'cast', 'class' => 'small-text' ),
+			array( 'key' => 'role', 'label' => 'Role', 'type' => 'select', 'options' => $role_opts ),
+			array( 'key' => 'group', 'label' => 'Group', 'type' => 'select', 'options' => $group_opts ),
 			array( 'key' => 'img', 'label' => 'Picture address', 'type' => 'text', 'ph' => 'https://' ),
 			array( 'key' => 'href', 'label' => 'Link', 'type' => 'text', 'ph' => 'https://' ),
 		), PodPub_P20::MAX_PERSONS );
@@ -364,6 +393,17 @@ class PodPub_Admin {
 				array( 'key' => 'language', 'label' => 'Language', 'type' => 'text', 'ph' => 'en', 'class' => 'small-text' ),
 				array( 'key' => 'rel', 'label' => 'Rel', 'type' => 'text', 'ph' => 'captions', 'class' => 'small-text' ),
 			), PodPub_P20::MAX_TRANSCRIPTS );
+			echo '<p><label>Or upload a transcript file (' . esc_html( implode( ', ', array_keys( PodPub_Episodes::transcript_exts() ) ) ) . ', up to 5 MB): <input type="file" name="podpub_transcript"></label> &nbsp; It is added to the list above when you save.</p>';
+			if ( $ctx ) {
+				$files = PodPub_Episodes::list_folder_transcripts( $ctx['podcast'], $ctx['episode'] );
+				if ( $files ) {
+					echo '<p><label>Or pick a transcript file you copied into the episode folder: <select name="' . esc_attr( $prefix . '[transcript_pick]' ) . '"><option value="">Choose a file&hellip;</option>';
+					foreach ( $files as $f ) {
+						echo '<option value="' . esc_attr( $f ) . '">' . esc_html( $f ) . '</option>';
+					}
+					echo '</select></label></p>';
+				}
+			}
 
 			echo '<h3>Soundbites</h3><p class="description">Short highlights of the episode (15 to 120 seconds works best). Start and length are in seconds, for example 73 and 60; the title is optional.</p>';
 			self::render_rows( $prefix . '[soundbites]', $rows( 'soundbites', $d['soundbites'] ), array(
@@ -372,7 +412,7 @@ class PodPub_Admin {
 				array( 'key' => 'title', 'label' => 'Title (optional)', 'type' => 'text' ),
 			), PodPub_P20::MAX_SOUNDBITES );
 
-			echo '<h3>Alternate files</h3><p class="description">Other versions of the episode (for example a video or a different quality), hosted elsewhere. Tick Default if it is the same as the main audio and preferred. Size, bitrate and height are whole numbers; the title is best at 32 characters or fewer.</p>';
+			echo '<h3>Alternate files</h3><p class="description">Other versions of the episode (for example a video or a different quality), hosted elsewhere. Tick Default if it is the same as the main audio and preferred. Size, bitrate and height are whole numbers; the title is best at 32 characters or fewer. A checksum (kind and value together) lets apps check the file has not been changed.</p>';
 			self::render_rows( $prefix . '[enclosures]', $rows( 'enclosures', $d['enclosures'] ), array(
 				array( 'key' => 'uri', 'label' => 'Web address', 'type' => 'text', 'ph' => 'https://' ),
 				array( 'key' => 'type', 'label' => 'File type', 'type' => 'text', 'ph' => 'video/mp4', 'class' => 'small-text' ),
@@ -384,6 +424,8 @@ class PodPub_Admin {
 				array( 'key' => 'rel', 'label' => 'Group', 'type' => 'text', 'class' => 'small-text' ),
 				array( 'key' => 'codecs', 'label' => 'Codecs', 'type' => 'text', 'class' => 'small-text' ),
 				array( 'key' => 'default', 'label' => 'Default', 'type' => 'check' ),
+				array( 'key' => 'integrity_type', 'label' => 'Checksum kind', 'type' => 'select', 'options' => array( '' => 'None', 'sri' => 'sri', 'pgp' => 'pgp' ) ),
+				array( 'key' => 'integrity_value', 'label' => 'Checksum value', 'type' => 'text', 'ph' => 'sha384-...' ),
 			), PodPub_P20::MAX_ENCLOSURES );
 		} else {
 			echo '<h3>Status and ownership</h3><table class="form-table" role="presentation">';
@@ -396,12 +438,33 @@ class PodPub_Admin {
 			$in_text( 'locked_owner', 'Owner email for moves', $d['locked_owner'], 'owner@example.com' );
 			echo '</table>';
 
-			echo '<h3>Text records</h3><p class="description">Free text for services that ask for it (for example a code that proves you own the feed). Purpose is optional, such as verify.</p>';
-			self::render_rows( $prefix . '[txt]', $rows( 'txt', $d['txt'] ), array(
-				array( 'key' => 'purpose', 'label' => 'Purpose', 'type' => 'text', 'class' => 'small-text' ),
-				array( 'key' => 'text', 'label' => 'Text (up to 4000 characters)', 'type' => 'text', 'class' => 'large-text' ),
-			), PodPub_P20::MAX_TXT );
+			echo '<h3>Trailers</h3><p class="description">A short promo for the podcast: its title, the address of the audio or video (https://), and when it was published. Size, type and season are optional.</p>';
+			self::render_rows( $prefix . '[trailers]', $rows( 'trailers', $d['trailers'] ), array(
+				array( 'key' => 'title', 'label' => 'Title', 'type' => 'text' ),
+				array( 'key' => 'url', 'label' => 'Web address', 'type' => 'text', 'ph' => 'https://' ),
+				array( 'key' => 'pubdate', 'label' => 'Published', 'type' => 'datetime' ),
+				array( 'key' => 'length', 'label' => 'Size (bytes)', 'type' => 'text', 'class' => 'small-text' ),
+				array( 'key' => 'type', 'label' => 'File type', 'type' => 'text', 'ph' => 'audio/mpeg', 'class' => 'small-text' ),
+				array( 'key' => 'season', 'label' => 'Season', 'type' => 'text', 'class' => 'small-text' ),
+			), PodPub_P20::MAX_TRAILERS );
+
+			echo '<h3>Live episodes</h3><p class="description">A live stream that apps can announce before it starts and show while it runs. Give the stream address (https://) and its type (usually audio/mpeg); set the status to Pending until it is on air, Live while it is, and Ended afterwards. Change the status and save to update the feed. The link (optional) is a page where people can join.</p>';
+			self::render_rows( $prefix . '[live]', $rows( 'live', $d['live'] ), array(
+				array( 'key' => 'title', 'label' => 'Title', 'type' => 'text' ),
+				array( 'key' => 'status', 'label' => 'Status', 'type' => 'select', 'options' => array( '' => '', 'pending' => 'Pending', 'live' => 'Live', 'ended' => 'Ended' ) ),
+				array( 'key' => 'start', 'label' => 'Starts', 'type' => 'datetime' ),
+				array( 'key' => 'end', 'label' => 'Ends (optional)', 'type' => 'datetime' ),
+				array( 'key' => 'url', 'label' => 'Stream address', 'type' => 'text', 'ph' => 'https://' ),
+				array( 'key' => 'type', 'label' => 'Stream type', 'type' => 'text', 'ph' => 'audio/mpeg', 'class' => 'small-text' ),
+				array( 'key' => 'link', 'label' => 'Link', 'type' => 'text', 'ph' => 'https://' ),
+			), PodPub_P20::MAX_LIVE );
 		}
+
+		echo '<h3>Text records</h3><p class="description">Free text for services that ask for it (for example a code that proves you own the feed). Purpose is optional, such as verify.</p>';
+		self::render_rows( $prefix . '[txt]', $rows( 'txt', $d['txt'] ), array(
+			array( 'key' => 'purpose', 'label' => 'Purpose', 'type' => 'text', 'class' => 'small-text' ),
+			array( 'key' => 'text', 'label' => 'Text (up to 4000 characters)', 'type' => 'text', 'class' => 'large-text' ),
+		), PodPub_P20::MAX_TXT );
 
 		echo '<h3>Comments (cross-app)</h3><p class="description">A social post whose replies apps can show as comments on this ' . ( $item ? 'episode' : 'podcast' ) . '. Protocol is for example activitypub; the address is the post\'s address. To say you do not want comments shown, enter the protocol disabled and nothing else.' . esc_html( $inherit ) . '</p>';
 		self::render_rows( $prefix . '[social]', $rows( 'social', $d['social'] ), array(
@@ -419,7 +482,11 @@ class PodPub_Admin {
 	 * @param int $id Podcast record id.
 	 */
 	private static function render_episode_list( $id ) {
-		echo '<hr><h2>Episodes <a href="' . esc_url( self::feed_page_url( $id, array( 'episode' => 'new' ) ) ) . '" class="page-title-action">Add episode</a></h2>';
+		echo '<hr><h2>Episodes <a href="' . esc_url( self::feed_page_url( $id, array( 'episode' => 'new' ) ) ) . '" class="page-title-action">Add episode</a>';
+		if ( PodPub_Episodes::all( $id ) ) {
+			echo ' <a href="' . esc_url( self::feed_page_url( $id, array( 'episode' => 'new', 'copy' => 1 ) ) ) . '" class="page-title-action">Add episode, copying details from the latest</a>';
+		}
+		echo '</h2>';
 		$eps = PodPub_Episodes::all( $id );
 		if ( ! $eps ) {
 			echo '<p>No episodes yet.</p>';
@@ -451,19 +518,50 @@ class PodPub_Admin {
 			echo '<h2>Episode not found</h2>';
 			return;
 		}
-		$d     = $post ? PodPub_Episodes::details( $eid ) : array_merge( PodPub_Episodes::defaults(), array( 'published' => time() ) );
+		$copied = false;
+		if ( $post ) {
+			$d = PodPub_Episodes::details( $eid );
+		} else {
+			$d = array_merge( PodPub_Episodes::defaults(), array( 'published' => time() ) );
+			if ( ! empty( $_GET['copy'] ) && null !== ( $cd = PodPub_Episodes::copy_defaults( $id ) ) ) { // phpcs:ignore WordPress.Security.NonceVerification,WordPress.CodeAnalysis.AssignmentInCondition
+				$d      = $cd;
+				$copied = true;
+			} else {
+				// Starting fresh: the season and number carry on from the latest episode.
+				$all = PodPub_Episodes::all( $id );
+				if ( $all ) {
+					$d['season'] = PodPub_Episodes::details( $all[0]->ID )['season'];
+				}
+				$d['episode'] = PodPub_Episodes::next_number( $id, $d['season'] );
+			}
+		}
 		$title = $post ? $post->post_title : '';
 		$in    = is_array( $notice ) && ! empty( $notice['input'] ) ? $notice['input'] : null;
 		$v     = function ( $k, $fallback ) use ( $in ) {
 			return null !== $in && isset( $in[ $k ] ) && is_scalar( $in[ $k ] ) ? (string) $in[ $k ] : (string) $fallback;
 		};
 		echo '<h2>' . ( $post ? 'Edit episode' : 'Add episode' ) . '</h2>';
+		if ( $copied ) {
+			echo '<p class="description">Started from the latest episode: season, people, funding, location, licence, payments, comments, keywords and the explicit flag are copied. The title, description, audio, date, chapters and the rest are empty.</p>';
+		} elseif ( ! $post ) {
+			echo '<p class="description">Starting empty. The season and episode number carry on from the latest episode.</p>';
+		}
 		echo '<form method="post" enctype="multipart/form-data" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '">';
 		echo '<input type="hidden" name="action" value="podpub_save_episode"><input type="hidden" name="podpub_id" value="' . (int) $id . '"><input type="hidden" name="podpub_episode_id" value="' . (int) $eid . '">';
 		wp_nonce_field( 'podpub_save_episode' );
 		echo '<table class="form-table" role="presentation">';
 		echo '<tr><th scope="row"><label for="ep_title">Title</label></th><td><input type="text" id="ep_title" class="regular-text" required name="podpub_ep[title]" value="' . esc_attr( $v( 'title', $title ) ) . '"></td></tr>';
 		echo '<tr><th scope="row"><label for="ep_desc">Description</label></th><td><textarea id="ep_desc" name="podpub_ep[description]" rows="3" class="large-text" required>' . esc_textarea( $v( 'description', $d['description'] ) ) . '</textarea><p class="description">Plain text summary shown in podcast apps.</p></td></tr>';
+		echo '<tr><th scope="row"><label for="ep_sub">Subtitle</label></th><td><input type="text" id="ep_sub" class="large-text" maxlength="255" name="podpub_ep[subtitle]" value="' . esc_attr( $v( 'subtitle', $d['subtitle'] ) ) . '"><p class="description">Optional. One short line.</p></td></tr>';
+		echo '<tr><th scope="row"><label for="ep_sum">Summary</label></th><td><textarea id="ep_sum" name="podpub_ep[summary]" rows="3" class="large-text">' . esc_textarea( $v( 'summary', $d['summary'] ) ) . '</textarea><p class="description">Optional. A longer plain text summary for apps that show one.</p></td></tr>';
+		echo '<tr><th scope="row"><label for="ep_kw">Keywords</label></th><td><input type="text" id="ep_kw" class="regular-text" maxlength="255" name="podpub_ep[keywords]" value="' . esc_attr( $v( 'keywords', $d['keywords'] ) ) . '"><p class="description">Optional, separated by commas.</p></td></tr>';
+		$ex = $v( 'explicit', $d['explicit'] );
+		echo '<tr><th scope="row"><label for="ep_ex">Explicit</label></th><td><select id="ep_ex" name="podpub_ep[explicit]"><option value=""' . selected( $ex, '', false ) . '>Same as the podcast</option><option value="yes"' . selected( $ex, 'yes', false ) . '>Yes, this episode is explicit</option><option value="no"' . selected( $ex, 'no', false ) . '>No, it is not</option></select></td></tr>';
+		echo '<tr><th scope="row"><label for="ep_img">Episode picture</label></th><td>';
+		if ( $post && '' !== $d['image'] && '' !== PodPub_Storage::base_url() ) {
+			echo '<p><img src="' . esc_url( PodPub_Storage::base_url() . '/' . PodPub_Feeds::dir_name( $id ) . '/' . PodPub_Episodes::dir_name( $eid ) . '/' . $d['image'] ) . '" alt="" style="max-width:120px;height:auto"> <label><input type="checkbox" name="podpub_ep[remove_image]" value="1"> Remove it</label></p>';
+		}
+		echo '<input type="file" id="ep_img" name="podpub_ep_image" accept="image/jpeg,image/png,image/gif"><p class="description">Optional. JPEG, PNG or GIF, square, 1400 to 3000 pixels. Smaller copies are made automatically for apps to use (not for a GIF). Without one, apps use the podcast\'s show art.</p></td></tr>';
 		echo '<tr><th scope="row"><label for="ep_notes">Show notes</label></th><td><textarea id="ep_notes" name="podpub_ep[show_notes]" rows="8" class="large-text code">' . esc_textarea( $v( 'show_notes', $d['show_notes'] ) ) . '</textarea><p class="description">Optional. Links and simple formatting only (a, b, strong, i, em, br, p, ul, ol, li, h2-h4, blockquote); anything else is removed.</p></td></tr>';
 		// Audio: three ways to give the episode its audio file.
 		$pd       = PodPub_Feeds::dir_name( $id );
@@ -531,7 +629,7 @@ class PodPub_Admin {
 		echo '<tr><th scope="row"><label for="ep_status">Status</label></th><td><select id="ep_status" name="podpub_ep[status]"><option value="draft"' . selected( $status, 'draft', false ) . '>Draft (not in the feed)</option><option value="published"' . selected( $status, 'published', false ) . '>Published (in the feed; needs audio)</option></select></td></tr>';
 		echo '</table>';
 		echo '<hr><h2>Podcasting 2.0</h2>';
-		self::render_p20_fields( 'podpub_ep', $d, $in, true );
+		self::render_p20_fields( 'podpub_ep', $d, $in, true, $eid ? array( 'podcast' => (int) $id, 'episode' => $eid ) : null );
 		submit_button( 'Save episode and write feed' );
 		echo '</form>';
 		if ( $post ) {
@@ -677,18 +775,19 @@ class PodPub_Admin {
 			echo '<option value="' . esc_attr( $c ) . '"' . selected( $d['category'], $c, false ) . '>' . esc_html( $c ) . '</option>';
 		}
 		echo '</select></td></tr>';
-		echo '<tr><th scope="row">Explicit</th><td><label><input type="checkbox" name="podpub[explicit]" value="1"' . checked( ! empty( $d['explicit'] ), true, false ) . '> This podcast contains explicit content</label></td></tr>';
+		echo '<tr><th scope="row"><label for="pp_explicit">This feed contains explicit content</label></th><td><select id="pp_explicit" name="podpub[explicit]" required><option value=""' . selected( $d['explicit'], '', false ) . '>Choose&hellip;</option><option value="yes"' . selected( $d['explicit'], 'yes', false ) . '>Yes</option><option value="no"' . selected( $d['explicit'], 'no', false ) . '>No</option></select><p class="description">Required. Podcast apps and directories use this.</p></td></tr>';
 		echo '<tr><th scope="row"><label for="pp_type">Type</label></th><td><select id="pp_type" name="podpub[type]"><option value="episodic"' . selected( $d['type'], 'episodic', false ) . '>Episodic (newest first)</option><option value="serial"' . selected( $d['type'], 'serial', false ) . '>Serial (in order)</option></select></td></tr>';
 		echo '<tr><th scope="row"><label for="pp_author">Author</label></th><td><input type="text" id="pp_author" class="regular-text" ' . $f( 'author', $d['author'] ) . '><p class="description">Shown to listeners in podcast apps.</p></td></tr>'; // phpcs:ignore WordPress.Security.EscapeOutput
 		echo '<tr><th scope="row"><label for="pp_link">Website</label></th><td><input type="url" id="pp_link" class="regular-text" placeholder="https://" ' . $f( 'link', $d['link'] ) . '></td></tr>'; // phpcs:ignore WordPress.Security.EscapeOutput
 		echo '<tr><th scope="row"><label for="pp_copy">Copyright</label></th><td><input type="text" id="pp_copy" class="regular-text" ' . $f( 'copyright', $d['copyright'] ) . '></td></tr>'; // phpcs:ignore WordPress.Security.EscapeOutput
-		echo '<tr><th scope="row"><label for="pp_on">Owner name</label></th><td><input type="text" id="pp_on" class="regular-text" ' . $f( 'owner_name', $d['owner_name'] ) . '><p class="description">A contact for podcast directories. Not shown to listeners.</p></td></tr>'; // phpcs:ignore WordPress.Security.EscapeOutput
+		echo '<tr><th scope="row"><label for="pp_on">Owner name</label></th><td><input type="text" id="pp_on" class="regular-text" ' . $f( 'owner_name', $d['owner_name'] ) . '><p class="description">A contact for podcast directories. Not shown to listeners. Also written as the managing editor of the feed (email and name).</p></td></tr>'; // phpcs:ignore WordPress.Security.EscapeOutput
 		echo '<tr><th scope="row"><label for="pp_oe">Owner email</label></th><td><input type="email" id="pp_oe" class="regular-text" ' . $f( 'owner_email', $d['owner_email'] ) . '></td></tr>'; // phpcs:ignore WordPress.Security.EscapeOutput
+		echo '<tr><th scope="row"><label for="pp_kw">Keywords</label></th><td><input type="text" id="pp_kw" class="regular-text" ' . $f( 'keywords', $d['keywords'] ) . '><p class="description">Optional, separated by commas.</p></td></tr>'; // phpcs:ignore WordPress.Security.EscapeOutput
 		echo '<tr><th scope="row"><label for="pp_img">Show art</label></th><td>';
 		if ( '' !== $d['image'] && '' !== $base && '' !== $dir ) {
 			echo '<p><img src="' . esc_url( $base . '/' . $dir . '/' . $d['image'] ) . '" alt="" style="max-width:150px;height:auto"></p>';
 		}
-		echo '<input type="file" id="pp_img" name="podpub_image" accept="image/jpeg,image/png,image/gif"><p class="description">JPEG, PNG or GIF, square, between 1400 x 1400 and 3000 x 3000 pixels, up to 10 MB. Saved in the podcast folder as cover.jpg, cover.png or cover.gif. Some directories (such as Apple Podcasts and Spotify) only take JPEG or PNG.</p></td></tr>';
+		echo '<input type="file" id="pp_img" name="podpub_image" accept="image/jpeg,image/png,image/gif"><p class="description">JPEG, PNG or GIF, square, between 1400 x 1400 and 3000 x 3000 pixels, up to 10 MB. Saved in the podcast folder as cover.jpg, cover.png or cover.gif; smaller copies (300, 600, 1000 and 1500 pixels wide) are made automatically for apps to use (not for a GIF). Some directories (such as Apple Podcasts and Spotify) only take JPEG or PNG.</p></td></tr>';
 		echo '</table>';
 		submit_button( 'Save and write feed' );
 		echo '</form>';

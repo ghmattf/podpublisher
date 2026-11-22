@@ -24,7 +24,7 @@ function is_email( $e ) { return (bool) filter_var( $e, FILTER_VALIDATE_EMAIL );
 class WP_Error { public $m; function __construct( $c, $m ) { $this->m = $m; } function get_error_message() { return $this->m; } }
 function is_wp_error( $x ) { return $x instanceof WP_Error; }
 
-foreach ( array( 'settings', 'storage', 'p20', 'details', 'episodes', 'feedxml', 'feeds' ) as $c ) { require __DIR__ . "/../plugin/includes/class-podpub-$c.php"; }
+foreach ( array( 'settings', 'storage', 'p20', 'images', 'details', 'episodes', 'feedxml', 'feeds' ) as $c ) { require __DIR__ . "/../plugin/includes/class-podpub-$c.php"; }
 
 $fail = 0;
 function check( $name, $ok ) { global $fail; echo ( $ok ? 'ok   ' : 'FAIL ' ) . $name . "\n"; if ( ! $ok ) { $fail = 1; } }
@@ -44,13 +44,13 @@ check( 'guid: random is a v4 uuid', (bool) preg_match( '/^[0-9a-f]{8}-[0-9a-f]{4
 // Form checking.
 $cur = PodPub_Details::defaults();
 check( 'defaults: language from locale', $cur['language'] === 'en-au' );
-$good = array( 'title' => 'My Great Show', 'description' => 'About <b>things</b>', 'language' => 'en-us', 'category' => 'Music', 'explicit' => '1', 'type' => 'serial', 'author' => 'Jo', 'link' => 'https://example.com', 'owner_name' => 'Jo B', 'owner_email' => 'jo@example.com', 'copyright' => '(c) Jo' );
+$good = array( 'title' => 'My Great Show', 'description' => 'About <b>things</b>', 'language' => 'en-us', 'category' => 'Music', 'explicit' => 'yes', 'type' => 'serial', 'author' => 'Jo', 'link' => 'https://example.com', 'owner_name' => 'Jo B', 'owner_email' => 'jo@example.com', 'copyright' => '(c) Jo' );
 $r = PodPub_Details::sanitize( $good, $cur );
 check( 'form: good input has no errors', $r['errors'] === array() );
 check( 'form: html stripped from description', $r['data']['description'] === 'About things' );
-check( 'form: values kept', $r['data']['language'] === 'en-us' && $r['data']['category'] === 'Music' && $r['data']['explicit'] === 1 && $r['data']['type'] === 'serial' );
+check( 'form: values kept', $r['data']['language'] === 'en-us' && $r['data']['category'] === 'Music' && $r['data']['explicit'] === 'yes' && $r['data']['type'] === 'serial' );
 $r = PodPub_Details::sanitize( array(), $cur );
-check( 'form: empty gives title, description and language errors', count( $r['errors'] ) === 3 );
+check( 'form: empty gives title, description, language and explicit errors', count( $r['errors'] ) === 4 );
 $r = PodPub_Details::sanitize( array_merge( $good, array( 'language' => 'xx', 'category' => 'Nope', 'link' => 'javascript:alert(1)', 'owner_email' => 'bad' ) ), $cur );
 check( 'form: bad language, category, link, email each refused', count( $r['errors'] ) === 4 );
 $r = PodPub_Details::sanitize( array_merge( $good, array( 'description' => str_repeat( 'a', 4001 ) ) ), $cur );
@@ -89,7 +89,7 @@ check( 'image: missing file refused', is_wp_error( PodPub_Details::inspect_image
 // Feed XML.
 $xml = PodPub_FeedXml::build( array(
 	'title' => 'Fish & Chips <live>', 'feed_url' => 'https://example.com/p/Show/Show.xml', 'image_url' => 'https://example.com/p/Show/cover.jpg', 'now' => 1700000000,
-	'details' => array_merge( PodPub_Details::defaults(), array( 'description' => 'Tom & "Jerry"', 'language' => 'en', 'category' => 'Music', 'explicit' => 1, 'author' => 'Jo', 'link' => 'https://example.com', 'owner_name' => 'Jo', 'owner_email' => 'jo@example.com', 'copyright' => '(c)', 'guid' => '917393e3-1b1e-5cef-ace4-edaa54e1f810' ) ),
+	'details' => array_merge( PodPub_Details::defaults(), array( 'description' => 'Tom & "Jerry"', 'language' => 'en', 'category' => 'Music', 'explicit' => 'yes', 'author' => 'Jo', 'link' => 'https://example.com', 'owner_name' => 'Jo', 'owner_email' => 'jo@example.com', 'copyright' => '(c)', 'guid' => '917393e3-1b1e-5cef-ace4-edaa54e1f810' ) ),
 ) );
 $dom = new DOMDocument();
 check( 'xml: well-formed', $dom->loadXML( $xml ) );
@@ -113,7 +113,7 @@ $dir = PodPub_Storage::create_podcast_dir( 'My Great Show' );
 update_post_meta( 5, '_podpub_dir', $dir );
 $folder = "$tmp/uploads/podpublisher/$dir";
 $r = PodPub_Feeds::save_details( 5, array( 'title' => '', 'description' => '' ) );
-check( 'save: errors save nothing', count( $r['errors'] ) === 3 && ! is_file( "$folder/$dir.xml" ) && get_post_meta( 5, '_podpub_details' ) === '' );
+check( 'save: errors save nothing', count( $r['errors'] ) === 4 && ! is_file( "$folder/$dir.xml" ) && get_post_meta( 5, '_podpub_details' ) === '' );
 make_png( "$tmp/in/cover_up.png", 1400, 1400 );
 $file = array( 'error' => UPLOAD_ERR_OK, 'tmp_name' => "$tmp/in/cover_up.png", 'name' => 'My Cover (final).png' );
 $r = PodPub_Feeds::save_details( 5, array_merge( $good, array( 'title' => 'Renamed Show' ) ), $file );
@@ -139,7 +139,7 @@ if ( $im ) {
 	echo "skip save: jpg replace (GD not installed)\n";
 }
 $r = PodPub_Feeds::save_details( 5, $good, array( 'error' => UPLOAD_ERR_OK, 'tmp_name' => "$tmp/in/a.gif", 'name' => 'Funny (1).GIF' ) );
-check( 'save: gif cover stored as cover.gif, old covers removed, warning shown', $r['errors'] === array() && is_file( "$folder/cover.gif" ) && ! is_file( "$folder/cover.jpg" ) && ! is_file( "$folder/cover.png" ) && PodPub_Details::get( 5 )['image'] === 'cover.gif' && count( $r['warnings'] ) === 1 );
+check( 'save: gif cover stored as cover.gif, old covers removed, warning shown', $r['errors'] === array() && is_file( "$folder/cover.gif" ) && ! is_file( "$folder/cover.jpg" ) && ! is_file( "$folder/cover.png" ) && PodPub_Details::get( 5 )['image'] === 'cover.gif' && count( $r['warnings'] ) === 2 );
 check( 'save: feed points at cover.gif', false !== strpos( file_get_contents( "$folder/$dir.xml" ), '/My_Great_Show/cover.gif' ) );
 $r = PodPub_Feeds::save_details( 5, $good, array( 'error' => UPLOAD_ERR_OK, 'tmp_name' => "$tmp/in/cover_up.png", 'name' => 'x.png' ) );
 check( 'save: png after gif removes the gif', is_file( "$folder/cover.png" ) && ! is_file( "$folder/cover.gif" ) );

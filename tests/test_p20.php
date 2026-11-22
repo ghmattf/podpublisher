@@ -32,7 +32,7 @@ function wp_max_upload_size() { return 67108864; }
 class WP_Error { public $m; function __construct( $c, $m ) { $this->m = $m; } function get_error_message() { return $this->m; } }
 function is_wp_error( $x ) { return $x instanceof WP_Error; }
 
-foreach ( array( 'settings', 'storage', 'p20', 'details', 'episodes', 'feedxml', 'feeds' ) as $c ) { require __DIR__ . "/../plugin/includes/class-podpub-$c.php"; }
+foreach ( array( 'settings', 'storage', 'p20', 'images', 'details', 'episodes', 'feedxml', 'feeds' ) as $c ) { require __DIR__ . "/../plugin/includes/class-podpub-$c.php"; }
 
 $fail = 0;
 function check( $name, $ok ) { global $fail; echo ( $ok ? 'ok   ' : 'FAIL ' ) . $name . "\n"; if ( ! $ok ) { $fail = 1; } }
@@ -165,7 +165,7 @@ update_post_meta( 5, '_podpub_dir', $pdir );
 $pf = "$tmp/uploads/podpublisher/$pdir";
 $r = PodPub_Feeds::save_p20( 5, array( 'funding' => array( array( 'url' => 'https://example.com/donate', 'message' => 'Fund us' ) ) ) );
 check( 'podcast: tags can be saved before the details (feed written later)', $r['errors'] === array() && count( $r['warnings'] ) === 1 && ! $r['written'] );
-PodPub_Feeds::save_details( 5, array( 'title' => 'My Show', 'description' => 'About', 'language' => 'en' ) );
+PodPub_Feeds::save_details( 5, array( 'title' => 'My Show', 'description' => 'About', 'language' => 'en', 'explicit' => 'no' ) );
 check( 'podcast: saving the main details keeps the tags', PodPub_Details::get( 5 )['funding'][0]['message'] === 'Fund us' );
 $in = array(
 	'funding'  => array( array( 'url' => 'https://example.com/donate?a=1&b=2', 'message' => 'Fish & "Chips"' ), array( 'url' => 'https://example.com/patreon', 'message' => 'Patreon' ) ),
