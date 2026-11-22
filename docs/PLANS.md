@@ -24,3 +24,27 @@ Plans for work that is not built yet. Nothing here is a decision until the owner
 **Work.** A small server class (`PodPub_Geo`: search, parse, cache, rate lock), one admin handler, a Settings field, a search box and about 40 lines of script on the Location rows, tests with a stubbed HTTP answer (parsing, caching, the one-per-second lock, bad input, permissions), and a DECISIONS entry. Medium: about 0.10.0.
 
 **Answers from the owner (2026-11-22).** The plugin and its code are public but not planned for the WordPress plugin store, so shipping with the public Nominatim as the default is acceptable. Nominatim is the chosen service. Names: place, region and country, editable (default, not yet confirmed).
+
+## TODO 22: publish a WordPress post for each episode (and podcast)
+
+**Owner's answers (2026-11-23).**
+- It is an **ordinary WordPress post** (not a custom post type).
+- The show notes go **in both places**: in the post, and in the feed (the post's link is also given to the feed; the notes stay in the feed).
+- **Editing an episode with the plugin updates the post**, overwriting what the post had, with a **warning** and an **option not to update the post**.
+- A post is created **only when an episode is saved**, controlled by a **"Create/update WordPress post" yes/no** prompt on the episode form.
+
+**How it would work (my reading).**
+1. Episode form: a "Create/update WordPress post" yes/no select. The first "yes" on save creates the post; the post's id is stored with the episode (`_podpub_ep`), so later saves update the same post instead of making another.
+2. Post: title = episode title; content = show notes (the same cleaned links-and-simple-formatting HTML); status follows the episode (draft or published; the publish date follows the episode date). Author = the person saving.
+3. Feed: the item's `<link>` is the post's address, once a post exists. Show notes stay in `content:encoded` and the description as now.
+4. When the episode already has a post, the form warns in plain words that saving with "yes" will overwrite the post's title and content with the plugin's, discarding edits made in WordPress, and the select can be set to "no" to leave the post alone. Default for an episode that already has a post: **no**, so nobody overwrites by accident (my default, to confirm).
+5. If the post is deleted or trashed in WordPress, saving with "yes" makes a new one. Deleting the episode does not delete the post (my default; relates to TODO 21).
+6. Needs the `publish_posts` rights of the person saving; if they lack them, the select is hidden or the save says why it did not make the post.
+
+**Tests.** First save with yes creates one post; second save with yes updates the same post; no leaves it alone; feed link is the post address; post gone, new one made; status and date follow the episode; show notes in both places.
+
+**Not yet answered (defaults in brackets).**
+- Does "each new podcast" also mean a post for the podcast itself? The owner's answers only describe episodes. (Default: episodes only.)
+- Existing episodes: should there be a way to create posts for episodes saved before this? (Default: no bulk action; saving an existing episode with "yes" creates its post.)
+- Should the post's category, featured image (episode picture) or an audio player be included? (Default: episode picture as the featured image if there is one; no player, no category; WordPress's own settings decide.)
+
