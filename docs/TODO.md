@@ -11,3 +11,5 @@ Wording is the owner's. Completed items are removed from this list (the history 
 19. Make value time splits importable from a .txt file or from pasted XML.
 20. Split the podcast edit screen into tabs.
 22. Option to publish a post for each new podcast and episode. This could include the show notes, and the RSS could contain a link to the post instead of the actual show notes, but this needs consideration. (Owner, 2026-11-23.) (Owner's answers, including a podcast page and the delete prompt, and the plan are in docs/PLANS.md.)
+
+23. chapters json file uploads. (Owner, 2026-11-23.)
