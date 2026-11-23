@@ -48,7 +48,7 @@ check( 'two feeds: order', $labels === array( 'PodPublisher', 'All podcasts', 'A
 check( 'two feeds: slugs', $slugs === array( 'podpublisher', 'podpublisher', 'podpublisher-feed-7', 'podpublisher-feed-9', 'podpublisher-settings' ) );
 
 // Settings sanitising.
-$base = array( 'delete_data_on_uninstall' => 0, 'storage_path' => '', 'storage_url' => '' );
+$base = array( 'delete_data_on_uninstall' => 0, 'storage_path' => '', 'storage_url' => '', 'geo_enabled' => 0, 'geo_url' => '' );
 check( 'settings: defaults', PodPub_Admin::sanitize_settings( array() ) === $base );
 check( 'settings: ticked is 1, junk dropped', PodPub_Admin::sanitize_settings( array( 'delete_data_on_uninstall' => '1', 'junk' => 'x' ) ) === array_merge( $base, array( 'delete_data_on_uninstall' => 1 ) ) );
 check( 'settings: non-array is safe', PodPub_Admin::sanitize_settings( 'x' ) === $base );

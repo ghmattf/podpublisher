@@ -22,5 +22,6 @@ step "Chunk D: chapters, transcripts, soundbites, alternate files, comments, sta
 step "Chunk D part 2: pictures and sizes, explicit, trailers, live, numbers, people" php test_chunk_d2.php
 step "OP3 download counting" php test_op3.php
 step "Delete podcast: records, episodes, optional folder removal" php test_delete_podcast.php
+step "Location search: parsing, cache, one-per-second lock, settings, OSM address" php test_geo.php
 echo; [ $fail -eq 0 ] && echo "ALL CHECKS PASSED" || echo "SOME CHECKS FAILED"
 exit $fail
