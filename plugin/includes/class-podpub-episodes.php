@@ -662,7 +662,7 @@ class PodPub_Episodes {
 	 * @param array|null $file       $_FILES entry for the audio (already confirmed to be an upload), or null.
 	 * @return array { errors, warnings, written, id }
 	 */
-	public static function save( $podcast_id, $id, $input, $file = null, $image = null, $transcript = null ) {
+	public static function save( $podcast_id, $id, $input, $file = null, $image = null, $transcript = null, $chapters_file = null ) {
 		$out = array( 'errors' => array(), 'warnings' => array(), 'written' => false, 'id' => (int) $id );
 		if ( ! PodPub_Feeds::get( $podcast_id ) || '' === PodPub_Feeds::dir_name( $podcast_id ) ) {
 			$out['errors'][] = 'This podcast was not found.';
@@ -711,6 +711,20 @@ class PodPub_Episodes {
 		}
 		if ( ( $tup || '' !== $tpick ) && '' === PodPub_Storage::base_url() ) {
 			$out['errors'][] = 'Set the public address of the files in Settings before adding a transcript file (the feed needs its web address).';
+		}
+		// An uploaded chapters.json replaces the typed chapter list and any outside address.
+		if ( is_array( $chapters_file ) && isset( $chapters_file['error'] ) && UPLOAD_ERR_NO_FILE !== (int) $chapters_file['error'] ) {
+			if ( UPLOAD_ERR_OK !== (int) $chapters_file['error'] ) {
+				$out['errors'][] = 'The chapters file upload failed.';
+			} elseif ( filesize( $chapters_file['tmp_name'] ) > 1048576 ) {
+				$out['errors'][] = 'The chapters file is over 1 MB. A chapters file is normally a few kilobytes.';
+			} else {
+				$crows = PodPub_P20::chapters_from_json( (string) file_get_contents( $chapters_file['tmp_name'] ), $out['errors'], $out['warnings'] );
+				if ( ! $out['errors'] ) {
+					$input['chapters']     = $crows;
+					$input['chapters_url'] = '';
+				}
+			}
 		}
 		$r = self::sanitize( $input, $cur, $plan || self::has_audio( $cur ) );
 		$out['errors'] = array_merge( $out['errors'], $r['errors'] );

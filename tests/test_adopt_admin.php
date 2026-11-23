@@ -136,6 +136,21 @@ $pid = $pods[0]->ID;
 $h = ''; ob_start(); PodPub_Admin::render_feed( $pid ); $h = ob_get_clean();
 check( 'podcast page: shows the adopted notice and the kept feed address', false !== strpos( $h, 'Feed adopted' ) && false !== strpos( $h, esc_html( $OLDURL ) ) );
 
+// ---- Write feed anyway ----
+file_put_contents( $OLD, str_replace( '</channel>', '<podcast:mystery foo="bar"/></channel>', file_get_contents( $OLD ) ) );
+PodPub_Feeds::save_details( $pid, array( 'title' => 'Old Show', 'description' => 'Edited.', 'language' => 'en', 'explicit' => 'no' ) );
+ob_start(); PodPub_Admin::render_feed( $pid ); $h = ob_get_clean();
+check( 'held: the podcast page shows the warning and a Write feed anyway button', false !== strpos( $h, 'NOT rewritten' ) && false !== strpos( $h, 'value="podpub_write_feed_anyway"' ) && false !== strpos( $h, 'Write feed anyway</button>' ) );
+$GLOBALS['can'] = false;
+$threw = false; try { $_POST = array( 'podpub_id' => $pid ); PodPub_Admin::handle_write_feed_anyway(); } catch ( Exception $e ) { $threw = 'die 403' === $e->getMessage(); }
+$GLOBALS['can'] = true;
+check( 'held: Write feed anyway needs the capability', $threw && false !== strpos( file_get_contents( $OLD ), 'mystery' ) );
+$_POST = array( 'podpub_id' => $pid );
+try { PodPub_Admin::handle_write_feed_anyway(); } catch ( Redirect $r ) { $to = $r->to; }
+check( 'held: Write feed anyway backs up, writes, and returns to the podcast page', false === strpos( file_get_contents( $OLD ), 'mystery' ) && file_exists( $OLD . '.bak2' ) && false !== strpos( $to, 'podpublisher-feed-' . $pid ) && ! empty( get_transient( 'podpub_notice_1' )['written'] ) );
+ob_start(); PodPub_Admin::render_feed( $pid ); $h = ob_get_clean();
+check( 'held: the warning is gone afterwards', false === strpos( $h, 'Write feed anyway</button>' ) );
+
 echo $fail ? "\nSOME FAILED\n" : "\nall ok\n";
 exec( 'rm -rf ' . escapeshellarg( $tmp ) );
 exit( $fail );

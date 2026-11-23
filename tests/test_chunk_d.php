@@ -120,6 +120,33 @@ $bad = array_merge( $ep, array( 'chapters' => array( array( 'start' => '0', 'tit
 $r = PodPub_Episodes::save( $pid, $eid, $bad );
 check( 'episode: a bad soundbite saves nothing, chapters file unchanged', count( $r['errors'] ) === 1 && json_decode( file_get_contents( $file ), true )['chapters'][0]['title'] === 'Start' );
 
+// ---- Uploaded chapters.json (TODO 23) ----
+function chup( $json ) { $f = sys_get_temp_dir() . '/podpub_ch_' . getmypid() . '.json'; file_put_contents( $f, $json ); return array( 'error' => UPLOAD_ERR_OK, 'tmp_name' => $f, 'name' => 'chapters.json' ); }
+$e = array(); $w = array();
+$rows = PodPub_P20::chapters_from_json( '{"version":"1.2.0","chapters":[{"startTime":90.7,"title":"Two","url":"https://u.example"},{"startTime":0,"title":"One","img":"https://i.example/a.jpg","toc":false,"location":{"name":"x"}}]}', $e, $w );
+check( 'chapters upload: rows read, start to whole seconds, unsupported fields named as lost', $e === array() && count( $rows ) === 2 && $rows[0]['start'] === '90' && $rows[1]['img'] === 'https://i.example/a.jpg' && count( $w ) === 1 && false !== strpos( $w[0], 'toc' ) && false !== strpos( $w[0], 'location' ) );
+$e = array(); $w = array(); PodPub_P20::chapters_from_json( 'not json', $e, $w );
+check( 'chapters upload: not JSON refused', count( $e ) === 1 );
+$e = array(); $w = array(); PodPub_P20::chapters_from_json( '{"chapters":[{"startTime":"x","title":"A"},{"startTime":1}]}', $e, $w );
+check( 'chapters upload: a bad start time and a missing title are each reported', count( $e ) === 2 );
+$e = array(); $w = array(); PodPub_P20::chapters_from_json( "\xEF\xBB\xBF" . '{"chapters":[{"startTime":0,"title":"A"}]}', $e, $w );
+check( 'chapters upload: a byte-order mark at the start is tolerated', $e === array() );
+$up = chup( '{"version":"1.2.0","chapters":[{"startTime":5,"title":"From file","img":"http://insecure.example/a.jpg"}]}' );
+$r  = PodPub_Episodes::save( $pid, $eid, $ep, null, null, null, $up );
+check( 'chapters upload: an http:// picture in the file is refused by the normal checks, nothing changes', count( $r['errors'] ) === 1 && json_decode( file_get_contents( $file ), true )['chapters'][0]['title'] === 'Start' );
+$up = chup( '{"version":"1.2.0","chapters":[{"startTime":5,"title":"From file","toc":false},{"startTime":65,"title":"Next"}]}' );
+$r  = PodPub_Episodes::save( $pid, $eid, array_merge( $ep, array( 'chapters_url' => 'https://h.example/ch.json' ) ), null, null, null, $up );
+$jj = json_decode( @file_get_contents( $file ), true );
+check( 'chapters upload: replaces the typed list and the outside address, chapters.json rewritten, loss warned', $r['errors'] === array() && $jj['chapters'][0]['title'] === 'From file' && $jj['chapters'][1]['startTime'] === 65 && count( $jj['chapters'] ) === 2 && (bool) array_filter( $r['warnings'], function ( $m ) { return false !== strpos( $m, 'toc' ); } ) );
+$big = chup( str_repeat( ' ', 1048577 ) );
+$r   = PodPub_Episodes::save( $pid, $eid, $ep, null, null, null, $big );
+check( 'chapters upload: over 1 MB refused', count( $r['errors'] ) === 1 && false !== strpos( $r['errors'][0], '1 MB' ) );
+$r = PodPub_Episodes::save( $pid, $eid, $ep, null, null, null, array( 'error' => UPLOAD_ERR_NO_FILE ) );
+check( 'chapters upload: no file chosen changes nothing', $r['errors'] === array() );
+@unlink( sys_get_temp_dir() . '/podpub_ch_' . getmypid() . '.json' );
+// Put the typed list back for the checks below.
+PodPub_Episodes::save( $pid, $eid, $ep );
+
 // An outside chapters file replaces the list and removes the written file.
 $r = PodPub_Episodes::save( $pid, $eid, array_merge( $ep, array( 'chapters' => array(), 'chapters_url' => 'https://h.example/ch.json' ) ) );
 $x = feed_dom( "$tmp/uploads/podpublisher/$pdir/$pdir.xml" );

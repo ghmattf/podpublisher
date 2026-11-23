@@ -247,10 +247,11 @@ class PodPub_FeedXml {
 	 * Build a podcast's feed from its saved details and write it into its folder.
 	 * Does nothing (returns an error) until the required details are saved.
 	 *
-	 * @param int $id Record id.
+	 * @param int  $id    Record id.
+	 * @param bool $force Skip the check that the file on disk is one PodPublisher wrote (the owner has confirmed).
 	 * @return string|WP_Error Full path of the file written.
 	 */
-	public static function write( $id ) {
+	public static function write( $id, $force = false ) {
 		$post = PodPub_Feeds::get( $id );
 		$dir  = PodPub_Feeds::dir_name( $id );
 		if ( ! $post || '' === $dir ) {
@@ -276,12 +277,64 @@ class PodPub_FeedXml {
 				'episodes'  => PodPub_Episodes::feed_items( $id, $base, time() ),
 			)
 		);
-		$file  = $target['file'];
+		$file = $target['file'];
+		if ( ! $force && is_file( $file ) && class_exists( 'PodPub_Adopt' ) ) {
+			$held = self::changed_outside( $id, $file, $xml );
+			if ( '' !== $held ) {
+				update_post_meta( (int) $id, PodPub_Feeds::META_FEED_HELD, $held );
+				return new WP_Error( 'podpub_feed', $held );
+			}
+		}
 		$stage = dirname( $file ) . '/.feed_' . getmypid() . '.tmp';
 		if ( false === @file_put_contents( $stage, $xml ) || ! @rename( $stage, $file ) ) { // phpcs:ignore
 			@unlink( $stage ); // phpcs:ignore
 			return new WP_Error( 'podpub_feed', 'The feed file could not be written.' );
 		}
+		update_post_meta( (int) $id, PodPub_Feeds::META_FEED_SHA, sha1( $xml ) );
+		update_post_meta( (int) $id, PodPub_Feeds::META_FEED_HELD, '' );
 		return $file;
+	}
+
+	/**
+	 * Is the file on disk something other than what PodPublisher last wrote, and would writing
+	 * the new feed over it lose tags? (TODO 12, the save-time check.)
+	 *
+	 * @param int    $id   Record id.
+	 * @param string $file Feed file on disk.
+	 * @param string $xml  The feed about to be written.
+	 * @return string Empty when it is safe to write; otherwise a plain message naming what would be lost.
+	 */
+	private static function changed_outside( $id, $file, $xml ) {
+		$cur = @file_get_contents( $file ); // phpcs:ignore
+		if ( false === $cur || sha1( $cur ) === (string) get_post_meta( (int) $id, PodPub_Feeds::META_FEED_SHA, true ) ) {
+			return '';
+		}
+		$old = PodPub_Adopt::parse( $cur );
+		$new = PodPub_Adopt::parse( $xml );
+		if ( is_wp_error( $old ) || is_wp_error( $new ) ) {
+			return '';
+		}
+		$parts = array();
+		foreach ( PodPub_Adopt::lost( $old, $new ) as $l ) {
+			$parts[] = $l['label'] . ' (' . (int) $l['old'] . ' in the file, ' . (int) $l['new'] . ' after)';
+		}
+		if ( ! $parts ) {
+			return '';
+		}
+		return 'The feed file was NOT rewritten: it has changed since PodPublisher last wrote it, and these tags in it would be lost: ' . implode( '; ', array_slice( $parts, 0, 12 ) ) . ( count( $parts ) > 12 ? '; and ' . ( count( $parts ) - 12 ) . ' more' : '' ) . '. Your changes are saved. Use "Write feed anyway" on the podcast page to replace the file (a backup copy is kept).';
+	}
+
+	/**
+	 * Copy a feed file to name.bak (name.bak2, and so on, if one exists).
+	 *
+	 * @param string $file Feed file.
+	 * @return string Path of the copy, or an empty string if it could not be made.
+	 */
+	public static function backup( $file ) {
+		$backup = $file . '.bak';
+		for ( $i = 2; file_exists( $backup ); $i++ ) {
+			$backup = $file . '.bak' . $i;
+		}
+		return @copy( $file, $backup ) ? $backup : ''; // phpcs:ignore
 	}
 }
