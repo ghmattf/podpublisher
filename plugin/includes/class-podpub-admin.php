@@ -26,6 +26,7 @@ class PodPub_Admin {
 		add_action( 'admin_post_podpub_save_p20', array( __CLASS__, 'handle_save_p20' ) );
 		add_action( 'admin_post_podpub_delete_episode', array( __CLASS__, 'handle_delete_episode' ) );
 		add_action( 'admin_post_podpub_delete_podcast', array( __CLASS__, 'handle_delete_podcast' ) );
+		add_action( 'wp_ajax_podpub_geo_search', array( __CLASS__, 'handle_geo_search' ) );
 	}
 
 	/**
@@ -74,6 +75,7 @@ class PodPub_Admin {
 		$old   = array(
 			'storage_path' => (string) PodPub_Settings::get( 'storage_path' ),
 			'storage_url'  => (string) PodPub_Settings::get( 'storage_url' ),
+			'geo_url'      => (string) PodPub_Settings::get( 'geo_url' ),
 		);
 		$path = isset( $input['storage_path'] ) ? trim( sanitize_text_field( $input['storage_path'] ) ) : '';
 		$path = '' === $path ? '' : rtrim( str_replace( '\\', '/', $path ), '/' );
@@ -98,10 +100,18 @@ class PodPub_Admin {
 			add_settings_error( 'podpub_settings', 'podpub_writable', 'Saved, but the web server cannot write to that folder yet. Create it or change its permissions before adding podcasts.', 'warning' );
 		}
 
+		$geo_url = isset( $input['geo_url'] ) ? rtrim( trim( sanitize_text_field( $input['geo_url'] ) ), '/' ) : '';
+		if ( '' !== $geo_url && ! PodPub_Geo::valid_url( $geo_url ) ) {
+			add_settings_error( 'podpub_settings', 'podpub_geo_url', 'The location search address was not saved. It must start with https:// and have no spaces, query or other special characters. (Addresses on this server or a private network are refused by WordPress for safety.)', 'error' );
+			$geo_url = $old['geo_url'];
+		}
+
 		return array(
 			'delete_data_on_uninstall' => empty( $input['delete_data_on_uninstall'] ) ? 0 : 1,
 			'storage_path'             => $path,
 			'storage_url'              => $url,
+			'geo_enabled'              => empty( $input['geo_enabled'] ) ? 0 : 1,
+			'geo_url'                  => $geo_url,
 		);
 	}
 
@@ -206,6 +216,22 @@ class PodPub_Admin {
 	}
 
 	/**
+	 * Location search (admin-ajax): administrators only, nonce checked, one search per request.
+	 */
+	public static function handle_geo_search() {
+		if ( ! current_user_can( self::CAP ) ) {
+			wp_send_json_error( array( 'message' => 'You do not have permission to do that.' ), 403 );
+		}
+		check_ajax_referer( 'podpub_geo', 'nonce' );
+		$q = isset( $_POST['q'] ) && is_string( $_POST['q'] ) ? sanitize_text_field( wp_unslash( $_POST['q'] ) ) : '';
+		$r = PodPub_Geo::search( $q );
+		if ( $r['ok'] ) {
+			wp_send_json_success( array( 'results' => $r['results'], 'message' => $r['message'] ) );
+		}
+		wp_send_json_error( array( 'message' => $r['message'] ) );
+	}
+
+	/**
 	 * Podcast delete handler. The folder is only deleted when the box was ticked.
 	 */
 	public static function handle_delete_podcast() {
@@ -238,6 +264,36 @@ class PodPub_Admin {
 		set_transient( 'podpub_notice_' . get_current_user_id(), $result, 120 );
 		wp_safe_redirect( self::feed_page_url( $id ) );
 		exit;
+	}
+
+	/**
+	 * The place search box above a Location table. Search runs only when Search is pressed;
+	 * "Use" copies a result into the first Location row with no place name. Nothing is saved
+	 * until the form is saved. Results are put on the page as text, never as HTML.
+	 *
+	 * @param string $rows_name Field name of the Location rows (for example podpub_p20[locations]).
+	 */
+	private static function render_geo_search( $rows_name ) {
+		if ( ! PodPub_Geo::enabled() ) {
+			return;
+		}
+		echo '<div class="podpub-geo" data-rows="' . esc_attr( $rows_name ) . '" data-ajax="' . esc_url( admin_url( 'admin-ajax.php' ) ) . '" data-nonce="' . esc_attr( wp_create_nonce( 'podpub_geo' ) ) . '" style="margin:8px 0">';
+		echo '<input type="text" class="regular-text podpub-geo-q" maxlength="120" placeholder="Search for a place, for example Melbourne"> ';
+		echo '<button type="button" class="button podpub-geo-go">Search</button> <span class="podpub-geo-status" role="status"></span>';
+		echo '<ul class="podpub-geo-list" style="margin:6px 0"></ul>';
+		echo '<p class="description podpub-geo-credit" hidden>Search results &copy; OpenStreetMap contributors. Pick Use to fill the first empty Location row; you can still change anything before saving.</p></div>';
+		echo '<script>(function(){function T(e,t,c){var n=document.createElement(e);if(t)n.textContent=t;if(c)n.className=c;return n;}'
+			. 'document.querySelectorAll(".podpub-geo").forEach(function(b){if(b.getAttribute("data-ready"))return;b.setAttribute("data-ready","1");var q=b.querySelector(".podpub-geo-q"),go=b.querySelector(".podpub-geo-go"),st=b.querySelector(".podpub-geo-status"),ul=b.querySelector(".podpub-geo-list"),cr=b.querySelector(".podpub-geo-credit"),f=b.closest("form"),busy=false;'
+			. 'function F(i,k){return f.querySelector("[name=\""+b.getAttribute("data-rows")+"["+i+"]["+k+"]\"]");}'
+			. 'function use(r){for(var i=0;i<10;i++){var n=F(i,"name");if(!n)break;if(n.value.trim()===""){n.value=r.name;["geo","osm","country"].forEach(function(k){var e=F(i,k);if(e)e.value=r[k]||"";});st.textContent="Filled in row "+(i+1)+". Save to keep it.";return;}}st.textContent="All the Location rows are in use. Clear a place name first.";}'
+			. 'function run(){if(busy)return;var v=q.value.trim();if(v.length<3){st.textContent="Type at least 3 characters.";return;}busy=true;go.disabled=true;st.textContent="Searching\u2026";ul.textContent="";cr.hidden=true;'
+			. 'var d=new FormData();d.append("action","podpub_geo_search");d.append("nonce",b.getAttribute("data-nonce"));d.append("q",v);'
+			. 'fetch(b.getAttribute("data-ajax"),{method:"POST",credentials:"same-origin",body:d}).then(function(r){return r.json();}).then(function(j){'
+			. 'if(!j||!j.success){st.textContent=(j&&j.data&&j.data.message)||"The search failed. Fill in the fields by hand.";return;}'
+			. 'var l=j.data.results||[];st.textContent=l.length?"":(j.data.message||"No places were found.");'
+			. 'l.forEach(function(r){var li=T("li");var u=T("button","Use","button button-small");u.type="button";u.addEventListener("click",function(){use(r);});li.appendChild(u);li.appendChild(T("span"," "+r.label));ul.appendChild(li);});if(l.length)cr.hidden=false;'
+			. '}).catch(function(){st.textContent="The search failed. Fill in the fields by hand.";}).then(function(){busy=false;go.disabled=false;});}'
+			. 'go.addEventListener("click",run);q.addEventListener("keydown",function(e){if(e.key==="Enter"){e.preventDefault();run();}});});})();</script>';
 	}
 
 	/**
@@ -314,11 +370,12 @@ class PodPub_Admin {
 		), PodPub_P20::MAX_FUNDING );
 
 		echo '<h3>Location</h3><p class="description">Where the ' . ( $item ? 'episode' : 'podcast' ) . ' is about (subject) or was made (creator). Add one row for each place. The name is required; the rest is recommended.' . esc_html( $inherit ) . '</p>';
+		self::render_geo_search( $prefix . '[locations]' );
 		self::render_rows( $prefix . '[locations]', $rows( 'locations', $d['locations'] ), array(
 			array( 'key' => 'name', 'label' => 'Place name', 'type' => 'text', 'ph' => 'Melbourne' ),
 			array( 'key' => 'rel', 'label' => 'Place is', 'type' => 'select', 'options' => array( '' => 'The subject (default)', 'creator' => 'Where it was made' ) ),
 			array( 'key' => 'geo', 'label' => 'Coordinates', 'type' => 'text', 'ph' => '-37.8136,144.9631', 'class' => 'regular-text code' ),
-			array( 'key' => 'osm', 'label' => 'OpenStreetMap id', 'type' => 'text', 'ph' => 'R2316741', 'class' => 'small-text code' ),
+			array( 'key' => 'osm', 'label' => 'OpenStreetMap id', 'type' => 'text', 'ph' => 'R2316741 or an openstreetmap.org address', 'class' => 'regular-text code' ),
 			array( 'key' => 'country', 'label' => 'Country', 'type' => 'text', 'ph' => 'AU', 'class' => 'small-text' ),
 		), PodPub_P20::MAX_LOCATIONS );
 
@@ -883,6 +940,9 @@ class PodPub_Admin {
 		echo '<tr><th scope="row"><label for="podpub_storage_url">Public address</label></th><td>';
 		echo '<input type="text" id="podpub_storage_url" class="large-text code" name="' . $opt . '[storage_url]" value="' . esc_attr( (string) PodPub_Settings::get( 'storage_url' ) ) . '" placeholder="' . esc_attr( PodPub_Storage::derive_url( PodPub_Storage::base_path() ) ) . '">'; // phpcs:ignore WordPress.Security.EscapeOutput
 		echo '<p class="description">The web address that points to the folder above. Only needed when the folder is outside the WordPress uploads folder.</p></td></tr>';
+		echo '<tr><th scope="row">Location search</th><td><label><input type="checkbox" name="' . $opt . '[geo_enabled]" value="1"' . checked( PodPub_Geo::enabled(), true, false ) . '> Show a place search on the Location rows</label>';
+		echo '<p><label for="podpub_geo_url">Search service address</label><br><input type="text" id="podpub_geo_url" class="large-text code" name="' . $opt . '[geo_url]" value="' . esc_attr( (string) PodPub_Settings::get( 'geo_url' ) ) . '" placeholder="' . esc_attr( PodPub_Geo::DEFAULT_URL ) . '"></p>';
+		echo '<p class="description">Leave the address empty to use the public OpenStreetMap Nominatim service. Its usage policy allows one request per second for the whole site, no search-as-you-type and an identifying User-Agent, so PodPublisher searches only when you press Search, waits a second between searches, keeps results for 30 days and sends <code>PodPublisher/version (your site address)</code> as its User-Agent. Heavy use should go to your own Nominatim or a compatible service: enter its https:// address here. Results are &copy; OpenStreetMap contributors.</p></td></tr>';
 		echo '<tr><th scope="row">Uninstall</th><td><label>';
 		echo '<input type="checkbox" name="' . esc_attr( PodPub_Settings::OPTION ) . '[delete_data_on_uninstall]" value="1"' . $checked . '> '; // phpcs:ignore WordPress.Security.EscapeOutput
 		echo 'Delete podcasts and settings when the plugin is deleted</label></td></tr></table>';

@@ -144,6 +144,22 @@ class PodPub_P20 {
 	}
 
 	/**
+	 * An OpenStreetMap id from what was typed: an id (n123, W456, R113314) or an address
+	 * such as https://www.openstreetmap.org/relation/113314 (node, way or relation).
+	 * Anything else is returned in capitals for the normal check to refuse.
+	 *
+	 * @param string $text Typed text.
+	 * @return string
+	 */
+	public static function osm_id( $text ) {
+		$text = trim( (string) $text );
+		if ( preg_match( '#^https?://(?:www\.)?openstreetmap\.org/(node|way|relation)/([0-9]{1,12})(?:[/?\#].*)?$#i', $text, $m ) ) {
+			return strtoupper( $m[1][0] ) . (int) $m[2];
+		}
+		return strtoupper( $text );
+	}
+
+	/**
 	 * Locations (the Podcast namespace allows several): a name (required, up to 128
 	 * characters) and the recommended rel (subject or creator), geo, osm and country.
 	 */
@@ -152,7 +168,7 @@ class PodPub_P20 {
 		foreach ( self::rows( $in, 'locations', array( 'name', 'rel', 'geo', 'osm', 'country' ), self::MAX_LOCATIONS, $errors, 'locations' ) as $n => $r ) {
 			$p   = 'Location ' . $n . ': ';
 			$geo = str_ireplace( array( 'geo:', ' ' ), '', $r['geo'] );
-			$osm = strtoupper( $r['osm'] );
+			$osm = self::osm_id( $r['osm'] );
 			$cc  = strtoupper( $r['country'] );
 			$rel = strtolower( $r['rel'] );
 			if ( '' === $r['name'] || mb_strlen( $r['name'] ) > 128 ) {
@@ -168,7 +184,7 @@ class PodPub_P20 {
 				continue;
 			}
 			if ( '' !== $osm && ! preg_match( '/^[NWR][0-9]{1,12}$/', $osm ) ) {
-				$errors[] = $p . 'the OpenStreetMap id must be N, W or R followed by digits, such as R113314.';
+				$errors[] = $p . 'the OpenStreetMap id must be N, W or R followed by digits, such as R113314 (or paste an address like https://www.openstreetmap.org/relation/113314).';
 				continue;
 			}
 			if ( '' !== $cc && ! preg_match( '/^[A-Z]{2}$/', $cc ) ) {

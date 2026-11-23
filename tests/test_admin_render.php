@@ -41,18 +41,32 @@ function wp_nonce_field() { echo '<input type="hidden" name="_wpnonce" value="n"
 function submit_button( $t = 'Save', $type = 'primary', $name = 'submit', $wrap = true ) { echo '<button class="' . $type . '">' . esc_html( $t ) . '</button>'; }
 function selected( $a, $b, $e = true ) { return (string) $a === (string) $b ? ' selected' : ''; }
 function checked( $a, $b, $e = true ) { return (string) $a === (string) $b ? ' checked' : ''; }
-function current_user_can() { return true; }
+function current_user_can() { return ! isset( $GLOBALS['can'] ) || $GLOBALS['can']; }
+class Stop extends Exception { public $p; }
+function wp_send_json_success( $d ) { $e = new Stop( 'ok' ); $e->p = array( 'success' => true, 'data' => $d ); throw $e; }
+function wp_send_json_error( $d, $c = 200 ) { $e = new Stop( 'err' ); $e->p = array( 'success' => false, 'data' => $d, 'code' => $c ); throw $e; }
+function check_ajax_referer( $a, $k ) { if ( ! empty( $GLOBALS['bad_nonce'] ) ) { $e = new Stop( 'nonce' ); $e->p = array( 'success' => false, 'nonce' => true ); throw $e; } return true; }
+function wp_strip_all_tags( $s ) { return trim( strip_tags( (string) $s ) ); }
+function home_url() { return 'https://example.com'; }
+function wp_safe_remote_get( $u, $a = array() ) { $GLOBALS['http'][] = $u; return array( 'code' => 200, 'body' => '[{"lat":"1.5","lon":"2.5","name":"Testville","osm_type":"node","osm_id":7,"address":{"country":"Testland","country_code":"tl"}}]' ); }
+function wp_remote_retrieve_response_code( $r ) { return $r['code']; }
+function wp_remote_retrieve_body( $r ) { return $r['body']; }
+if ( ! defined( 'DAY_IN_SECONDS' ) ) { define( 'DAY_IN_SECONDS', 86400 ); }
 function get_current_user_id() { return 1; }
 function get_transient( $k ) { return isset( $GLOBALS['trans'][ $k ] ) ? $GLOBALS['trans'][ $k ] : false; }
 function set_transient( $k, $v ) { $GLOBALS['trans'][ $k ] = $v; }
 function delete_transient( $k ) { unset( $GLOBALS['trans'][ $k ] ); }
 function wp_unslash( $v ) { return $v; }
+function settings_errors() {}
+function settings_fields() {}
+function add_settings_error( $a, $b, $m, $t = '' ) { $GLOBALS['setting_errors'][] = $m; }
+function wp_create_nonce( $a = '' ) { return 'nonce_' . $a; }
 function wp_json_encode( $v ) { return json_encode( $v ); }
 function add_action() {}
 class WP_Error { public $m; function __construct( $c, $m ) { $this->m = $m; } function get_error_message() { return $this->m; } }
 function is_wp_error( $x ) { return $x instanceof WP_Error; }
 
-foreach ( array( 'settings', 'storage', 'p20', 'images', 'details', 'episodes', 'feedxml', 'feeds', 'admin' ) as $c ) { require __DIR__ . "/../plugin/includes/class-podpub-$c.php"; }
+foreach ( array( 'settings', 'storage', 'p20', 'images', 'geo', 'details', 'episodes', 'feedxml', 'feeds', 'admin' ) as $c ) { require __DIR__ . "/../plugin/includes/class-podpub-$c.php"; }
 
 $fail = 0;
 function check( $name, $ok ) { global $fail; echo ( $ok ? 'ok   ' : 'FAIL ' ) . $name . "\n"; if ( ! $ok ) { $fail = 1; } }
@@ -183,6 +197,46 @@ check( 'list page: delete notice is shown only once', false === strpos( $h, 'Pod
 $GLOBALS['trans']['podpub_notice_1'] = array( 'errors' => array(), 'warnings' => array(), 'episodes' => 1, 'files_deleted' => true, 'folder' => '/x/My_Show', 'deleted_podcast' => true );
 ob_start(); PodPub_Admin::render_list(); $h = ob_get_clean();
 check( 'list page: delete notice (files deleted, one episode)', false !== strpos( $h, 'Podcast deleted (1 episode removed)' ) && false !== strpos( $h, 'folder and files were deleted too' ) );
+
+// Location search box (0.11.0): on the podcast page and the episode form, switchable off, escaped.
+ob_start(); PodPub_Admin::render_feed( 5 ); $h = ob_get_clean();
+check( 'location search: box above the Location rows with the rows name, ajax address and nonce', false !== strpos( $h, 'class="podpub-geo" data-rows="podpub_p20[locations]"' ) && false !== strpos( $h, 'data-ajax="https://example.com/wp-admin/admin-ajax.php"' ) && false !== strpos( $h, 'data-nonce="nonce_podpub_geo"' ) );
+check( 'location search: Search button, 120 character limit, OpenStreetMap credit, script posts the right action', false !== strpos( $h, 'podpub-geo-go">Search</button>' ) && false !== strpos( $h, 'maxlength="120"' ) && false !== strpos( $h, 'OpenStreetMap contributors' ) && false !== strpos( $h, 'podpub_geo_search' ) );
+check( 'location search: results go on the page as text, never as HTML', false === strpos( $h, 'innerHTML' ) && false !== strpos( $h, 'textContent' ) );
+check( 'location search: the OSM id box says an openstreetmap.org address can be pasted', false !== strpos( $h, 'R2316741 or an openstreetmap.org address' ) );
+$GLOBALS['opts']['podpub_settings'] = array( 'geo_enabled' => 0 );
+ob_start(); PodPub_Admin::render_feed( 5 ); $h = ob_get_clean();
+check( 'location search: switched off in Settings, no box and no script (rows still there)', false === strpos( $h, 'class="podpub-geo"' ) && false === strpos( $h, 'podpub_geo_search' ) && false !== strpos( $h, 'podpub_p20[locations][0][name]' ) );
+$GLOBALS['opts']['podpub_settings'] = array();
+ob_start(); PodPub_Admin::render_settings(); $h = ob_get_clean();
+check( 'settings: location search tick box (on by default) and service address with the public default shown', false !== strpos( $h, 'name="podpub_settings[geo_enabled]" value="1" checked' ) && false !== strpos( $h, 'name="podpub_settings[geo_url]"' ) && false !== strpos( $h, 'placeholder="https://nominatim.openstreetmap.org"' ) && false !== strpos( $h, 'one request per second' ) );
+$s = PodPub_Admin::sanitize_settings( array( 'geo_enabled' => '1', 'geo_url' => 'https://geo.example.org/' ) );
+check( 'settings: a valid https service address is kept (trailing slash dropped)', $s['geo_url'] === 'https://geo.example.org' && $s['geo_enabled'] === 1 );
+$GLOBALS['opts']['podpub_settings'] = array( 'geo_url' => 'https://old.example.org' );
+$s = PodPub_Admin::sanitize_settings( array( 'geo_enabled' => '1', 'geo_url' => 'http://plain.example.org' ) );
+check( 'settings: an http:// service address is refused and the old one kept', $s['geo_url'] === 'https://old.example.org' );
+$s = PodPub_Admin::sanitize_settings( array( 'geo_url' => '' ) );
+check( 'settings: empty address = public default; unticked box = off', $s['geo_url'] === '' && $s['geo_enabled'] === 0 );
+$GLOBALS['opts']['podpub_settings'] = array();
+
+// Location search handler: administrators only, nonce checked, answer as JSON.
+function geo_call( $q ) { $_POST = array( 'q' => $q ); try { PodPub_Admin::handle_geo_search(); } catch ( Stop $e ) { return $e->p; } return null; }
+$GLOBALS['trans'] = array(); $GLOBALS['http'] = array();
+$GLOBALS['can'] = false;
+$r = geo_call( 'Testville' );
+check( 'search handler: a user who cannot manage podcasts is refused (403) and nothing is fetched', $r['success'] === false && $r['code'] === 403 && $GLOBALS['http'] === array() );
+$GLOBALS['can'] = true; $GLOBALS['bad_nonce'] = true;
+$r = geo_call( 'Testville' );
+check( 'search handler: a bad or missing nonce is refused and nothing is fetched', ! empty( $r['nonce'] ) && $GLOBALS['http'] === array() );
+$GLOBALS['bad_nonce'] = false;
+$r = geo_call( 'Testville' );
+check( 'search handler: success returns the rows to fill in', $r['success'] === true && $r['data']['results'][0]['name'] === 'Testville, Testland' && $r['data']['results'][0]['geo'] === '1.5,2.5' && $r['data']['results'][0]['osm'] === 'N7' && $r['data']['results'][0]['country'] === 'TL' );
+$GLOBALS['trans'] = array(); $GLOBALS['http'] = array();
+$r = geo_call( 'ab' );
+check( 'search handler: too short gives a message, no fetch', $r['success'] === false && false !== strpos( $r['data']['message'], 'between 3 and 120' ) && $GLOBALS['http'] === array() );
+$_POST = array( 'q' => array( 'x' ) );
+try { PodPub_Admin::handle_geo_search(); $r = null; } catch ( Stop $e ) { $r = $e->p; }
+check( 'search handler: an array instead of text is treated as empty', $r['success'] === false );
 
 $it = new RecursiveIteratorIterator( new RecursiveDirectoryIterator( $tmp, FilesystemIterator::SKIP_DOTS ), RecursiveIteratorIterator::CHILD_FIRST );
 foreach ( $it as $f ) { $f->isDir() ? rmdir( $f ) : unlink( $f ); }
