@@ -13,6 +13,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 class PodPub_Feeds {
 
 	const POST_TYPE = 'podpub_feed';
+	// An adopted feed is written back over its old file, at its old address (set by PodPub_Adopt).
+	const META_FEED_FILE = '_podpub_feed_file';
+	const META_FEED_URL  = '_podpub_feed_url';
 
 	public static function init() {
 		add_action( 'init', array( __CLASS__, 'register' ) );
@@ -201,6 +204,28 @@ class PodPub_Feeds {
 	}
 
 	/**
+	 * Where a podcast's feed file is written and what its public address is. Normally
+	 * {Podcast folder}/{name}/{name}.xml; an adopted feed keeps its old file and address.
+	 *
+	 * @param int $id Record id.
+	 * @return array { file: string, url: string, custom: bool } file is '' when the podcast has no folder.
+	 */
+	public static function feed_target( $id ) {
+		$file = (string) get_post_meta( (int) $id, self::META_FEED_FILE, true );
+		$url  = (string) get_post_meta( (int) $id, self::META_FEED_URL, true );
+		if ( '' !== $file && '' !== $url ) {
+			return array( 'file' => $file, 'url' => $url, 'custom' => true );
+		}
+		$dir  = self::dir_name( $id );
+		$base = PodPub_Storage::base_url();
+		return array(
+			'file'   => '' === $dir ? '' : PodPub_Storage::base_path() . '/' . $dir . '/' . $dir . '.xml',
+			'url'    => ( '' === $dir || '' === $base ) ? '' : $base . '/' . $dir . '/' . $dir . '.xml',
+			'custom' => false,
+		);
+	}
+
+	/**
 	 * The folder name (not the full path) a podcast's files live in.
 	 *
 	 * @param int $id Record id.
@@ -245,6 +270,10 @@ class PodPub_Feeds {
 			}
 		}
 
+		$target = self::feed_target( $id );
+		if ( $target['custom'] && $delete_files ) {
+			$out['warnings'][] = 'The feed file ' . $target['file'] . ' was adopted from outside the podcast\'s folder, so it was not deleted. A copy of the feed from before it was adopted may be next to it (.bak).';
+		}
 		foreach ( PodPub_Episodes::all( $id ) as $episode ) {
 			wp_delete_post( (int) $episode->ID, true );
 			++$out['episodes'];

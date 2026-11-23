@@ -26,6 +26,7 @@ class PodPub_Admin {
 		add_action( 'admin_post_podpub_save_p20', array( __CLASS__, 'handle_save_p20' ) );
 		add_action( 'admin_post_podpub_delete_episode', array( __CLASS__, 'handle_delete_episode' ) );
 		add_action( 'admin_post_podpub_delete_podcast', array( __CLASS__, 'handle_delete_podcast' ) );
+		add_action( 'admin_post_podpub_adopt_confirm', array( __CLASS__, 'handle_adopt_confirm' ) );
 		add_action( 'wp_ajax_podpub_geo_search', array( __CLASS__, 'handle_geo_search' ) );
 	}
 
@@ -712,7 +713,7 @@ class PodPub_Admin {
 	}
 
 	/**
-	 * Main page: list of podcasts, New podcast, Import podcast.
+	 * Main page: list of podcasts, New podcast, Adopt a feed.
 	 */
 	public static function render_list() {
 		if ( ! current_user_can( self::CAP ) ) {
@@ -721,7 +722,7 @@ class PodPub_Admin {
 		$action = isset( $_GET['action'] ) ? sanitize_key( wp_unslash( $_GET['action'] ) ) : '';
 		echo '<div class="wrap"><h1 class="wp-heading-inline">PodPublisher</h1>';
 		echo ' <a href="' . esc_url( self::list_url( array( 'action' => 'new' ) ) ) . '" class="page-title-action">New podcast</a>';
-		echo ' <a href="' . esc_url( self::list_url( array( 'action' => 'import' ) ) ) . '" class="page-title-action">Import podcast</a>';
+		echo ' <a href="' . esc_url( self::list_url( array( 'action' => 'import' ) ) ) . '" class="page-title-action">Adopt a feed</a>';
 		echo '<hr class="wp-header-end">';
 		self::render_delete_notice();
 
@@ -741,6 +742,11 @@ class PodPub_Admin {
 	private static function render_delete_notice() {
 		$key    = 'podpub_notice_' . get_current_user_id();
 		$notice = get_transient( $key );
+		if ( is_array( $notice ) && ! empty( $notice['adopt_error'] ) ) {
+			delete_transient( $key );
+			echo '<div class="notice notice-error"><p>' . esc_html( $notice['adopt_error'] ) . '</p></div>';
+			return;
+		}
 		if ( ! is_array( $notice ) || empty( $notice['deleted_podcast'] ) ) {
 			return;
 		}
@@ -782,7 +788,7 @@ class PodPub_Admin {
 	private static function render_table() {
 		$feeds = PodPub_Feeds::all();
 		if ( ! $feeds ) {
-			echo '<p>No podcasts yet. Use <strong>New podcast</strong> to start one, or <strong>Import podcast</strong> to bring in an existing one.</p>';
+			echo '<p>No podcasts yet. Use <strong>New podcast</strong> to start one, or <strong>Adopt a feed</strong> to bring in one already on your server.</p>';
 			return;
 		}
 		echo '<table class="wp-list-table widefat fixed striped"><thead><tr><th>Podcast</th></tr></thead><tbody>';
@@ -807,9 +813,111 @@ class PodPub_Admin {
 		echo '</form>';
 	}
 
+	/**
+	 * Adopt a feed already on this server (or on the web): check it, show what would be lost, confirm.
+	 */
 	private static function render_import() {
-		echo '<h2>Import podcast</h2>';
-		echo '<p>Importing an existing podcast is not built yet.</p>';
+		echo '<h2>Adopt a feed</h2>';
+		echo '<p>Bring an existing podcast feed under PodPublisher. Give the feed address (https://) or the full path of the feed file on this server. Nothing is changed until you have read the report and confirmed.</p>';
+		$source = '';
+		$report = null;
+		if ( isset( $_GET['podpub_source'] ) && '' !== trim( (string) wp_unslash( $_GET['podpub_source'] ) ) ) {
+			check_admin_referer( 'podpub_adopt_check' );
+			$source = trim( (string) wp_unslash( $_GET['podpub_source'] ) );
+			$loaded = PodPub_Adopt::load( $source );
+			$plan   = is_wp_error( $loaded ) ? $loaded : PodPub_Adopt::plan( $loaded );
+			if ( is_wp_error( $plan ) ) {
+				echo '<div class="notice notice-error"><p>' . esc_html( $plan->get_error_message() ) . '</p></div>';
+			} else {
+				$report = $plan['report'];
+			}
+		}
+		echo '<form method="get" action="' . esc_url( admin_url( 'admin.php' ) ) . '">';
+		echo '<input type="hidden" name="page" value="' . esc_attr( self::SLUG ) . '"><input type="hidden" name="action" value="import">';
+		wp_nonce_field( 'podpub_adopt_check' );
+		echo '<p><label for="podpub_source"><strong>Feed address or file path</strong></label><br>';
+		echo '<input type="text" id="podpub_source" name="podpub_source" class="large-text" value="' . esc_attr( $source ) . '" placeholder="https://example.com/podcast/feed.xml" required> ';
+		echo '</p>';
+		submit_button( 'Check feed', 'secondary', 'submit', false );
+		echo '</form>';
+		if ( $report ) {
+			self::render_adopt_report( $source, $report );
+		}
+	}
+
+	/**
+	 * The report for a checked feed, with the confirm form.
+	 *
+	 * @param string $source Where the feed came from.
+	 * @param array  $r      Report from PodPub_Adopt::plan().
+	 */
+	private static function render_adopt_report( $source, $r ) {
+		echo '<hr><h3>' . esc_html( $r['title'] ) . '</h3><ul style="list-style:disc;margin-left:20px">';
+		echo '<li>' . (int) $r['episodes'] . ' episodes found: ' . (int) $r['published'] . ' will be published, ' . (int) $r['drafts'] . ' will be drafts (no https audio address).</li>';
+		if ( ! empty( $r['skipped'] ) ) {
+			echo '<li>' . (int) $r['skipped'] . ' items skipped.</li>';
+		}
+		echo '<li>The podcast and episode ids (guids) are kept, so directories and apps see the same show.</li></ul>';
+		if ( ! empty( $r['target']['in_place'] ) ) {
+			echo '<p>The feed will be rewritten <strong>in place</strong> at <code>' . esc_html( $r['target']['url'] ) . '</code>, so its address does not change. A backup copy of the old file (.bak) is made first.</p>';
+		} else {
+			echo '<p>The feed cannot be rewritten where it is (it is on another site or the file is not writable). A new feed will be written in the Podcast folder; you will need to point listeners to the new address.</p>';
+		}
+		$needs = ! empty( $r['problems'] ) || ! empty( $r['lost'] );
+		if ( ! empty( $r['problems'] ) ) {
+			echo '<h4>Things that will change</h4><ul style="list-style:disc;margin-left:20px">';
+			foreach ( $r['problems'] as $m ) {
+				echo '<li>' . esc_html( $m ) . '</li>';
+			}
+			echo '</ul>';
+		}
+		if ( ! empty( $r['lost'] ) ) {
+			echo '<h4>Tags in the old feed that would be lost</h4><table class="widefat striped" style="max-width:900px"><thead><tr><th>Tag</th><th>In old feed</th><th>In new feed</th><th>Example</th></tr></thead><tbody>';
+			foreach ( $r['lost'] as $l ) {
+				echo '<tr><td>' . esc_html( $l['label'] ) . '</td><td>' . (int) $l['old'] . '</td><td>' . (int) $l['new'] . '</td><td>' . esc_html( (string) $l['sample'] ) . '</td></tr>';
+			}
+			echo '</tbody></table>';
+		} else {
+			echo '<p>Nothing in the old feed would be lost.</p>';
+		}
+		echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '" style="margin-top:12px">';
+		echo '<input type="hidden" name="action" value="podpub_adopt_confirm"><input type="hidden" name="podpub_source" value="' . esc_attr( $source ) . '"><input type="hidden" name="podpub_hash" value="' . esc_attr( $r['hash'] ) . '">';
+		wp_nonce_field( 'podpub_adopt_confirm' );
+		if ( $needs ) {
+			echo '<p><label><input type="checkbox" name="podpub_confirm" value="1" required> I have read the list above and accept that these changes will happen.</label></p>';
+		} else {
+			echo '<input type="hidden" name="podpub_confirm" value="1">';
+		}
+		submit_button( 'Adopt this feed', 'primary', 'submit', false );
+		echo '</form>';
+	}
+
+	/**
+	 * Confirm handler: re-reads the feed and adopts it only if it is unchanged since the report.
+	 */
+	public static function handle_adopt_confirm() {
+		if ( ! current_user_can( self::CAP ) ) {
+			wp_die( esc_html__( 'You do not have permission to do that.', 'podpublisher' ), 403 );
+		}
+		check_admin_referer( 'podpub_adopt_confirm' );
+		$key = 'podpub_notice_' . get_current_user_id();
+		if ( empty( $_POST['podpub_confirm'] ) ) {
+			set_transient( $key, array( 'adopt_error' => 'Tick the box to confirm before adopting.' ), 120 );
+			wp_safe_redirect( self::list_url( array( 'action' => 'import' ) ) );
+			exit;
+		}
+		$source = isset( $_POST['podpub_source'] ) ? trim( (string) wp_unslash( $_POST['podpub_source'] ) ) : '';
+		$hash   = isset( $_POST['podpub_hash'] ) ? sanitize_key( wp_unslash( $_POST['podpub_hash'] ) ) : '';
+		$loaded = PodPub_Adopt::load( $source );
+		$result = is_wp_error( $loaded ) ? $loaded : PodPub_Adopt::commit( $loaded, $hash );
+		if ( is_wp_error( $result ) ) {
+			set_transient( $key, array( 'adopt_error' => $result->get_error_message() ), 120 );
+			wp_safe_redirect( self::list_url( array( 'action' => 'import' ) ) );
+			exit;
+		}
+		set_transient( $key, array( 'adopted' => $result ), 120 );
+		wp_safe_redirect( self::feed_page_url( $result['id'] ) );
+		exit;
 	}
 
 	/**
@@ -839,6 +947,12 @@ class PodPub_Admin {
 					echo '<li>' . esc_html( $m ) . '</li>';
 				}
 				echo '</ul></div>';
+			} elseif ( ! empty( $notice['adopted'] ) ) {
+				$a = $notice['adopted'];
+				echo '<div class="notice notice-success"><p>Feed adopted: ' . (int) $a['episodes'] . ' episodes imported.' . ( ! empty( $a['written'] ) ? ' The feed file was written.' : '' ) . ( ! empty( $a['backup'] ) ? ' Backup of the old file: ' . esc_html( $a['backup'] ) : '' ) . '</p></div>';
+				foreach ( ! empty( $a['warnings'] ) ? $a['warnings'] : array() as $m ) {
+					echo '<div class="notice notice-warning"><p>' . esc_html( $m ) . '</p></div>';
+				}
 			} else {
 				echo '<div class="notice notice-success"><p>' . ( ! empty( $notice['written'] ) ? 'Saved. The feed file was written.' : 'Saved.' ) . '</p></div>';
 			}
@@ -860,9 +974,10 @@ class PodPub_Admin {
 		if ( '' !== $dir ) {
 			echo '<p>Files folder: <code>' . esc_html( PodPub_Storage::base_path() . '/' . $dir ) . '</code></p>';
 			if ( '' !== $base ) {
-				$feed_url = $base . '/' . $dir . '/' . $dir . '.xml';
+				$tgt      = PodPub_Feeds::feed_target( $id );
+				$feed_url = $tgt['url'];
 				echo '<p>Feed address: <code>' . esc_html( $feed_url ) . '</code>';
-				if ( is_file( PodPub_Storage::base_path() . '/' . $dir . '/' . $dir . '.xml' ) ) {
+				if ( is_file( $tgt['file'] ) ) {
 					echo ' <a href="' . esc_url( $feed_url ) . '" target="_blank" rel="noopener">Open feed</a>';
 				} else {
 					echo ' (not written yet: save the details below)';
