@@ -858,6 +858,32 @@ class PodPub_Episodes {
 	}
 
 	/**
+	 * Create an episode record (and its folder) from already-checked data, keeping the
+	 * guid it has. Used when adopting a feed. Writes no audio file and no feed.
+	 *
+	 * @param int    $podcast_id Podcast record id.
+	 * @param string $title      Episode title.
+	 * @param array  $data       Checked episode details (PodPub_Episodes::defaults() shape).
+	 * @return int|WP_Error Episode record id.
+	 */
+	public static function import_record( $podcast_id, $title, $data ) {
+		$ep_dir = PodPub_Storage::create_episode_dir( PodPub_Feeds::dir_name( $podcast_id ), $title );
+		if ( is_wp_error( $ep_dir ) ) {
+			return $ep_dir;
+		}
+		$id = wp_insert_post( array( 'post_type' => self::POST_TYPE, 'post_status' => 'publish', 'post_parent' => (int) $podcast_id, 'post_title' => $title ), true );
+		if ( is_wp_error( $id ) ) {
+			return new WP_Error( 'podpub_episode', 'The episode could not be created.' );
+		}
+		if ( '' === (string) $data['guid'] ) {
+			$data['guid'] = PodPub_FeedXml::random_guid();
+		}
+		update_post_meta( $id, '_podpub_dir', $ep_dir );
+		update_post_meta( $id, self::META, $data );
+		return (int) $id;
+	}
+
+	/**
 	 * Delete an episode: its record, its folder and everything in it, then rewrite the feed.
 	 *
 	 * @param int $podcast_id Podcast record id.

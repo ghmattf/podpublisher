@@ -264,19 +264,20 @@ class PodPub_FeedXml {
 		if ( ! PodPub_Storage::ensure_dir( $folder ) ) {
 			return new WP_Error( 'podpub_feed', 'The podcast folder cannot be written to.' );
 		}
-		$base = PodPub_Storage::base_url();
-		$xml  = self::build(
+		$base   = PodPub_Storage::base_url();
+		$target = PodPub_Feeds::feed_target( $id );
+		$xml    = self::build(
 			array(
 				'title'     => $post->post_title,
 				'details'   => $d,
-				'feed_url'  => '' === $base ? '' : $base . '/' . $dir . '/' . $dir . '.xml',
+				'feed_url'  => $target['url'],
 				'image_url' => ( '' === $base || '' === $d['image'] ) ? '' : $base . '/' . $dir . '/' . $d['image'],
 				'images_srcset' => '' === $base ? '' : PodPub_Images::srcset( $base . '/' . $dir, $d['image'], $d['image_w'], $d['image_sizes'] ),
 				'episodes'  => PodPub_Episodes::feed_items( $id, $base, time() ),
 			)
 		);
-		$file  = $folder . '/' . $dir . '.xml';
-		$stage = $folder . '/.feed_' . getmypid() . '.tmp';
+		$file  = $target['file'];
+		$stage = dirname( $file ) . '/.feed_' . getmypid() . '.tmp';
 		if ( false === @file_put_contents( $stage, $xml ) || ! @rename( $stage, $file ) ) { // phpcs:ignore
 			@unlink( $stage ); // phpcs:ignore
 			return new WP_Error( 'podpub_feed', 'The feed file could not be written.' );

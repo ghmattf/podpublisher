@@ -1,0 +1,122 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0"
+  xmlns:atom="http://www.w3.org/2005/Atom"
+  xmlns:content="http://purl.org/rss/1.0/modules/content/"
+  xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd"
+  xmlns:dc="http://purl.org/dc/elements/1.1/"
+  xmlns:podcast="https://github.com/Podcastindex-org/podcast-namespace/blob/main/docs/1.0.md">
+  <channel>
+    <title>Old Show</title>
+    <link>https://oldshow.example.com/</link>
+    <description><![CDATA[<p>The <b>old</b> show &amp; friends.</p>]]></description>
+    <language>en-US</language>
+    <copyright>(c) Old Show</copyright>
+    <managingEditor>host@oldshow.example.com (The Host)</managingEditor>
+    <webMaster>web@oldshow.example.com</webMaster>
+    <ttl>60</ttl>
+    <lastBuildDate>Mon, 01 Jan 2024 00:00:00 GMT</lastBuildDate>
+    <generator>Hand made</generator>
+    <category>Technology</category>
+    <dc:creator>The Host</dc:creator>
+    <atom:link href="https://example.com/wp-content/uploads/old/show.xml" rel="self" type="application/rss+xml"/>
+    <atom:link href="https://pubsubhubbub.appspot.com/" rel="hub"/>
+    <itunes:author>The Host</itunes:author>
+    <itunes:owner><itunes:name>The Host</itunes:name><itunes:email>host@oldshow.example.com</itunes:email></itunes:owner>
+    <itunes:image href="https://oldshow.example.com/cover.png"/>
+    <image><url>https://oldshow.example.com/cover.png</url><title>Old Show</title><link>https://oldshow.example.com/</link><width>1400</width><height>1400</height></image>
+    <itunes:category text="Technology"><itunes:category text="Podcasting"/></itunes:category>
+    <itunes:explicit>false</itunes:explicit>
+    <itunes:keywords>old,show</itunes:keywords>
+    <itunes:type>episodic</itunes:type>
+    <podcast:guid>c3ac0f2e-7c6e-5c1b-9d2a-1f6d3a4b5c6d</podcast:guid>
+    <podcast:medium>music</podcast:medium>
+    <podcast:locked owner="host@oldshow.example.com">yes</podcast:locked>
+    <podcast:funding url="https://oldshow.example.com/support">Support the show!</podcast:funding>
+    <podcast:funding url="http://insecure.example.com/pay">Plain http link</podcast:funding>
+    <podcast:location geo="geo:-37.8136,144.9631" osm="R4246124" country="AU">Melbourne, Australia</podcast:location>
+    <podcast:person role="host" img="https://oldshow.example.com/host.jpg" href="https://oldshow.example.com/host">The Host</podcast:person>
+    <podcast:person role="guest">Some Guest</podcast:person>
+    <podcast:license url="https://creativecommons.org/licenses/by/4.0/">cc-by-4.0</podcast:license>
+    <podcast:value type="lightning" method="keysend" suggested="0.00000015000">
+      <podcast:valueRecipient name="The Host" type="lnaddress" address="host@getalby.com" split="90"/>
+      <podcast:valueRecipient name="App fee" type="lnaddress" address="fee@getalby.com" split="10" fee="true"/>
+      <podcast:valueRecipient name="Node" type="node" address="02abcdef" split="5"/>
+    </podcast:value>
+    <podcast:podroll><podcast:remoteItem feedGuid="917393e3-1b1e-5cef-ace4-edaa54e1f810" feedUrl="https://other.example.com/feed.xml"/></podcast:podroll>
+    <podcast:trailer pubdate="Tue, 02 Jan 2024 10:00:00 GMT" url="https://oldshow.example.com/trailer.mp3" length="12345" type="audio/mpeg">Trailer</podcast:trailer>
+    <podcast:liveItem status="pending" start="2030-01-01T10:00:00Z" end="2030-01-01T11:00:00Z">
+      <title>Live show</title><enclosure url="https://stream.example.com/live" type="audio/mpeg" length="0"/>
+      <podcast:contentLink href="https://oldshow.example.com/live">Watch</podcast:contentLink>
+    </podcast:liveItem>
+
+    <item>
+      <title>Episode One &amp; more</title>
+      <description><![CDATA[<p>First <em>episode</em>.</p>]]></description>
+      <content:encoded><![CDATA[<div class="x"><p>Notes with a <a href="https://example.com/a">link</a> and <img src="https://example.com/i.png"/> and <script>alert(1)</script></p></div>]]></content:encoded>
+      <pubDate>Mon, 15 Jan 2024 09:30:00 +0000</pubDate>
+      <guid isPermaLink="false">ep-001-guid</guid>
+      <enclosure url="https://op3.dev/e,pg=c3ac0f2e-7c6e-5c1b-9d2a-1f6d3a4b5c6d/media.example.com/ep1.mp3" length="9876543" type="audio/mpeg"/>
+      <itunes:duration>01:02:03</itunes:duration>
+      <itunes:episodeType>full</itunes:episodeType>
+      <itunes:explicit>false</itunes:explicit>
+      <itunes:subtitle>Sub one</itunes:subtitle>
+      <itunes:summary>Summary one</itunes:summary>
+      <itunes:keywords>one,first</itunes:keywords>
+      <itunes:image href="https://oldshow.example.com/ep1.jpg"/>
+      <itunes:season>2</itunes:season>
+      <itunes:episode>1</itunes:episode>
+      <podcast:season>2</podcast:season>
+      <podcast:episode>1</podcast:episode>
+      <podcast:transcript url="https://oldshow.example.com/ep1.vtt" type="text/vtt" language="en" rel="captions"/>
+      <podcast:transcript url="https://oldshow.example.com/ep1.srt" type="application/x-subrip"/>
+      <podcast:soundbite startTime="73" duration="60">A good bit</podcast:soundbite>
+      <podcast:chapters url="https://oldshow.example.com/ep1-chapters.json" type="application/json+chapters"/>
+      <podcast:alternateEnclosure type="video/mp4" length="55555" height="720" default="true">
+        <podcast:source uri="https://media.example.com/ep1.mp4"/>
+        <podcast:source uri="ipfs://QmExample"/>
+        <podcast:integrity type="sri" value="sha384-abc"/>
+      </podcast:alternateEnclosure>
+      <podcast:person role="host">The Host</podcast:person>
+      <podcast:location>Studio</podcast:location>
+      <podcast:value type="lightning" method="keysend">
+        <podcast:valueRecipient name="The Host" type="lnaddress" address="host@getalby.com" split="100"/>
+        <podcast:valueTimeSplit startTime="10" duration="20" remoteStartTime="0" remotePercentage="50">
+          <podcast:remoteItem feedGuid="917393e3-1b1e-5cef-ace4-edaa54e1f810" itemGuid="item-x"/>
+        </podcast:valueTimeSplit>
+      </podcast:value>
+      <podcast:socialInteract protocol="activitypub" uri="https://mastodon.example/@host/1" accountId="@host@mastodon.example"/>
+      <podcast:images srcset="https://oldshow.example.com/ep1-300.jpg 300w"/>
+    </item>
+
+    <item>
+      <title>Episode Two (http audio)</title>
+      <description>Plain description two.</description>
+      <pubDate>Mon, 22 Jan 2024 09:30:00 +0000</pubDate>
+      <guid>ep-002-guid</guid>
+      <enclosure url="http://media.example.com/ep2.mp3" length="1000" type="audio/mpeg"/>
+    </item>
+
+    <item>
+      <title>Episode Three (no audio)</title>
+      <description>Plain description three.</description>
+      <pubDate>Mon, 29 Jan 2024 09:30:00 +0000</pubDate>
+      <guid>ep-003-guid</guid>
+    </item>
+
+    <item>
+      <title>Episode Four (simple)</title>
+      <description>Plain description four.</description>
+      <pubDate>Mon, 05 Feb 2024 09:30:00 +0000</pubDate>
+      <guid>https://oldshow.example.com/ep4</guid>
+      <enclosure url="https://media.example.com/ep4.mp3" length="4444" type="audio/mpeg"/>
+      <itunes:duration>1800</itunes:duration>
+    </item>
+
+    <item>
+      <title>Episode Five (long description)</title>
+      <description>word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word </description>
+      <pubDate>Mon, 12 Feb 2024 09:30:00 +0000</pubDate>
+      <enclosure url="https://media.example.com/ep5" length="oops" type="application/octet-stream"/>
+    </item>
+  </channel>
+</rss>
