@@ -15,6 +15,7 @@ class PodPub_Feeds {
 	const POST_TYPE = 'podpub_feed';
 	// An adopted feed is written back over its old file, at its old address (set by PodPub_Adopt).
 	const META_FEED_FILE = '_podpub_feed_file';
+	const META_FEED_SHA  = '_podpub_feed_sha';
 	const META_FEED_URL  = '_podpub_feed_url';
 
 	public static function init() {

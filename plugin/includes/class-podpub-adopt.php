@@ -1067,18 +1067,15 @@ class PodPub_Adopt {
 		$backup = '';
 		if ( $f['target']['in_place'] ) {
 			$file   = $f['target']['file'];
-			$backup = $file . '.bak';
-			for ( $i = 2; file_exists( $backup ); $i++ ) {
-				$backup = $file . '.bak' . $i;
-			}
-			if ( ! @copy( $file, $backup ) ) { // phpcs:ignore
-				$warnings[] = 'The old feed file could not be copied to ' . $backup . ', so it was NOT replaced. The podcast was adopted but its feed has not been written; fix the folder permissions and save the podcast to write it.';
+			$backup = PodPub_FeedXml::backup( $file );
+			if ( '' === $backup ) {
+				$warnings[] = 'The old feed file could not be copied, so it was NOT replaced. The podcast was adopted but its feed has not been written; fix the folder permissions and save the podcast to write it.';
 				update_post_meta( $id, PodPub_Feeds::META_FEED_FILE, '' );
 				update_post_meta( $id, PodPub_Feeds::META_FEED_URL, '' );
 				$backup = '';
 			}
 		}
-		$written = PodPub_FeedXml::write( $id );
+		$written = PodPub_FeedXml::write( $id, true, false );
 		if ( is_wp_error( $written ) ) {
 			$warnings[] = 'The podcast was adopted, but ' . lcfirst( $written->get_error_message() );
 		}

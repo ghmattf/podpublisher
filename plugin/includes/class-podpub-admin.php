@@ -26,6 +26,7 @@ class PodPub_Admin {
 		add_action( 'admin_post_podpub_save_p20', array( __CLASS__, 'handle_save_p20' ) );
 		add_action( 'admin_post_podpub_delete_episode', array( __CLASS__, 'handle_delete_episode' ) );
 		add_action( 'admin_post_podpub_delete_podcast', array( __CLASS__, 'handle_delete_podcast' ) );
+		add_action( 'admin_post_podpub_write_feed_anyway', array( __CLASS__, 'handle_write_feed_anyway' ) );
 		add_action( 'admin_post_podpub_adopt_confirm', array( __CLASS__, 'handle_adopt_confirm' ) );
 		add_action( 'wp_ajax_podpub_geo_search', array( __CLASS__, 'handle_geo_search' ) );
 	}
@@ -192,7 +193,7 @@ class PodPub_Admin {
 			}
 			return null;
 		};
-		$result          = PodPub_Episodes::save( $pid, $eid, $input, $file, $upload( 'podpub_ep_image' ), $upload( 'podpub_transcript' ) );
+		$result          = PodPub_Episodes::save( $pid, $eid, $input, $file, $upload( 'podpub_ep_image' ), $upload( 'podpub_transcript' ), $upload( 'podpub_chapters_file' ) );
 		$result['input'] = $result['errors'] ? $input : null;
 		set_transient( 'podpub_notice_' . get_current_user_id(), $result, 120 );
 		$go = $result['errors'] ? ( $eid ? (string) $eid : 'new' ) : (string) $result['id'];
@@ -461,6 +462,7 @@ class PodPub_Admin {
 			echo '<table class="form-table" role="presentation">';
 			$in_text( 'chapters_url', 'Or: a chapters file hosted elsewhere', $d['chapters_url'], 'https://', 'regular-text' );
 			echo '</table><p class="description">Use the list above or this address, not both.</p>';
+			echo '<p><label>Or upload a <code>chapters.json</code> file (JSON chapters, up to 1 MB): <input type="file" name="podpub_chapters_file" accept=".json,application/json"></label> &nbsp; It replaces the list above and any address when you save. Fields PodPublisher does not keep are named in a warning.</p>';
 
 			echo '<h3>Transcripts</h3><p class="description">Links to transcript or caption files (hosted elsewhere or copied into the episode folder). Language is optional (the podcast\'s language is assumed). Put captions in Rel if the file has timecodes and is meant as closed captions.</p>';
 			self::render_rows( $prefix . '[transcripts]', $rows( 'transcripts', $d['transcripts'] ), array(
@@ -701,7 +703,7 @@ class PodPub_Admin {
 		echo '</table>';
 		echo '<hr><h2>Podcasting 2.0</h2>';
 		self::render_p20_fields( 'podpub_ep', $d, $in, true, $eid ? array( 'podcast' => (int) $id, 'episode' => $eid ) : null );
-		submit_button( 'Save episode and write feed' );
+		submit_button( 'Save episode' );
 		echo '</form>';
 		if ( $post ) {
 			echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '" onsubmit="return confirm(\'Delete this episode and its audio file? This cannot be undone.\');">';
@@ -893,6 +895,31 @@ class PodPub_Admin {
 	}
 
 	/**
+	 * "Write feed anyway": the owner has read what would be lost. Back up the file, then write.
+	 */
+	public static function handle_write_feed_anyway() {
+		if ( ! current_user_can( self::CAP ) ) {
+			wp_die( esc_html__( 'You do not have permission to do that.', 'podpublisher' ), 403 );
+		}
+		check_admin_referer( 'podpub_write_feed_anyway' );
+		$pid    = isset( $_POST['podpub_id'] ) ? (int) $_POST['podpub_id'] : 0;
+		$result = array( 'errors' => array(), 'warnings' => array(), 'written' => false );
+		if ( ! PodPub_Feeds::get( $pid ) ) {
+			$result['errors'][] = 'This podcast was not found.';
+		} else {
+			$w = PodPub_FeedXml::write( $pid, true );
+			if ( is_wp_error( $w ) ) {
+				$result['errors'][] = $w->get_error_message();
+			} else {
+				$result['written'] = true;
+			}
+		}
+		set_transient( 'podpub_notice_' . get_current_user_id(), $result, 120 );
+		wp_safe_redirect( self::feed_page_url( $pid ) );
+		exit;
+	}
+
+	/**
 	 * Confirm handler: re-reads the feed and adopts it only if it is unchanged since the report.
 	 */
 	public static function handle_adopt_confirm() {
@@ -954,11 +981,22 @@ class PodPub_Admin {
 					echo '<div class="notice notice-warning"><p>' . esc_html( $m ) . '</p></div>';
 				}
 			} else {
-				echo '<div class="notice notice-success"><p>' . ( ! empty( $notice['written'] ) ? 'Saved. The feed file was written.' : 'Saved.' ) . '</p></div>';
+				echo '<div class="notice notice-success"><p>' . ( ! empty( $notice['written'] ) ? 'Saved. The feed file was written (the previous file was kept as a backup).' : 'Saved. The feed file has not been changed; press Save and write feed on the podcast page to publish.' ) . '</p></div>';
 			}
 			foreach ( ! empty( $notice['warnings'] ) ? $notice['warnings'] : array() as $m ) {
 				echo '<div class="notice notice-warning"><p>' . esc_html( $m ) . '</p></div>';
 			}
+		}
+
+		$st = PodPub_FeedXml::status( $id );
+		if ( 'held' === $st['state'] ) {
+			echo '<div class="notice notice-warning"><p><strong>Check before saving.</strong> ' . esc_html( $st['message'] ) . '</p>';
+			echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '"><input type="hidden" name="action" value="podpub_write_feed_anyway"><input type="hidden" name="podpub_id" value="' . (int) $id . '">';
+			wp_nonce_field( 'podpub_write_feed_anyway' );
+			submit_button( 'Write feed anyway', 'secondary', 'submit', false );
+			echo '</form><p></p></div>';
+		} elseif ( 'pending' === $st['state'] || 'unwritten' === $st['state'] ) {
+			echo '<div class="notice notice-info"><p>' . esc_html( $st['message'] ) . ( isset( $_GET['episode'] ) ? ' <a href="' . esc_url( self::feed_page_url( $id ) ) . '">Go to the podcast page</a>' : '' ) . '</p></div>';
 		}
 
 		$which = isset( $_GET['episode'] ) ? sanitize_text_field( wp_unslash( $_GET['episode'] ) ) : '';

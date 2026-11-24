@@ -36,6 +36,7 @@ foreach ( array( 'settings', 'storage', 'p20', 'images', 'details', 'episodes', 
 
 $fail = 0;
 function check( $name, $ok ) { global $fail; echo ( $ok ? 'ok   ' : 'FAIL ' ) . $name . "\n"; if ( ! $ok ) { $fail = 1; } }
+function esave() { $a = func_get_args(); $r = call_user_func_array( array( 'PodPub_Episodes', 'save' ), $a ); if ( ! $r['errors'] ) { $w = PodPub_FeedXml::write( $a[0] ); $r['written'] = ! is_wp_error( $w ); } return $r; } // stands in for an episode save followed by the podcast-level Save and write feed
 
 function wp_safe_remote_head() { return new WP_Error( 'x', 'offline' ); }
 function feed_dom( $file ) { $d = new DOMDocument(); $d->load( $file ); $x = new DOMXPath( $d ); $x->registerNamespace( 'podcast', 'https://podcastindex.org/namespace/1.0' ); return $x; }
@@ -102,7 +103,7 @@ $ep = array( 'title' => 'Ep D', 'description' => 'D', 'published' => '2026-01-15
 	'enclosures' => array( array( 'uri' => 'https://cdn.example.net/ep.mp4', 'type' => 'video/mp4', 'length' => '999', 'height' => '720', 'title' => 'Video', 'default' => '' ) ),
 	'social' => array( array( 'protocol' => 'activitypub', 'uri' => 'https://social.example/@a/1', 'account_id' => '@a@social.example', 'priority' => '1' ) ),
 );
-$r = PodPub_Episodes::save( $pid, 0, $ep );
+$r = esave( $pid, 0, $ep );
 $eid = $r['id'];
 $edir = PodPub_Episodes::dir_name( $eid );
 $file = "$tmp/uploads/podpublisher/$pdir/$edir/chapters.json";
@@ -117,16 +118,43 @@ check( 'episode feed: comments link', ev( $x, 'string(//item/podcast:socialInter
 
 // A bad row saves nothing (the chapters file stays as it was).
 $bad = array_merge( $ep, array( 'chapters' => array( array( 'start' => '0', 'title' => 'Changed' ) ), 'soundbites' => array( array( 'start' => 'x', 'duration' => '1' ) ) ) );
-$r = PodPub_Episodes::save( $pid, $eid, $bad );
+$r = esave( $pid, $eid, $bad );
 check( 'episode: a bad soundbite saves nothing, chapters file unchanged', count( $r['errors'] ) === 1 && json_decode( file_get_contents( $file ), true )['chapters'][0]['title'] === 'Start' );
 
+// ---- Uploaded chapters.json (TODO 23) ----
+function chup( $json ) { $f = sys_get_temp_dir() . '/podpub_ch_' . getmypid() . '.json'; file_put_contents( $f, $json ); return array( 'error' => UPLOAD_ERR_OK, 'tmp_name' => $f, 'name' => 'chapters.json' ); }
+$e = array(); $w = array();
+$rows = PodPub_P20::chapters_from_json( '{"version":"1.2.0","chapters":[{"startTime":90.7,"title":"Two","url":"https://u.example"},{"startTime":0,"title":"One","img":"https://i.example/a.jpg","toc":false,"location":{"name":"x"}}]}', $e, $w );
+check( 'chapters upload: rows read, start to whole seconds, unsupported fields named as lost', $e === array() && count( $rows ) === 2 && $rows[0]['start'] === '90' && $rows[1]['img'] === 'https://i.example/a.jpg' && count( $w ) === 1 && false !== strpos( $w[0], 'toc' ) && false !== strpos( $w[0], 'location' ) );
+$e = array(); $w = array(); PodPub_P20::chapters_from_json( 'not json', $e, $w );
+check( 'chapters upload: not JSON refused', count( $e ) === 1 );
+$e = array(); $w = array(); PodPub_P20::chapters_from_json( '{"chapters":[{"startTime":"x","title":"A"},{"startTime":1}]}', $e, $w );
+check( 'chapters upload: a bad start time and a missing title are each reported', count( $e ) === 2 );
+$e = array(); $w = array(); PodPub_P20::chapters_from_json( "\xEF\xBB\xBF" . '{"chapters":[{"startTime":0,"title":"A"}]}', $e, $w );
+check( 'chapters upload: a byte-order mark at the start is tolerated', $e === array() );
+$up = chup( '{"version":"1.2.0","chapters":[{"startTime":5,"title":"From file","img":"http://insecure.example/a.jpg"}]}' );
+$r  = esave( $pid, $eid, $ep, null, null, null, $up );
+check( 'chapters upload: an http:// picture in the file is refused by the normal checks, nothing changes', count( $r['errors'] ) === 1 && json_decode( file_get_contents( $file ), true )['chapters'][0]['title'] === 'Start' );
+$up = chup( '{"version":"1.2.0","chapters":[{"startTime":5,"title":"From file","toc":false},{"startTime":65,"title":"Next"}]}' );
+$r  = esave( $pid, $eid, array_merge( $ep, array( 'chapters_url' => 'https://h.example/ch.json' ) ), null, null, null, $up );
+$jj = json_decode( @file_get_contents( $file ), true );
+check( 'chapters upload: replaces the typed list and the outside address, chapters.json rewritten, loss warned', $r['errors'] === array() && $jj['chapters'][0]['title'] === 'From file' && $jj['chapters'][1]['startTime'] === 65 && count( $jj['chapters'] ) === 2 && (bool) array_filter( $r['warnings'], function ( $m ) { return false !== strpos( $m, 'toc' ); } ) );
+$big = chup( str_repeat( ' ', 1048577 ) );
+$r   = esave( $pid, $eid, $ep, null, null, null, $big );
+check( 'chapters upload: over 1 MB refused', count( $r['errors'] ) === 1 && false !== strpos( $r['errors'][0], '1 MB' ) );
+$r = esave( $pid, $eid, $ep, null, null, null, array( 'error' => UPLOAD_ERR_NO_FILE ) );
+check( 'chapters upload: no file chosen changes nothing', $r['errors'] === array() );
+@unlink( sys_get_temp_dir() . '/podpub_ch_' . getmypid() . '.json' );
+// Put the typed list back for the checks below.
+esave( $pid, $eid, $ep );
+
 // An outside chapters file replaces the list and removes the written file.
-$r = PodPub_Episodes::save( $pid, $eid, array_merge( $ep, array( 'chapters' => array(), 'chapters_url' => 'https://h.example/ch.json' ) ) );
+$r = esave( $pid, $eid, array_merge( $ep, array( 'chapters' => array(), 'chapters_url' => 'https://h.example/ch.json' ) ) );
 $x = feed_dom( "$tmp/uploads/podpublisher/$pdir/$pdir.xml" );
 check( 'episode: outside chapters address used, local chapters.json removed', $r['errors'] === array() && ! is_file( $file ) && ev( $x, 'string(//item/podcast:chapters/@url)' ) === 'https://h.example/ch.json' );
 
 // Clearing everything removes all the tags.
-$r = PodPub_Episodes::save( $pid, $eid, array_diff_key( $ep, array_flip( array( 'chapters', 'transcripts', 'soundbites', 'enclosures', 'social' ) ) ) );
+$r = esave( $pid, $eid, array_diff_key( $ep, array_flip( array( 'chapters', 'transcripts', 'soundbites', 'enclosures', 'social' ) ) ) );
 $x = feed_dom( "$tmp/uploads/podpublisher/$pdir/$pdir.xml" );
 check( 'episode: clearing the fields removes every chunk D tag', $r['errors'] === array() && ev( $x, 'count(//item/podcast:chapters | //item/podcast:transcript | //item/podcast:soundbite | //item/podcast:alternateEnclosure | //item/podcast:socialInteract)' ) == 0 );
 

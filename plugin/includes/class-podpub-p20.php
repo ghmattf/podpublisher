@@ -562,6 +562,56 @@ class PodPub_P20 {
 		return array( 'rows' => $rows, 'url' => $url );
 	}
 
+	/**
+	 * Read an uploaded chapters file (JSON chapters 1.x) into rows for the chapter list.
+	 * Anything in the file that PodPublisher does not keep is named in $warnings.
+	 *
+	 * @param string   $text     File contents.
+	 * @param string[] $errors   Plain-language problems (nothing is used when there are any).
+	 * @param string[] $warnings What was left out.
+	 * @return array Rows as the form holds them: start (seconds), title, img, url.
+	 */
+	public static function chapters_from_json( $text, &$errors, &$warnings ) {
+		$text = preg_replace( '/^\xEF\xBB\xBF/', '', (string) $text );
+		$j    = json_decode( $text, true );
+		if ( ! is_array( $j ) || ! isset( $j['chapters'] ) || ! is_array( $j['chapters'] ) ) {
+			$errors[] = 'Chapters file: this is not a chapters JSON file (it needs a "chapters" list).';
+			return array();
+		}
+		if ( count( $j['chapters'] ) > self::MAX_CHAPTERS ) {
+			$errors[] = 'Chapters file: it has ' . count( $j['chapters'] ) . ' chapters; the most allowed is ' . self::MAX_CHAPTERS . '.';
+			return array();
+		}
+		$rows = array();
+		$left = array();
+		foreach ( array_values( $j['chapters'] ) as $i => $c ) {
+			$p = 'Chapters file, chapter ' . ( $i + 1 ) . ': ';
+			if ( ! is_array( $c ) || ! isset( $c['startTime'] ) || ! is_numeric( $c['startTime'] ) || $c['startTime'] < 0 ) {
+				$errors[] = $p . 'startTime must be a number of seconds.';
+				continue;
+			}
+			if ( ! isset( $c['title'] ) || ! is_string( $c['title'] ) || '' === trim( $c['title'] ) ) {
+				$errors[] = $p . 'it has no title.';
+				continue;
+			}
+			foreach ( array_keys( $c ) as $k ) {
+				if ( ! in_array( $k, array( 'startTime', 'title', 'img', 'url' ), true ) ) {
+					$left[ $k ] = true;
+				}
+			}
+			$rows[] = array(
+				'start' => (string) (int) floor( (float) $c['startTime'] ),
+				'title' => trim( $c['title'] ),
+				'img'   => isset( $c['img'] ) && is_string( $c['img'] ) ? $c['img'] : '',
+				'url'   => isset( $c['url'] ) && is_string( $c['url'] ) ? $c['url'] : '',
+			);
+		}
+		if ( $left && ! $errors ) {
+			$warnings[] = 'Chapters file: these fields are not kept (they would be lost): ' . implode( ', ', array_keys( $left ) ) . '. Start times are kept to the whole second.';
+		}
+		return $rows;
+	}
+
 	/** The chapters file (JSON chapters 1.2.0). */
 	public static function chapters_json( $rows ) {
 		$list = array();

@@ -244,13 +244,12 @@ class PodPub_FeedXml {
 	}
 
 	/**
-	 * Build a podcast's feed from its saved details and write it into its folder.
-	 * Does nothing (returns an error) until the required details are saved.
+	 * Build a podcast's feed from the stored details and episodes, without writing anything.
 	 *
 	 * @param int $id Record id.
-	 * @return string|WP_Error Full path of the file written.
+	 * @return string|WP_Error The feed XML.
 	 */
-	public static function write( $id ) {
+	private static function compose( $id ) {
 		$post = PodPub_Feeds::get( $id );
 		$dir  = PodPub_Feeds::dir_name( $id );
 		if ( ! $post || '' === $dir ) {
@@ -260,13 +259,9 @@ class PodPub_FeedXml {
 		if ( '' === trim( $d['description'] ) ) {
 			return new WP_Error( 'podpub_feed', 'Save the podcast details (description is required) before the feed can be written.' );
 		}
-		$folder = PodPub_Storage::base_path() . '/' . $dir;
-		if ( ! PodPub_Storage::ensure_dir( $folder ) ) {
-			return new WP_Error( 'podpub_feed', 'The podcast folder cannot be written to.' );
-		}
 		$base   = PodPub_Storage::base_url();
 		$target = PodPub_Feeds::feed_target( $id );
-		$xml    = self::build(
+		return self::build(
 			array(
 				'title'     => $post->post_title,
 				'details'   => $d,
@@ -276,12 +271,135 @@ class PodPub_FeedXml {
 				'episodes'  => PodPub_Episodes::feed_items( $id, $base, time() ),
 			)
 		);
-		$file  = $target['file'];
+	}
+
+	/**
+	 * Write a podcast's feed file from its stored details and episodes. Only the podcast-level
+	 * "Save and write feed" (and adopting) does this; saving an episode never does.
+	 *
+	 * Before replacing an existing file a backup copy (name.xml.bak, .bak2, ...) is made. If the
+	 * file is not one PodPublisher wrote and tags in it would be lost, nothing is written.
+	 *
+	 * @param int  $id     Record id.
+	 * @param bool $force  Skip the check that the file on disk is one PodPublisher wrote (the owner has confirmed).
+	 * @param bool $backup Make a backup copy first (default). Adopting makes its own.
+	 * @return string|WP_Error Full path of the file written.
+	 */
+	public static function write( $id, $force = false, $backup = true ) {
+		$folder = PodPub_Storage::base_path() . '/' . PodPub_Feeds::dir_name( $id );
+		$xml    = self::compose( $id );
+		if ( is_wp_error( $xml ) ) {
+			return $xml;
+		}
+		if ( ! PodPub_Storage::ensure_dir( $folder ) ) {
+			return new WP_Error( 'podpub_feed', 'The podcast folder cannot be written to.' );
+		}
+		$file = PodPub_Feeds::feed_target( $id )['file'];
+		if ( is_file( $file ) ) {
+			if ( ! $force && class_exists( 'PodPub_Adopt' ) ) {
+				$held = self::changed_outside( $id, $file, $xml );
+				if ( '' !== $held ) {
+					return new WP_Error( 'podpub_feed', $held );
+				}
+			}
+			if ( $backup && '' === self::backup( $file ) ) {
+				return new WP_Error( 'podpub_feed', 'A backup copy of the old feed file could not be made, so the feed file was not replaced. Check the folder permissions.' );
+			}
+		}
 		$stage = dirname( $file ) . '/.feed_' . getmypid() . '.tmp';
 		if ( false === @file_put_contents( $stage, $xml ) || ! @rename( $stage, $file ) ) { // phpcs:ignore
 			@unlink( $stage ); // phpcs:ignore
 			return new WP_Error( 'podpub_feed', 'The feed file could not be written.' );
 		}
+		update_post_meta( (int) $id, PodPub_Feeds::META_FEED_SHA, sha1( $xml ) );
 		return $file;
+	}
+
+	/**
+	 * The feed as compared for "is it up to date": without the lines that change on every build.
+	 */
+	private static function normal( $xml ) {
+		return preg_replace( '#<(lastBuildDate|generator)>.*?</\1>#s', '', (string) $xml );
+	}
+
+	/**
+	 * Where the feed file stands against the stored data (checked when the podcast page opens).
+	 *
+	 * @param int $id Record id.
+	 * @return array { state: none|unwritten|current|pending|held, message: string }
+	 *               held: the file was changed outside PodPublisher and writing would lose tags;
+	 *               pending: stored data differs from the file; unwritten: no file yet.
+	 */
+	public static function status( $id ) {
+		$xml = self::compose( $id );
+		if ( is_wp_error( $xml ) ) {
+			return array( 'state' => 'none', 'message' => '' );
+		}
+		$file = PodPub_Feeds::feed_target( $id )['file'];
+		if ( ! is_file( $file ) ) {
+			return array( 'state' => 'unwritten', 'message' => 'The feed file has not been written yet. Press Save and write feed on the podcast page.' );
+		}
+		if ( class_exists( 'PodPub_Adopt' ) ) {
+			$held = self::changed_outside( $id, $file, $xml );
+			if ( '' !== $held ) {
+				return array( 'state' => 'held', 'message' => $held );
+			}
+		}
+		if ( self::normal( (string) @file_get_contents( $file ) ) !== self::normal( $xml ) ) { // phpcs:ignore
+			return array( 'state' => 'pending', 'message' => 'The details and episodes saved on the server are not in the feed file yet. Press Save and write feed on the podcast page to publish them.' );
+		}
+		return array( 'state' => 'current', 'message' => '' );
+	}
+
+	/**
+	 * Is the file on disk something other than what PodPublisher last wrote, and would writing
+	 * the new feed over it lose tags? (TODO 12.)
+	 *
+	 * @param int    $id   Record id.
+	 * @param string $file Feed file on disk.
+	 * @param string $xml  The feed about to be written.
+	 * @return string Empty when it is safe to write; otherwise a plain message naming what would be lost.
+	 */
+	private static function changed_outside( $id, $file, $xml ) {
+		$cur = @file_get_contents( $file ); // phpcs:ignore
+		if ( false === $cur || sha1( $cur ) === (string) get_post_meta( (int) $id, PodPub_Feeds::META_FEED_SHA, true ) ) {
+			return '';
+		}
+		$old = PodPub_Adopt::parse( $cur );
+		$new = PodPub_Adopt::parse( $xml );
+		if ( is_wp_error( $old ) || is_wp_error( $new ) ) {
+			return '';
+		}
+		$parts = array();
+		foreach ( PodPub_Adopt::lost( $old, $new ) as $l ) {
+			$parts[] = $l['label'] . ' (' . (int) $l['old'] . ' in the file, ' . (int) $l['new'] . ' after)';
+		}
+		if ( ! $parts ) {
+			return '';
+		}
+		return 'The feed file has changed since PodPublisher last wrote it, and these tags in it would be lost if it is rewritten: ' . implode( '; ', array_slice( $parts, 0, 12 ) ) . ( count( $parts ) > 12 ? '; and ' . ( count( $parts ) - 12 ) . ' more' : '' ) . '. Saving the podcast will NOT rewrite it. Use "Write feed anyway" to replace the file (a backup copy is kept).';
+	}
+
+	/**
+	 * Keep three backups of a feed file: name.xml.bak is the newest, .bak2 the one before, .bak3
+	 * the oldest. Before a new copy is made .bak2 becomes .bak3 (replacing it) and .bak becomes
+	 * .bak2. Numbered copies beyond .bak3 from earlier versions are removed.
+	 *
+	 * @param string $file Feed file.
+	 * @return string Path of the new backup (name.xml.bak), or an empty string if it could not be made.
+	 */
+	public static function backup( $file ) {
+		foreach ( (array) glob( $file . '.bak[0-9]*' ) as $b ) {
+			if ( preg_match( '/\.bak(\d+)$/', $b, $m ) && (int) $m[1] > 3 ) {
+				@unlink( $b ); // phpcs:ignore
+			}
+		}
+		if ( is_file( $file . '.bak2' ) && ! @rename( $file . '.bak2', $file . '.bak3' ) ) { // phpcs:ignore
+			return '';
+		}
+		if ( is_file( $file . '.bak' ) && ! @rename( $file . '.bak', $file . '.bak2' ) ) { // phpcs:ignore
+			return '';
+		}
+		return @copy( $file, $file . '.bak' ) ? $file . '.bak' : ''; // phpcs:ignore
 	}
 }

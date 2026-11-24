@@ -37,6 +37,7 @@ $fail = 0;
 
 $fail = 0;
 function check( $name, $ok ) { global $fail; echo ( $ok ? 'ok   ' : 'FAIL ' ) . $name . "\n"; if ( ! $ok ) { $fail = 1; } }
+function esave() { $a = func_get_args(); $r = call_user_func_array( array( 'PodPub_Episodes', 'save' ), $a ); if ( ! $r['errors'] ) { $w = PodPub_FeedXml::write( $a[0] ); $r['written'] = ! is_wp_error( $w ); } return $r; } // stands in for an episode save followed by the podcast-level Save and write feed
 function wp_safe_remote_head() { return new WP_Error( 'x', 'offline' ); }
 function feed_dom( $file ) { $d = new DOMDocument(); $d->load( $file ); $x = new DOMXPath( $d ); $x->registerNamespace( 'podcast', 'https://podcastindex.org/namespace/1.0' ); $x->registerNamespace( 'itunes', 'http://www.itunes.com/dtds/podcast-1.0.dtd' ); return $x; }
 function ev( $x, $q ) { return $x->evaluate( $q ); }
@@ -62,7 +63,7 @@ $base = array( 'title' => 'Show O', 'description' => 'About', 'language' => 'en'
 PodPub_Feeds::save_details( $pid, $base );
 check( 'op3: off by default', PodPub_Details::get( $pid )['op3'] === 0 );
 $ep = array( 'title' => 'One', 'description' => 'D', 'published' => '2026-01-10T09:00', 'status' => 'published', 'audio_source' => 'external', 'audio_url' => 'https://cdn.example.net/one.mp3', 'audio_size' => '1000', 'duration' => '10:00' );
-$r = PodPub_Episodes::save( $pid, 0, array_merge( $ep, array( 'enclosures' => array( array( 'uri' => 'https://cdn.example.net/one.mp4', 'type' => 'video/mp4', 'length' => '99' ) ) ) ) );
+$r = esave( $pid, 0, array_merge( $ep, array( 'enclosures' => array( array( 'uri' => 'https://cdn.example.net/one.mp4', 'type' => 'video/mp4', 'length' => '99' ) ) ) ) );
 $folder = "$tmp/uploads/podpublisher/$pdir";
 $x = feed_dom( "$folder/$pdir.xml" );
 check( 'op3 off: enclosure is the plain address', ev( $x, 'string(//item/enclosure/@url)' ) === 'https://cdn.example.net/one.mp3' );

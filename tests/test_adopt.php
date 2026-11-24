@@ -188,21 +188,45 @@ check( 'commit: five episode records with their folders; published ones carry th
 $guids = array_map( function ( $p ) { return PodPub_Episodes::details( $p->ID )['guid']; }, $eps );
 check( 'commit: the episode with no guid got a new one; all guids are different', count( array_unique( $guids ) ) === 5 && ! in_array( '', $guids, true ) );
 
-// A second save of the adopted podcast writes in place again and does not make another backup.
+// A second save of the adopted podcast writes in place again and makes another backup (every Save and write feed does); the first backup stays the original feed.
 PodPub_Feeds::save_details( $pid, array( 'title' => 'Old Show', 'description' => 'The old show & friends.', 'language' => 'en', 'explicit' => 'no' ) );
-check( 'saving later: writes the same file again, no second backup', file_exists( realpath( $OLD ) . '.bak' ) && ! file_exists( realpath( $OLD ) . '.bak2' ) && false !== strpos( file_get_contents( $OLD ), 'PodPublisher 0.12.0' ) );
+check( 'saving later: writes the same file again, with a new backup: the original moves to .bak2, .bak holds the file just replaced', file_exists( realpath( $OLD ) . '.bak' ) && file_exists( realpath( $OLD ) . '.bak2' ) && file_get_contents( realpath( $OLD ) . '.bak2' ) === $before && false !== strpos( file_get_contents( $OLD ), 'PodPublisher 0.12.0' ) );
 
 // Adopting the same old feed again makes a second backup name (never overwrites a backup).
 file_put_contents( $OLD, $FIX );
 $l2   = PodPub_Adopt::load( $OLD );
 $p2   = PodPub_Adopt::plan( $l2 );
 $res2 = PodPub_Adopt::commit( $l2, $p2['report']['hash'] );
-check( 'adopting again: the first backup is never overwritten (.bak2)', is_array( $res2 ) && $res2['backup'] === realpath( $OLD ) . '.bak2' && file_get_contents( realpath( $OLD ) . '.bak' ) === $before );
+check( 'adopting again: the backups rotate (.bak2 -> .bak3, .bak -> .bak2), the new one is .bak, and the original is still held in .bak3', is_array( $res2 ) && $res2['backup'] === realpath( $OLD ) . '.bak' && file_get_contents( realpath( $OLD ) . '.bak3' ) === $before );
 
 // Not on this server: written into the podcast's own folder; the old feed is untouched.
 $res3 = PodPub_Adopt::commit( PodPub_Adopt::load( 'https://other.example.org/feed.xml' ), PodPub_Adopt::plan( PodPub_Adopt::load( 'https://other.example.org/feed.xml' ) )['report']['hash'] );
 $tg3  = PodPub_Feeds::feed_target( $res3['id'] );
 check( 'elsewhere: the new feed is in the podcast folder (not in place), no backup, same podcast guid', $tg3['custom'] === false && is_file( $tg3['file'] ) && $res3['backup'] === '' && PodPub_Details::get( $res3['id'] )['guid'] === 'c3ac0f2e-7c6e-5c1b-9d2a-1f6d3a4b5c6d' );
+
+// ---- Save-time check (TODO 12): a feed file changed outside PodPublisher ----
+$p3 = $res3['id']; $f3 = $tg3['file'];
+$mine = file_get_contents( $f3 );
+check( 'save check: the file PodPublisher wrote is recognised (sha stored), no hold', get_post_meta( $p3, PodPub_Feeds::META_FEED_SHA ) === sha1( $mine ));
+// Whitespace-only change by hand: nothing lost, so the save just writes.
+file_put_contents( $f3, $mine . "\n\n" );
+$w = PodPub_FeedXml::write( $p3 );
+check( 'save check: a hand edit that loses nothing is overwritten without fuss', ! is_wp_error( $w ) && sha1( file_get_contents( $f3 ) ) === get_post_meta( $p3, PodPub_Feeds::META_FEED_SHA ) );
+// A hand-added tag PodPublisher does not know.
+$hand = str_replace( '</channel>', '<podcast:mystery foo="bar"/><itunes:new-feed-url>https://x.example.org/f.xml</itunes:new-feed-url></channel>', file_get_contents( $f3 ) );
+file_put_contents( $f3, $hand );
+$r = PodPub_Feeds::save_details( $p3, array( 'title' => 'Old Show', 'description' => 'Changed after hand edit.', 'language' => 'en', 'explicit' => 'no' ) );
+check( 'save check: details are saved, the feed is not rewritten, and the warning names the lost tags', ! $r['errors'] && ! $r['written'] && $r['warnings'] && false !== strpos( $r['warnings'][0], 'will NOT rewrite' ) && false !== strpos( $r['warnings'][0], 'mystery' ) && file_get_contents( $f3 ) === $hand && 'Changed after hand edit.' === PodPub_Details::get( $p3 )['description'] );
+$sx = PodPub_FeedXml::status( $p3 );
+check( 'status on opening: held, naming the tag that would be lost (no save needed)', 'held' === $sx['state'] && false !== strpos( $sx['message'], 'mystery' ) && false !== strpos( $sx['message'], 'Write feed anyway' ) );
+$w = PodPub_FeedXml::write( $p3 );
+check( 'save check: a later save is held too, file still untouched', is_wp_error( $w ) && file_get_contents( $f3 ) === $hand );
+$bk = PodPub_FeedXml::backup( $f3 );
+$w  = PodPub_FeedXml::write( $p3, true );
+check( 'save check: forced write after a backup replaces the file, keeps the backup, clears the hold', ! is_wp_error( $w ) && '' !== $bk && file_get_contents( $bk ) === $hand && false === strpos( file_get_contents( $f3 ), 'mystery' ) && 'current' === PodPub_FeedXml::status( $p3 )['state'] && false !== strpos( file_get_contents( $f3 ), 'Changed after hand edit.' ) );
+$w = PodPub_FeedXml::write( $p3 );
+check( 'save check: after that, normal saves write again', ! is_wp_error( $w ) );
+check( 'adopt: the adopted podcast stores the sha of what was written', '' !== get_post_meta( $pid, PodPub_Feeds::META_FEED_SHA ) );
 
 // Read-only old file: not in place.
 chmod( $OLD, 0444 ); chmod( dirname( $OLD ), 0555 );
