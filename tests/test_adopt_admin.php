@@ -138,18 +138,31 @@ check( 'podcast page: shows the adopted notice and the kept feed address', false
 
 // ---- Write feed anyway ----
 file_put_contents( $OLD, str_replace( '</channel>', '<podcast:mystery foo="bar"/></channel>', file_get_contents( $OLD ) ) );
-PodPub_Feeds::save_details( $pid, array( 'title' => 'Old Show', 'description' => 'Edited.', 'language' => 'en', 'explicit' => 'no' ) );
 ob_start(); PodPub_Admin::render_feed( $pid ); $h = ob_get_clean();
-check( 'held: the podcast page shows the warning and a Write feed anyway button', false !== strpos( $h, 'NOT rewritten' ) && false !== strpos( $h, 'value="podpub_write_feed_anyway"' ) && false !== strpos( $h, 'Write feed anyway</button>' ) );
+check( 'held: just opening the podcast page (no save) shows the warning and a Write feed anyway button', false !== strpos( $h, 'Check before saving' ) && false !== strpos( $h, 'mystery' ) && false !== strpos( $h, 'value="podpub_write_feed_anyway"' ) && false !== strpos( $h, 'Write feed anyway</button>' ) );
 $GLOBALS['can'] = false;
 $threw = false; try { $_POST = array( 'podpub_id' => $pid ); PodPub_Admin::handle_write_feed_anyway(); } catch ( Exception $e ) { $threw = 'die 403' === $e->getMessage(); }
 $GLOBALS['can'] = true;
 check( 'held: Write feed anyway needs the capability', $threw && false !== strpos( file_get_contents( $OLD ), 'mystery' ) );
 $_POST = array( 'podpub_id' => $pid );
 try { PodPub_Admin::handle_write_feed_anyway(); } catch ( Redirect $r ) { $to = $r->to; }
-check( 'held: Write feed anyway backs up, writes, and returns to the podcast page', false === strpos( file_get_contents( $OLD ), 'mystery' ) && file_exists( $OLD . '.bak2' ) && false !== strpos( $to, 'podpublisher-feed-' . $pid ) && ! empty( get_transient( 'podpub_notice_1' )['written'] ) );
+check( 'held: Write feed anyway backs up (.bak numbers go on), writes, and returns to the podcast page', false === strpos( file_get_contents( $OLD ), 'mystery' ) && ( file_exists( $OLD . '.bak2' ) || file_exists( $OLD . '.bak3' ) ) && false !== strpos( $to, 'podpublisher-feed-' . $pid ) && ! empty( get_transient( 'podpub_notice_1' )['written'] ) );
 ob_start(); PodPub_Admin::render_feed( $pid ); $h = ob_get_clean();
 check( 'held: the warning is gone afterwards', false === strpos( $h, 'Write feed anyway</button>' ) );
+
+// ---- Pending notice and episode buttons (TODO 24) ----
+$dd = PodPub_Details::get( $pid ); $dd['description'] = 'Stored but not yet written.'; PodPub_Details::save( $pid, $dd );
+ob_start(); PodPub_Admin::render_feed( $pid ); $h = ob_get_clean();
+check( 'pending: opening the podcast shows that stored data is not in the feed yet', false !== strpos( $h, 'notice-info' ) && false !== strpos( $h, 'not in the feed file yet' ) );
+$_GET = array( 'episode' => 'new' );
+ob_start(); PodPub_Admin::render_feed( $pid ); $h = ob_get_clean();
+check( 'episode form: the button just says Save episode, and the pending notice links to the podcast page', false !== strpos( $h, 'Save episode</button>' ) && false === strpos( $h, 'Save episode and write feed' ) && false !== strpos( $h, 'Go to the podcast page' ) );
+$_GET = array();
+ob_start(); PodPub_Admin::render_feed( $pid ); $h = ob_get_clean();
+check( 'podcast forms: Save and write feed is still there', false !== strpos( $h, 'Save and write feed</button>' ) );
+PodPub_FeedXml::write( $pid );
+ob_start(); PodPub_Admin::render_feed( $pid ); $h = ob_get_clean();
+check( 'pending: gone once the feed is written', false === strpos( $h, 'not in the feed file yet' ) );
 
 echo $fail ? "\nSOME FAILED\n" : "\nall ok\n";
 exec( 'rm -rf ' . escapeshellarg( $tmp ) );

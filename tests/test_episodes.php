@@ -42,6 +42,7 @@ foreach ( array( 'settings', 'storage', 'p20', 'images', 'details', 'episodes', 
 
 $fail = 0;
 function check( $name, $ok ) { global $fail; echo ( $ok ? 'ok   ' : 'FAIL ' ) . $name . "\n"; if ( ! $ok ) { $fail = 1; } }
+function esave() { $a = func_get_args(); $r = call_user_func_array( array( 'PodPub_Episodes', 'save' ), $a ); if ( ! $r['errors'] ) { $w = PodPub_FeedXml::write( $a[0] ); $r['written'] = ! is_wp_error( $w ); } return $r; } // stands in for an episode save followed by the podcast-level Save and write feed
 function put( $path, $bytes ) { file_put_contents( $path, $bytes ); return $path; }
 function up( $path, $name ) { return array( 'error' => UPLOAD_ERR_OK, 'tmp_name' => $path, 'name' => $name ); }
 function feed_dom( $file ) { $d = new DOMDocument(); $d->load( $file ); $x = new DOMXPath( $d ); foreach ( array( 'itunes' => 'http://www.itunes.com/dtds/podcast-1.0.dtd', 'podcast' => 'https://podcastindex.org/namespace/1.0', 'content' => 'http://purl.org/rss/1.0/modules/content/' ) as $p => $u ) { $x->registerNamespace( $p, $u ); } return $x; }
@@ -105,7 +106,7 @@ update_post_meta( 6, '_podpub_dir', $odir );
 
 // Create a published episode with audio.
 $pub = array_merge( $good, array( 'status' => 'published' ) );
-$r = PodPub_Episodes::save( 5, 0, $pub, up( put( "$tmp/in/up1.mp3", $MP3 ), 'My Final Mix (v2).mp3' ) );
+$r = esave( 5, 0, $pub, up( put( "$tmp/in/up1.mp3", $MP3 ), 'My Final Mix (v2).mp3' ) );
 $e1 = $r['id'];
 check( 'create: no errors, feed written', $r['errors'] === array() && $r['written'] && $e1 > 0 );
 $ef = "$pf/Episode_1_The_Start";
@@ -122,34 +123,34 @@ check( 'feed: show notes in content:encoded', false !== strpos( $x->evaluate( 's
 $guid = $x->evaluate( 'string(//item/guid)' );
 
 // Edit: title changes, folder does not; duration blank is read from the file; guid stays.
-$r = PodPub_Episodes::save( 5, $e1, array_merge( $pub, array( 'title' => 'Renamed Episode', 'duration' => '', 'show_notes' => "Tricky ]]> text" ) ) );
+$r = esave( 5, $e1, array_merge( $pub, array( 'title' => 'Renamed Episode', 'duration' => '', 'show_notes' => "Tricky ]]> text" ) ) );
 check( 'edit: saved without a new upload', $r['errors'] === array() && $r['id'] === $e1 );
 check( 'edit: folder not renamed with the title', is_dir( $ef ) && ! is_dir( "$pf/Renamed_Episode" ) );
 $x = feed_dom( "$pf/$pdir.xml" );
 check( 'edit: feed has the new title, same guid, still one item', $x->evaluate( 'string(//item/title)' ) === 'Renamed Episode' && $x->evaluate( 'string(//item/guid)' ) === $guid && $x->evaluate( 'count(//item)' ) === 1.0 );
 check( 'edit: show notes containing ]]> keep the feed well-formed and intact', false !== strpos( $x->evaluate( 'string(//item/content:encoded)' ), 'Tricky ]]> text' ) );
-$r = PodPub_Episodes::save( 5, $e1, array_merge( $pub, array( 'duration' => '' ) ), up( put( "$tmp/in/up2.ogg", "OggS\0\x02" . str_repeat( "\0", 30 ) ), 'x.ogg' ) );
+$r = esave( 5, $e1, array_merge( $pub, array( 'duration' => '' ) ), up( put( "$tmp/in/up2.ogg", "OggS\0\x02" . str_repeat( "\0", 30 ) ), 'x.ogg' ) );
 check( 'edit: new audio of another type replaces the old file', is_file( "$ef/Episode_1_The_Start.ogg" ) && ! is_file( "$ef/Episode_1_The_Start.mp3" ) );
 check( 'edit: blank duration read from the file', PodPub_Episodes::details( $e1 )['duration'] === 61 );
-$r = PodPub_Episodes::save( 5, $e1, array_merge( $pub, array( 'duration' => '5:00' ) ), up( put( "$tmp/in/bad.mp3", 'not audio at all, just text' ), 'x.mp3' ) );
+$r = esave( 5, $e1, array_merge( $pub, array( 'duration' => '5:00' ) ), up( put( "$tmp/in/bad.mp3", 'not audio at all, just text' ), 'x.mp3' ) );
 check( 'edit: bad audio refused, nothing changed', count( $r['errors'] ) === 1 && is_file( "$ef/Episode_1_The_Start.ogg" ) && PodPub_Episodes::details( $e1 )['duration'] === 61 );
-$r = PodPub_Episodes::save( 5, $e1, $pub, array( 'error' => UPLOAD_ERR_INI_SIZE, 'tmp_name' => '', 'name' => 'big.mp3' ) );
+$r = esave( 5, $e1, $pub, array( 'error' => UPLOAD_ERR_INI_SIZE, 'tmp_name' => '', 'name' => 'big.mp3' ) );
 check( 'edit: too-large upload reported with the server limit', count( $r['errors'] ) === 1 && false !== strpos( $r['errors'][0], '67108864' ) );
 
 // Rules about what is created or shown.
 $before = count( $GLOBALS['posts'] );
-$r = PodPub_Episodes::save( 5, 0, array_merge( $good, array( 'title' => 'No Audio', 'status' => 'published' ) ) );
+$r = esave( 5, 0, array_merge( $good, array( 'title' => 'No Audio', 'status' => 'published' ) ) );
 check( 'create: publishing without audio refused, no record and no folder made', count( $r['errors'] ) === 1 && count( $GLOBALS['posts'] ) === $before && ! is_dir( "$pf/No_Audio" ) );
-$r = PodPub_Episodes::save( 5, 0, array_merge( $good, array( 'title' => 'Draft Idea' ) ), up( put( "$tmp/in/up3.mp3", $MP3 ), 'd.mp3' ) );
+$r = esave( 5, 0, array_merge( $good, array( 'title' => 'Draft Idea' ) ), up( put( "$tmp/in/up3.mp3", $MP3 ), 'd.mp3' ) );
 check( 'create: draft with audio is saved but not in the feed', $r['errors'] === array() && feed_dom( "$pf/$pdir.xml" )->evaluate( 'count(//item)' ) === 1.0 );
-$r = PodPub_Episodes::save( 5, 0, array_merge( $pub, array( 'title' => 'From The Future', 'published' => '2099-01-01T00:00' ) ), up( put( "$tmp/in/up4.mp3", $MP3 ), 'f.mp3' ) );
+$r = esave( 5, 0, array_merge( $pub, array( 'title' => 'From The Future', 'published' => '2099-01-01T00:00' ) ), up( put( "$tmp/in/up4.mp3", $MP3 ), 'f.mp3' ) );
 check( 'create: future-dated episode left out of the feed with a warning', $r['errors'] === array() && count( $r['warnings'] ) === 1 && feed_dom( "$pf/$pdir.xml" )->evaluate( 'count(//item)' ) === 1.0 );
-$r = PodPub_Episodes::save( 5, 0, array_merge( $pub, array( 'title' => 'Older One', 'published' => '2025-06-01T08:00' ) ), up( put( "$tmp/in/up5.mp3", $MP3 ), 'o.mp3' ) );
+$r = esave( 5, 0, array_merge( $pub, array( 'title' => 'Older One', 'published' => '2025-06-01T08:00' ) ), up( put( "$tmp/in/up5.mp3", $MP3 ), 'o.mp3' ) );
 $x = feed_dom( "$pf/$pdir.xml" );
 check( 'feed: newest first', $x->evaluate( 'count(//item)' ) === 2.0 && $x->evaluate( 'string(//item[1]/title)' ) === 'Episode 1: The Start' && $x->evaluate( 'string(//item[2]/title)' ) === 'Older One' );
-$r = PodPub_Episodes::save( 5, 0, array_merge( $good, array( 'title' => 'Episode 1: The Start' ) ) );
+$r = esave( 5, 0, array_merge( $good, array( 'title' => 'Episode 1: The Start' ) ) );
 check( 'create: same title gets its own folder (_2)', is_dir( "$pf/Episode_1_The_Start_2" ) );
-$r = PodPub_Episodes::save( 6, $e1, $good );
+$r = esave( 6, $e1, $good );
 check( 'edit: an episode of another podcast cannot be edited through this one', count( $r['errors'] ) === 1 && PodPub_Episodes::get( $e1, 6 ) === null );
 $r = PodPub_Episodes::delete( 6, $e1 );
 check( 'delete: cannot delete through another podcast', count( $r['errors'] ) === 1 && is_dir( $ef ) );
@@ -158,12 +159,15 @@ check( 'delete: cannot delete through another podcast', count( $r['errors'] ) ==
 mkdir( "$tmp/outside", 0755, true );
 put( "$tmp/outside/keep.txt", 'keep me' );
 symlink( "$tmp/outside", "$ef/link_out" );
+$x_before = file_get_contents( "$pf/$pdir.xml" );
 $r = PodPub_Episodes::delete( 5, $e1 );
-check( 'delete: no errors, feed rewritten', $r['errors'] === array() && $r['written'] );
+check( 'delete: no errors, and the feed file is NOT changed by it', $r['errors'] === array() && ! $r['written'] && $x_before === file_get_contents( "$pf/$pdir.xml" ) );
 check( 'delete: folder and record gone', ! file_exists( $ef ) && PodPub_Episodes::get( $e1, 5 ) === null );
 check( 'delete: file behind a symbolic link was not touched', is_file( "$tmp/outside/keep.txt" ) );
+check( 'delete: the feed still lists it until Save and write feed', feed_dom( "$pf/$pdir.xml" )->evaluate( 'count(//item)' ) === 2.0 );
+PodPub_FeedXml::write( 5 );
 $x = feed_dom( "$pf/$pdir.xml" );
-check( 'delete: item gone from the feed', $x->evaluate( 'count(//item)' ) === 1.0 && $x->evaluate( 'string(//item/title)' ) === 'Older One' );
+check( 'delete: item gone from the feed after the podcast-level write', $x->evaluate( 'count(//item)' ) === 1.0 && $x->evaluate( 'string(//item/title)' ) === 'Older One' );
 check( 'delete: other episodes untouched', is_dir( "$pf/Older_One" ) );
 check( 'delete: unknown episode refused', count( PodPub_Episodes::delete( 5, 99999 )['errors'] ) === 1 );
 
@@ -195,7 +199,7 @@ $GLOBALS['probe'] = array( 'code' => 200, 'headers' => array( 'content-length' =
 
 $ext = array_merge( $pub, array( 'title' => 'Hosted Elsewhere', 'audio_source' => 'external', 'audio_url' => 'https://cdn.example.net/ep/one.mp3', 'audio_size' => '', 'audio_ext_type' => '' ) );
 $GLOBALS['probe_calls'] = 0;
-$r = PodPub_Episodes::save( 5, 0, $ext );
+$r = esave( 5, 0, $ext );
 $h = $r['id'];
 check( 'external save: no file needed, published, feed written', $r['errors'] === array() && $r['written'] && $h > 0 );
 $d = PodPub_Episodes::details( $h );
@@ -203,27 +207,27 @@ check( 'external save: fields stored, size read from the other server', $d['audi
 $x = feed_dom( "$pf/$pdir.xml" );
 check( 'external save: enclosure points at the other server', $x->evaluate( 'string(//item[title="Hosted Elsewhere"]/enclosure/@url)' ) === 'https://cdn.example.net/ep/one.mp3' && $x->evaluate( 'string(//item[title="Hosted Elsewhere"]/enclosure/@length)' ) === '5555' );
 check( 'external save: episode folder made but holds no audio', is_dir( "$pf/Hosted_Elsewhere" ) && count( glob( "$pf/Hosted_Elsewhere/*.{mp3,ogg,m4a}", GLOB_BRACE ) ) === 0 );
-PodPub_Episodes::save( 5, $h, array_merge( $ext, array( 'audio_size' => '5555' ) ) );
+esave( 5, $h, array_merge( $ext, array( 'audio_size' => '5555' ) ) );
 check( 'external save: unchanged address is not checked again', $GLOBALS['probe_calls'] === 1 );
-PodPub_Episodes::save( 5, $h, array_merge( $ext, array( 'audio_url' => 'https://cdn.example.net/ep/two.mp3', 'audio_size' => '5555' ) ) );
+esave( 5, $h, array_merge( $ext, array( 'audio_url' => 'https://cdn.example.net/ep/two.mp3', 'audio_size' => '5555' ) ) );
 check( 'external save: a new address is checked', $GLOBALS['probe_calls'] === 2 && PodPub_Episodes::details( $h )['external_url'] === 'https://cdn.example.net/ep/two.mp3' );
-$r = PodPub_Episodes::save( 5, $h, array_merge( $ext, array( 'audio_url' => 'http://cdn.example.net/ep/three.mp3' ) ) );
+$r = esave( 5, $h, array_merge( $ext, array( 'audio_url' => 'http://cdn.example.net/ep/three.mp3' ) ) );
 check( 'external save: bad address refused, old one kept', count( $r['errors'] ) === 1 && PodPub_Episodes::details( $h )['external_url'] === 'https://cdn.example.net/ep/two.mp3' );
-$r = PodPub_Episodes::save( 5, $h, array_merge( $ext, array( 'audio_url' => '', 'status' => 'published' ) ) );
+$r = esave( 5, $h, array_merge( $ext, array( 'audio_url' => '', 'status' => 'published' ) ) );
 check( 'external save: empty address keeps the current audio', $r['errors'] === array() && PodPub_Episodes::details( $h )['external_url'] === 'https://cdn.example.net/ep/two.mp3' );
-$r = PodPub_Episodes::save( 5, 0, array_merge( $ext, array( 'title' => 'Hosted Nothing', 'audio_url' => '' ) ) );
+$r = esave( 5, 0, array_merge( $ext, array( 'title' => 'Hosted Nothing', 'audio_url' => '' ) ) );
 check( 'external save: published with no address and no upload is refused', count( $r['errors'] ) === 1 );
-$r = PodPub_Episodes::save( 5, $h, array_merge( $pub, array( 'title' => 'Hosted Elsewhere', 'audio_source' => 'upload' ) ), up( put( "$tmp/in/sw.mp3", $MP3 ), 's.mp3' ) );
+$r = esave( 5, $h, array_merge( $pub, array( 'title' => 'Hosted Elsewhere', 'audio_source' => 'upload' ) ), up( put( "$tmp/in/sw.mp3", $MP3 ), 's.mp3' ) );
 $d = PodPub_Episodes::details( $h );
 check( 'switch: uploading replaces the hosted address', $r['errors'] === array() && $d['audio_source'] === 'upload' && $d['external_url'] === '' && is_file( "$pf/Hosted_Elsewhere/Hosted_Elsewhere.mp3" ) );
 check( 'switch: feed now points at the local file', false !== strpos( feed_dom( "$pf/$pdir.xml" )->evaluate( 'string(//item[title="Hosted Elsewhere"]/enclosure/@url)' ), '/Hosted_Elsewhere/Hosted_Elsewhere.mp3' ) );
-PodPub_Episodes::save( 5, $h, array_merge( $ext, array( 'audio_url' => 'https://cdn.example.net/ep/back.mp3', 'audio_size' => '5555' ) ) );
+esave( 5, $h, array_merge( $ext, array( 'audio_url' => 'https://cdn.example.net/ep/back.mp3', 'audio_size' => '5555' ) ) );
 check( 'switch: going back to a hosted address clears the file name', PodPub_Episodes::details( $h )['audio'] === '' && PodPub_Episodes::details( $h )['external_url'] === 'https://cdn.example.net/ep/back.mp3' );
 
 // ---- Audio copied into the episode folder (for example by FTP) ----
-$r = PodPub_Episodes::save( 5, 0, array_merge( $good, array( 'title' => 'Big File', 'status' => 'draft', 'audio_source' => 'folder', 'audio_pick' => 'x.mp3' ) ) );
+$r = esave( 5, 0, array_merge( $good, array( 'title' => 'Big File', 'status' => 'draft', 'audio_source' => 'folder', 'audio_pick' => 'x.mp3' ) ) );
 check( 'folder: a new episode cannot pick yet (it has no folder)', count( $r['errors'] ) === 1 && false !== strpos( $r['errors'][0], 'Save the episode first' ) );
-$r = PodPub_Episodes::save( 5, 0, array_merge( $good, array( 'title' => 'Big File', 'status' => 'draft' ) ) );
+$r = esave( 5, 0, array_merge( $good, array( 'title' => 'Big File', 'status' => 'draft' ) ) );
 $b = $r['id'];
 $bf = "$pf/Big_File";
 check( 'folder: draft episode created with its folder', $r['errors'] === array() && is_dir( $bf ) );
@@ -237,20 +241,20 @@ symlink( "$tmp/outside_audio.mp3", "$bf/link.mp3" );
 check( 'folder: list shows audio files only (no index.html, notes, hidden files, folders, links)', PodPub_Episodes::list_folder_audio( 5, $b ) === array( 'My Big File (final).MP3', 'fake.mp3' ) );
 $pick = array_merge( $pub, array( 'title' => 'Big File', 'audio_source' => 'folder' ) );
 foreach ( array( '../Hosted_Elsewhere/Hosted_Elsewhere.mp3', 'sub', 'nothere.mp3', '.hidden.mp3', 'link.mp3', 'fake.mp3', 'notes.txt' ) as $bad ) {
-	$r = PodPub_Episodes::save( 5, $b, array_merge( $pick, array( 'audio_pick' => $bad ) ) );
+	$r = esave( 5, $b, array_merge( $pick, array( 'audio_pick' => $bad ) ) );
 	check( "folder: refuses '$bad'", count( $r['errors'] ) >= 1 && PodPub_Episodes::details( $b )['audio'] === '' );
 }
-$r = PodPub_Episodes::save( 5, $b, array_merge( $pick, array( 'audio_pick' => 'My Big File (final).MP3' ) ) );
+$r = esave( 5, $b, array_merge( $pick, array( 'audio_pick' => 'My Big File (final).MP3' ) ) );
 $d = PodPub_Episodes::details( $b );
 check( 'folder: pick saved, file renamed to a safe name', $r['errors'] === array() && $d['audio'] === 'My_Big_File_final.mp3' && is_file( "$bf/My_Big_File_final.mp3" ) && ! file_exists( "$bf/My Big File (final).MP3" ) );
 check( 'folder: type, size and source stored', $d['audio_source'] === 'folder' && $d['audio_type'] === 'audio/mpeg' && $d['audio_size'] === strlen( $MP3 ) );
 check( 'folder: feed points at the picked file', false !== strpos( feed_dom( "$pf/$pdir.xml" )->evaluate( 'string(//item[title="Big File"]/enclosure/@url)' ), '/Big_File/My_Big_File_final.mp3' ) );
 put( "$bf/Second One.mp3", $MP3 );
 put( "$bf/Second_One.mp3", $MP3 );
-$r = PodPub_Episodes::save( 5, $b, array_merge( $pick, array( 'audio_pick' => 'Second One.mp3' ) ) );
+$r = esave( 5, $b, array_merge( $pick, array( 'audio_pick' => 'Second One.mp3' ) ) );
 check( 'folder: a safe name that already exists gets _2, nothing overwritten', PodPub_Episodes::details( $b )['audio'] === 'Second_One_2.mp3' && is_file( "$bf/Second_One.mp3" ) );
 put( "$bf/clean-name.mp3", $MP3 );
-PodPub_Episodes::save( 5, $b, array_merge( $pick, array( 'audio_pick' => 'clean-name.mp3' ) ) );
+esave( 5, $b, array_merge( $pick, array( 'audio_pick' => 'clean-name.mp3' ) ) );
 check( 'folder: an already-safe name is kept as it is', PodPub_Episodes::details( $b )['audio'] === 'clean-name.mp3' );
 check( 'folder: files picked earlier are left in place', is_file( "$bf/My_Big_File_final.mp3" ) );
 check( 'folder: safe_file_name rules', PodPub_Episodes::safe_file_name( 'a-b_c.1.mp3' ) && ! PodPub_Episodes::safe_file_name( 'a b.mp3' ) && ! PodPub_Episodes::safe_file_name( '.x.mp3' ) && ! PodPub_Episodes::safe_file_name( 'a..b.mp3' ) && ! PodPub_Episodes::safe_file_name( 'é.mp3' ) );
@@ -259,6 +263,36 @@ check( 'folder: deleting the episode removes its folder and everything in it', !
 PodPub_Episodes::delete( 5, $h );
 
 // Clean up.
+// ---- Episode saves store only; the podcast-level write publishes (TODO 24) ----
+PodPub_FeedXml::write( 5 );
+$before = file_get_contents( "$pf/$pdir.xml" );
+$st = PodPub_FeedXml::status( 5 );
+check( 'status: right after a write the feed is current', 'current' === $st['state'] );
+$r = PodPub_Episodes::save( 5, 0, array_merge( $good, array( 'title' => 'Stored Only', 'status' => 'draft' ) ) );
+check( 'episode save: stores the episode, does not write or touch the feed file', $r['errors'] === array() && ! $r['written'] && $before === file_get_contents( "$pf/$pdir.xml" ) );
+$bak_before = count( glob( "$pf/$pdir.xml.bak*" ) );
+$r2 = PodPub_Episodes::save( 5, 0, array_merge( $good, array( 'title' => 'Stored Second', 'status' => 'draft' ) ) );
+check( 'episode save: makes no backup either', count( glob( "$pf/$pdir.xml.bak*" ) ) === $bak_before );
+$dd = PodPub_Details::get( 5 ); $dd['description'] = 'Changed in storage only.'; PodPub_Details::save( 5, $dd );
+$st = PodPub_FeedXml::status( 5 );
+check( 'status: stored data that differs from the file is pending, with a message', 'pending' === $st['state'] && false !== strpos( $st['message'], 'Save and write feed' ) );
+$w = PodPub_FeedXml::write( 5 );
+$baks = glob( "$pf/$pdir.xml.bak*" ); usort( $baks, function ( $a, $b ) { return (int) substr( strrchr( $a, 'k' ), 1 ) - (int) substr( strrchr( $b, 'k' ), 1 ); } );
+check( 'podcast-level write: always makes a backup, holding the file as it was', ! is_wp_error( $w ) && count( $baks ) === $bak_before + 1 && sha1( file_get_contents( end( $baks ) ) ) === sha1( $before ) );
+check( 'status: current again after the write', 'current' === PodPub_FeedXml::status( 5 )['state'] );
+$n = count( glob( "$pf/$pdir.xml.bak*" ) );
+PodPub_FeedXml::write( 5 );
+check( 'backup: every Save and write feed makes one more backup (as asked), up to the cap', count( glob( "$pf/$pdir.xml.bak*" ) ) === $n + 1 );
+// Only the newest 19 extra backups are kept, and the first one is never removed.
+$feed = "$pf/$pdir.xml";
+file_put_contents( $feed . '.bak', 'FIRST' );
+for ( $i = 0; $i < 30; $i++ ) { file_put_contents( $feed, "<x>$i</x>" ); PodPub_FeedXml::backup( $feed ); }
+$left = glob( $feed . '.bak*' );
+check( 'backup: the first backup is never pruned, the newest 19 others are kept (20 in all)', count( $left ) === 20 && 'FIRST' === file_get_contents( $feed . '.bak' ) && is_file( $feed . '.bak31' ) );
+// A backup that cannot be made stops the write.
+@mkdir( "$tmp/rodir" );
+check( 'backup: returns an empty string when the copy cannot be made', '' === PodPub_FeedXml::backup( "$tmp/does_not_exist.xml" ) );
+
 $it = new RecursiveIteratorIterator( new RecursiveDirectoryIterator( $tmp, FilesystemIterator::SKIP_DOTS ), RecursiveIteratorIterator::CHILD_FIRST );
 foreach ( $it as $f ) { ( $f->isDir() && ! $f->isLink() ) ? rmdir( $f ) : unlink( $f ); }
 rmdir( $tmp );

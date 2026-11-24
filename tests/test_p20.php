@@ -36,6 +36,7 @@ foreach ( array( 'settings', 'storage', 'p20', 'images', 'details', 'episodes', 
 
 $fail = 0;
 function check( $name, $ok ) { global $fail; echo ( $ok ? 'ok   ' : 'FAIL ' ) . $name . "\n"; if ( ! $ok ) { $fail = 1; } }
+function esave() { $a = func_get_args(); $r = call_user_func_array( array( 'PodPub_Episodes', 'save' ), $a ); if ( ! $r['errors'] ) { $w = PodPub_FeedXml::write( $a[0] ); $r['written'] = ! is_wp_error( $w ); } return $r; } // stands in for an episode save followed by the podcast-level Save and write feed
 function feed_dom( $file ) { $d = new DOMDocument(); $d->load( $file ); $x = new DOMXPath( $d ); foreach ( array( 'itunes' => 'http://www.itunes.com/dtds/podcast-1.0.dtd', 'podcast' => 'https://podcastindex.org/namespace/1.0' ) as $p => $u ) { $x->registerNamespace( $p, $u ); } return $x; }
 function n( $v ) { return (float) $v; }
 $G1 = '917393e3-1b1e-5cef-ace4-edaa54e1f810';
@@ -220,9 +221,9 @@ $epin = array_merge( $ep, array(
 	'timesplits' => array( $ts( array( 'remote_start' => '0:30', 'remote_percent' => '90', 'item_guid' => 'abc-1' ) ), $ts( array( 'start' => '5:00', 'duration' => '60' ) ) ),
 ) );
 $posts_before = count( $GLOBALS['posts'] );
-$r = PodPub_Episodes::save( 5, 0, array_merge( $epin, array( 'timesplits' => array( $ts( array( 'feed_guid' => 'bad' ) ) ) ) ) );
+$r = esave( 5, 0, array_merge( $epin, array( 'timesplits' => array( $ts( array( 'feed_guid' => 'bad' ) ) ) ) ) );
 check( 'episode: a bad tag saves nothing and creates no record or folder', count( $r['errors'] ) === 1 && count( $GLOBALS['posts'] ) === $posts_before && ! is_dir( "$pf/Ep_One" ) );
-$r = PodPub_Episodes::save( 5, 0, $epin );
+$r = esave( 5, 0, $epin );
 $eid = $r['id'];
 check( 'episode: saved with all tags', $r['errors'] === array() && $r['written'] && $eid > 0 );
 $x = feed_dom( "$pf/$pdir.xml" );
@@ -234,9 +235,9 @@ check( 'episode feed: two time splits inside the value block', n( $x->evaluate( 
 check( 'episode feed: time split 1 has its remote start, percentage and episode', $x->evaluate( 'string(//podcast:valueTimeSplit[1]/@startTime)' ) === '60' && $x->evaluate( 'string(//podcast:valueTimeSplit[1]/@duration)' ) === '237' && $x->evaluate( 'string(//podcast:valueTimeSplit[1]/@remoteStartTime)' ) === '30' && $x->evaluate( 'string(//podcast:valueTimeSplit[1]/@remotePercentage)' ) === '90' && $x->evaluate( 'string(//podcast:valueTimeSplit[1]/podcast:remoteItem/@feedGuid)' ) === $G1 && $x->evaluate( 'string(//podcast:valueTimeSplit[1]/podcast:remoteItem/@itemGuid)' ) === 'abc-1' );
 check( 'episode feed: defaults left out (remote start 0, percentage 100, no item guid)', ! $x->evaluate( 'boolean(//podcast:valueTimeSplit[2]/@remoteStartTime)' ) && ! $x->evaluate( 'boolean(//podcast:valueTimeSplit[2]/@remotePercentage)' ) && ! $x->evaluate( 'boolean(//podcast:valueTimeSplit[2]/podcast:remoteItem/@itemGuid)' ) );
 check( 'episode feed: the channel-only tags are not written in the item', n( $x->evaluate( 'count(//item/podcast:block | //item/podcast:podroll)' ) ) === 0.0 );
-$r = PodPub_Episodes::save( 5, $eid, array_merge( $epin, array( 'value_method' => '', 'recipients' => array() ) ) );
+$r = esave( 5, $eid, array_merge( $epin, array( 'value_method' => '', 'recipients' => array() ) ) );
 check( 'episode: time splits without payments are refused on edit', count( $r['errors'] ) === 1 );
-$r = PodPub_Episodes::save( 5, $eid, array_merge( $ep, array() ) );
+$r = esave( 5, $eid, array_merge( $ep, array() ) );
 $x = feed_dom( "$pf/$pdir.xml" );
 check( 'episode: clearing the tag fields removes them from the item', $r['errors'] === array() && n( $x->evaluate( 'count(//item/podcast:funding | //item/podcast:location | //item/podcast:person | //item/podcast:license | //item/podcast:value)' ) ) === 0.0 );
 

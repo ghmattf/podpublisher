@@ -703,7 +703,7 @@ class PodPub_Admin {
 		echo '</table>';
 		echo '<hr><h2>Podcasting 2.0</h2>';
 		self::render_p20_fields( 'podpub_ep', $d, $in, true, $eid ? array( 'podcast' => (int) $id, 'episode' => $eid ) : null );
-		submit_button( 'Save episode and write feed' );
+		submit_button( 'Save episode' );
 		echo '</form>';
 		if ( $post ) {
 			echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '" onsubmit="return confirm(\'Delete this episode and its audio file? This cannot be undone.\');">';
@@ -907,16 +907,11 @@ class PodPub_Admin {
 		if ( ! PodPub_Feeds::get( $pid ) ) {
 			$result['errors'][] = 'This podcast was not found.';
 		} else {
-			$tgt = PodPub_Feeds::feed_target( $pid );
-			if ( is_file( $tgt['file'] ) && '' === PodPub_FeedXml::backup( $tgt['file'] ) ) {
-				$result['errors'][] = 'The old feed file could not be copied, so it was not replaced.';
+			$w = PodPub_FeedXml::write( $pid, true );
+			if ( is_wp_error( $w ) ) {
+				$result['errors'][] = $w->get_error_message();
 			} else {
-				$w = PodPub_FeedXml::write( $pid, true );
-				if ( is_wp_error( $w ) ) {
-					$result['errors'][] = $w->get_error_message();
-				} else {
-					$result['written'] = true;
-				}
+				$result['written'] = true;
 			}
 		}
 		set_transient( 'podpub_notice_' . get_current_user_id(), $result, 120 );
@@ -986,11 +981,22 @@ class PodPub_Admin {
 					echo '<div class="notice notice-warning"><p>' . esc_html( $m ) . '</p></div>';
 				}
 			} else {
-				echo '<div class="notice notice-success"><p>' . ( ! empty( $notice['written'] ) ? 'Saved. The feed file was written.' : 'Saved.' ) . '</p></div>';
+				echo '<div class="notice notice-success"><p>' . ( ! empty( $notice['written'] ) ? 'Saved. The feed file was written (the previous file was kept as a backup).' : 'Saved. The feed file has not been changed; press Save and write feed on the podcast page to publish.' ) . '</p></div>';
 			}
 			foreach ( ! empty( $notice['warnings'] ) ? $notice['warnings'] : array() as $m ) {
 				echo '<div class="notice notice-warning"><p>' . esc_html( $m ) . '</p></div>';
 			}
+		}
+
+		$st = PodPub_FeedXml::status( $id );
+		if ( 'held' === $st['state'] ) {
+			echo '<div class="notice notice-warning"><p><strong>Check before saving.</strong> ' . esc_html( $st['message'] ) . '</p>';
+			echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '"><input type="hidden" name="action" value="podpub_write_feed_anyway"><input type="hidden" name="podpub_id" value="' . (int) $id . '">';
+			wp_nonce_field( 'podpub_write_feed_anyway' );
+			submit_button( 'Write feed anyway', 'secondary', 'submit', false );
+			echo '</form><p></p></div>';
+		} elseif ( 'pending' === $st['state'] || 'unwritten' === $st['state'] ) {
+			echo '<div class="notice notice-info"><p>' . esc_html( $st['message'] ) . ( isset( $_GET['episode'] ) ? ' <a href="' . esc_url( self::feed_page_url( $id ) ) . '">Go to the podcast page</a>' : '' ) . '</p></div>';
 		}
 
 		$which = isset( $_GET['episode'] ) ? sanitize_text_field( wp_unslash( $_GET['episode'] ) ) : '';
@@ -1000,14 +1006,6 @@ class PodPub_Admin {
 			return;
 		}
 
-		$held = (string) get_post_meta( $id, PodPub_Feeds::META_FEED_HELD, true );
-		if ( '' !== $held ) {
-			echo '<div class="notice notice-warning"><p>' . esc_html( $held ) . '</p>';
-			echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '"><input type="hidden" name="action" value="podpub_write_feed_anyway"><input type="hidden" name="podpub_id" value="' . (int) $id . '">';
-			wp_nonce_field( 'podpub_write_feed_anyway' );
-			submit_button( 'Write feed anyway', 'secondary', 'submit', false );
-			echo '</form><p></p></div>';
-		}
 		$dir  = PodPub_Feeds::dir_name( $id );
 		$d    = PodPub_Details::get( $id );
 		$base = PodPub_Storage::base_url();

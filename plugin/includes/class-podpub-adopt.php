@@ -1075,7 +1075,7 @@ class PodPub_Adopt {
 				$backup = '';
 			}
 		}
-		$written = PodPub_FeedXml::write( $id, true );
+		$written = PodPub_FeedXml::write( $id, true, false );
 		if ( is_wp_error( $written ) ) {
 			$warnings[] = 'The podcast was adopted, but ' . lcfirst( $written->get_error_message() );
 		}

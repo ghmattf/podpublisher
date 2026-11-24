@@ -860,14 +860,9 @@ class PodPub_Episodes {
 		}
 
 		if ( 'published' === $data['status'] && $data['published'] > time() ) {
-			$out['warnings'][] = 'This episode is dated in the future, so it is left out of the feed until the feed is next written after that time. Automatic scheduling is not built yet.';
+			$out['warnings'][] = 'This episode is dated in the future, so it is left out of the feed until the feed is written on or after that time (press Save and write feed on the podcast page). Automatic scheduling is not built yet.';
 		}
-		$written = PodPub_FeedXml::write( $podcast_id );
-		if ( is_wp_error( $written ) ) {
-			$out['warnings'][] = 'Episode saved, but ' . lcfirst( $written->get_error_message() );
-		} else {
-			$out['written'] = true;
-		}
+		// The feed is not written here: only the podcast-level "Save and write feed" does that.
 		return $out;
 	}
 
@@ -918,12 +913,7 @@ class PodPub_Episodes {
 			PodPub_Storage::remove_tree( PodPub_Storage::base_path() . '/' . $pdir . '/' . $ep_dir );
 		}
 		wp_delete_post( (int) $id, true );
-		$written = PodPub_FeedXml::write( $podcast_id );
-		if ( is_wp_error( $written ) ) {
-			$out['warnings'][] = 'Episode deleted, but ' . lcfirst( $written->get_error_message() );
-		} else {
-			$out['written'] = true;
-		}
+		// The feed is not written here: only the podcast-level "Save and write feed" does that.
 		return $out;
 	}
 
