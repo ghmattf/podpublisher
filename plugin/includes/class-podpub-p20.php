@@ -28,7 +28,7 @@ class PodPub_P20 {
 	const MAX_LIVE       = 10;
 	const MAX_PERSONS    = 30;
 	const MAX_RECIPIENTS = 20;
-	const MAX_SPLITS     = 30;
+	const MAX_SPLITS     = 100;
 	const MAX_BLOCK      = 10;
 	const MAX_PODROLL    = 30;
 
@@ -341,6 +341,37 @@ class PodPub_P20 {
 	}
 
 	/**
+	 * A time as seconds, keeping fractions (time splits need them): "76.645988", "1:16.6" or
+	 * "0:01:16.645988". Empty is 0. Returns an int when whole, else a float to 6 places; null if
+	 * it is not a time.
+	 *
+	 * @param string $text Text.
+	 * @return int|float|null
+	 */
+	public static function parse_time( $text ) {
+		$text = trim( (string) $text );
+		if ( '' === $text ) {
+			return 0;
+		}
+		if ( ! preg_match( '/^(?:\d{1,7}(?:\.\d{1,9})?|\d{1,5}(?::[0-5]?\d){1,2}(?:\.\d{1,9})?)$/', $text ) ) {
+			return null;
+		}
+		$parts = explode( ':', $text );
+		$s     = 0.0;
+		foreach ( $parts as $p ) {
+			$s = $s * 60 + (float) $p;
+		}
+		$s = round( $s, 6 );
+		return floor( $s ) === $s ? (int) $s : $s;
+	}
+
+	/** A number for a feed attribute: whole numbers plain, fractions to at most 6 places with no trailing zeros. */
+	public static function num( $n ) {
+		$n = (float) $n;
+		return floor( $n ) === $n ? (string) (int) $n : rtrim( rtrim( number_format( $n, 6, '.', '' ), '0' ), '.' );
+	}
+
+	/**
 	 * Time splits (episodes): for part of the episode, send a share of the payment to another feed.
 	 *
 	 * @param array $in      Form values.
@@ -356,11 +387,11 @@ class PodPub_P20 {
 		}
 		foreach ( $rows as $n => $r ) {
 			$p     = 'Time split ' . $n . ': ';
-			$start = PodPub_Episodes::parse_duration( $r['start'] );
-			$dur   = PodPub_Episodes::parse_duration( $r['duration'] );
-			$rs    = PodPub_Episodes::parse_duration( $r['remote_start'] );
+			$start = self::parse_time( $r['start'] );
+			$dur   = self::parse_time( $r['duration'] );
+			$rs    = self::parse_time( $r['remote_start'] );
 			if ( '' === $r['start'] || null === $start ) {
-				$errors[] = $p . 'enter the start as seconds, minutes:seconds or hours:minutes:seconds.';
+				$errors[] = $p . 'enter the start as seconds (decimals are fine), minutes:seconds or hours:minutes:seconds.';
 			} elseif ( ! $dur ) {
 				$errors[] = $p . 'enter how long it lasts (more than 0 seconds).';
 			} elseif ( null === $rs ) {
@@ -793,10 +824,10 @@ class PodPub_P20 {
 		}
 		foreach ( $splits as $s ) {
 			$w->startElement( 'podcast:valueTimeSplit' );
-			$w->writeAttribute( 'startTime', (string) (int) $s['start'] );
-			$w->writeAttribute( 'duration', (string) (int) $s['duration'] );
-			if ( (int) $s['remote_start'] > 0 ) {
-				$w->writeAttribute( 'remoteStartTime', (string) (int) $s['remote_start'] );
+			$w->writeAttribute( 'startTime', self::num( $s['start'] ) );
+			$w->writeAttribute( 'duration', self::num( $s['duration'] ) );
+			if ( (float) $s['remote_start'] > 0 ) {
+				$w->writeAttribute( 'remoteStartTime', self::num( $s['remote_start'] ) );
 			}
 			if ( (int) $s['remote_percent'] < 100 ) {
 				$w->writeAttribute( 'remotePercentage', (string) (int) $s['remote_percent'] );

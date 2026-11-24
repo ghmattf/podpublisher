@@ -80,7 +80,7 @@
       <podcast:location>Studio</podcast:location>
       <podcast:value type="lightning" method="keysend">
         <podcast:valueRecipient name="The Host" type="lnaddress" address="host@getalby.com" split="100"/>
-        <podcast:valueTimeSplit startTime="10" duration="20" remoteStartTime="0" remotePercentage="50">
+        <podcast:valueTimeSplit startTime="10.25" duration="20.5" remoteStartTime="0" remotePercentage="50">
           <podcast:remoteItem feedGuid="917393e3-1b1e-5cef-ace4-edaa54e1f810" itemGuid="item-x"/>
         </podcast:valueTimeSplit>
       </podcast:value>

@@ -49,6 +49,40 @@ class PodPub_Storage {
 	}
 
 	/**
+	 * Make an uploaded or picked file's name safe for a URL path: the extension is kept (lower
+	 * case); in the rest, spaces and every character outside A-Z a-z 0-9 _ - become an underscore
+	 * (accents are first turned into plain letters), runs of underscores become one, and
+	 * underscores, dashes and dots are trimmed from the ends. Always starts with a letter or digit.
+	 *
+	 * @param string $name     File name as given, such as "My Show (final) v2.MP3".
+	 * @param string $fallback Base name to use if nothing usable is left.
+	 * @return string For example "My_Show_final_v2.mp3".
+	 */
+	public static function file_name( $name, $fallback = 'file' ) {
+		$name = basename( str_replace( '\\', '/', (string) $name ) );
+		$ext  = strtolower( (string) pathinfo( $name, PATHINFO_EXTENSION ) );
+		$base = (string) pathinfo( $name, PATHINFO_FILENAME );
+		$ext  = preg_replace( '/[^a-z0-9]/', '', $ext );
+		if ( function_exists( 'remove_accents' ) ) {
+			$base = remove_accents( $base );
+		} elseif ( function_exists( 'iconv' ) ) {
+			$converted = @iconv( 'UTF-8', 'ASCII//TRANSLIT//IGNORE', $base );
+			if ( false !== $converted ) {
+				$base = $converted;
+			}
+		}
+		$base = preg_replace( '/[^A-Za-z0-9_-]/', '_', $base );
+		$base = preg_replace( '/_{2,}/', '_', $base );
+		$base = trim( $base, '_-' );
+		$base = substr( $base, 0, 100 );
+		$base = rtrim( $base, '_-' );
+		if ( '' === $base ) {
+			$base = $fallback;
+		}
+		return '' === $ext ? $base : $base . '.' . $ext;
+	}
+
+	/**
 	 * Is this an acceptable absolute folder path? Absolute, no "..", and every
 	 * folder in it only A-Z a-z 0-9 . _ - (a drive letter such as C: is allowed).
 	 *

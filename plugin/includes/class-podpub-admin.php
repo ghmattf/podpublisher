@@ -193,7 +193,7 @@ class PodPub_Admin {
 			}
 			return null;
 		};
-		$result          = PodPub_Episodes::save( $pid, $eid, $input, $file, $upload( 'podpub_ep_image' ), $upload( 'podpub_transcript' ), $upload( 'podpub_chapters_file' ) );
+		$result          = PodPub_Episodes::save( $pid, $eid, $input, $file, $upload( 'podpub_ep_image' ), $upload( 'podpub_transcript' ), $upload( 'podpub_chapters_file' ), $upload( 'podpub_splits_file' ) );
 		$result['input'] = $result['errors'] ? $input : null;
 		set_transient( 'podpub_notice_' . get_current_user_id(), $result, 120 );
 		$go = $result['errors'] ? ( $eid ? (string) $eid : 'new' ) : (string) $result['id'];
@@ -436,6 +436,9 @@ class PodPub_Admin {
 				array( 'key' => 'item_guid', 'label' => 'Other episode\'s GUID (optional)', 'type' => 'text', 'class' => 'regular-text code' ),
 				array( 'key' => 'feed_url', 'label' => 'Other feed address (optional)', 'type' => 'text', 'ph' => 'https://' ),
 			), PodPub_P20::MAX_SPLITS );
+			echo '<h4>Import time splits</h4><p class="description">Paste time splits here or upload a file. The usual input is ready-made <code>&lt;podcast:valueTimeSplit&gt;</code> tags copied from a feed, but a whole value block, JSON, or lines separated by commas, tabs, semicolons or spaces (start, length, feed GUID, episode GUID, remote start, percentage, feed address) also work, with or without a header row. Seconds can have decimals. Nothing is kept until you save.</p>';
+			echo '<p><textarea name="' . esc_attr( $prefix ) . '[splits_import]" rows="6" class="large-text code" placeholder="&lt;podcast:valueTimeSplit startTime=&quot;76.645988&quot; duration=&quot;270.916411&quot; remotePercentage=&quot;99&quot;&gt;&#10;  &lt;podcast:remoteItem feedGuid=&quot;...&quot; itemGuid=&quot;...&quot;/&gt;&#10;&lt;/podcast:valueTimeSplit&gt;">' . esc_textarea( isset( $in['splits_import'] ) && is_string( $in['splits_import'] ) ? $in['splits_import'] : '' ) . '</textarea></p>';
+			echo '<p><label>Or upload a file (.txt, .xml, .csv or .json, up to 1 MB): <input type="file" name="podpub_splits_file" accept=".txt,.xml,.csv,.tsv,.json,text/plain,text/xml,application/json"></label> &nbsp; <label>When saving: <select name="' . esc_attr( $prefix ) . '[splits_mode]"><option value="replace">replace the time splits above</option><option value="add">add to the time splits above</option></select></label></p>';
 		} else {
 			echo '<h3>Block</h3><p class="description">Ask podcast apps not to list this podcast. Choose yes to block, no to say it is not blocked. To block or allow just one service, enter its id.</p>';
 			self::render_rows( $prefix . '[block]', $rows( 'block', $d['block'] ), array(

@@ -408,7 +408,7 @@ class PodPub_Episodes {
 	}
 
 	/**
-	 * Transcript files already in an episode folder (safe names only).
+	 * Transcript files already in an episode folder (a name with spaces or special characters is renamed to a safe one when picked).
 	 *
 	 * @return string[]
 	 */
@@ -421,7 +421,7 @@ class PodPub_Episodes {
 			return $out;
 		}
 		foreach ( scandir( $dir ) as $f ) {
-			if ( '.' === $f[0] || 'chapters.json' === $f || 'index.html' === $f || is_link( $dir . '/' . $f ) || ! is_file( $dir . '/' . $f ) || ! self::safe_file_name( $f ) ) {
+			if ( '.' === $f[0] || 'chapters.json' === $f || 'index.html' === $f || is_link( $dir . '/' . $f ) || ! is_file( $dir . '/' . $f ) ) {
 				continue;
 			}
 			if ( isset( self::transcript_exts()[ strtolower( pathinfo( $f, PATHINFO_EXTENSION ) ) ] ) ) {
@@ -490,6 +490,23 @@ class PodPub_Episodes {
 		$d['published'] = time();
 		$d['episode']   = self::next_number( $podcast_id, $d['season'] );
 		return $d;
+	}
+
+	/**
+	 * A file name that does not exist yet in a folder (name_2.ext, name_3.ext, ... if it does).
+	 *
+	 * @param string $folder Folder path.
+	 * @param string $name   Wanted file name.
+	 * @return string
+	 */
+	public static function unique_name( $folder, $name ) {
+		$ext  = pathinfo( $name, PATHINFO_EXTENSION );
+		$base = pathinfo( $name, PATHINFO_FILENAME );
+		$new  = $name;
+		for ( $n = 2; file_exists( $folder . '/' . $new ); $n++ ) {
+			$new = $base . '_' . $n . ( '' === $ext ? '' : '.' . $ext );
+		}
+		return $new;
 	}
 
 	/**
@@ -662,7 +679,7 @@ class PodPub_Episodes {
 	 * @param array|null $file       $_FILES entry for the audio (already confirmed to be an upload), or null.
 	 * @return array { errors, warnings, written, id }
 	 */
-	public static function save( $podcast_id, $id, $input, $file = null, $image = null, $transcript = null, $chapters_file = null ) {
+	public static function save( $podcast_id, $id, $input, $file = null, $image = null, $transcript = null, $chapters_file = null, $splits_file = null ) {
 		$out = array( 'errors' => array(), 'warnings' => array(), 'written' => false, 'id' => (int) $id );
 		if ( ! PodPub_Feeds::get( $podcast_id ) || '' === PodPub_Feeds::dir_name( $podcast_id ) ) {
 			$out['errors'][] = 'This podcast was not found.';
@@ -726,6 +743,24 @@ class PodPub_Episodes {
 				}
 			}
 		}
+		// Time splits typed, pasted or uploaded as a file: read into rows (replacing or added to the table).
+		$stext = isset( $input['splits_import'] ) && is_string( $input['splits_import'] ) ? trim( $input['splits_import'] ) : '';
+		if ( is_array( $splits_file ) && isset( $splits_file['error'] ) && UPLOAD_ERR_NO_FILE !== (int) $splits_file['error'] ) {
+			if ( UPLOAD_ERR_OK !== (int) $splits_file['error'] ) {
+				$out['errors'][] = 'The time splits file upload failed.';
+			} elseif ( filesize( $splits_file['tmp_name'] ) > PodPub_SplitsImport::MAX_BYTES ) {
+				$out['errors'][] = 'The time splits file is over 1 MB. A list of time splits is normally a few kilobytes.';
+			} else {
+				$stext = trim( (string) file_get_contents( $splits_file['tmp_name'] ) . "\n" . $stext );
+			}
+		}
+		if ( '' !== $stext && ! $out['errors'] ) {
+			$srows = PodPub_SplitsImport::parse( $stext, $out['errors'], $out['warnings'] );
+			if ( ! $out['errors'] ) {
+				$keep = isset( $input['splits_mode'] ) && 'add' === $input['splits_mode'] && isset( $input['timesplits'] ) && is_array( $input['timesplits'] ) ? array_values( $input['timesplits'] ) : array();
+				$input['timesplits'] = array_merge( $keep, $srows );
+			}
+		}
 		$r = self::sanitize( $input, $cur, $plan || self::has_audio( $cur ) );
 		$out['errors'] = array_merge( $out['errors'], $r['errors'] );
 		if ( $out['errors'] ) {
@@ -765,11 +800,7 @@ class PodPub_Episodes {
 				$name = $plan['name'];
 				if ( ! self::safe_file_name( $name ) ) {
 					// A name with spaces or special characters is renamed to a safe one.
-					$base = PodPub_Storage::slug( pathinfo( $name, PATHINFO_FILENAME ), 'audio' );
-					$new  = $base . '.' . $plan['ext'];
-					for ( $n = 2; file_exists( $folder . '/' . $new ); $n++ ) {
-						$new = $base . '_' . $n . '.' . $plan['ext'];
-					}
+					$new = self::unique_name( $folder, PodPub_Storage::file_name( $name, 'audio' ) );
 					$name = @rename( $folder . '/' . $name, $folder . '/' . $new ) ? $new : new WP_Error( 'podpub_audio', 'The file could not be renamed to a safe name.' ); // phpcs:ignore WordPress.PHP.NoSilencedErrors
 				}
 			} else {
@@ -820,12 +851,18 @@ class PodPub_Episodes {
 		$tname = '';
 		if ( '' !== $tpick ) {
 			$tname = $tpick;
-		} elseif ( $tup ) {
-			$base  = PodPub_Storage::slug( pathinfo( $transcript['name'], PATHINFO_FILENAME ), 'transcript' );
-			$tname = $base . '.' . $tup['ext'];
-			for ( $n = 2; file_exists( $folder . '/' . $tname ); $n++ ) {
-				$tname = $base . '_' . $n . '.' . $tup['ext'];
+			if ( ! self::safe_file_name( $tname ) ) {
+				// A file copied into the folder with spaces or special characters is renamed to a safe name.
+				$new = self::unique_name( $folder, PodPub_Storage::file_name( $tname, 'transcript' ) );
+				if ( @rename( $folder . '/' . $tname, $folder . '/' . $new ) ) { // phpcs:ignore WordPress.PHP.NoSilencedErrors
+					$tname = $new;
+				} else {
+					$out['warnings'][] = 'The episode was saved, but the transcript file could not be renamed to a safe name.';
+					$tname             = '';
+				}
 			}
+		} elseif ( $tup ) {
+			$tname = self::unique_name( $folder, PodPub_Storage::file_name( pathinfo( $transcript['name'], PATHINFO_FILENAME ) . '.' . $tup['ext'], 'transcript' ) );
 			if ( ! @copy( $transcript['tmp_name'], $folder . '/' . $tname ) ) { // phpcs:ignore WordPress.PHP.NoSilencedErrors
 				$out['warnings'][] = 'The episode was saved, but the transcript file could not be copied into its folder.';
 				$tname             = '';
