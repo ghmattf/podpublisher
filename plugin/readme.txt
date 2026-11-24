@@ -4,7 +4,7 @@ Tags: podcasting 2.0, rss, podcast, feeds
 Requires at least: 5.8
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 0.15.0
+Stable tag: 0.16.0
 License: GPLv2 or later
 
 Manage Podcasting 2.0 feeds and files.

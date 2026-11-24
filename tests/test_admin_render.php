@@ -70,6 +70,7 @@ foreach ( array( 'settings', 'storage', 'p20', 'images', 'geo', 'details', 'epis
 
 $fail = 0;
 function check( $name, $ok ) { global $fail; echo ( $ok ? 'ok   ' : 'FAIL ' ) . $name . "\n"; if ( ! $ok ) { $fail = 1; } }
+if ( ! function_exists( 'sanitize_key' ) ) { function sanitize_key( $k ) { return preg_replace( '/[^a-z0-9_\-]/', '', strtolower( (string) $k ) ); } }
 function page( $id ) { ob_start(); PodPub_Admin::render_feed( $id ); return ob_get_clean(); }
 
 $pdir = PodPub_Storage::create_podcast_dir( 'My Show' );
@@ -80,7 +81,7 @@ check( 'podcast page: title is escaped', false !== strpos( $h, '<h1>My &lt;Show&
 check( 'podcast page: details form, upload enabled, nonce and action', false !== strpos( $h, 'enctype="multipart/form-data"' ) && false !== strpos( $h, 'value="podpub_save_details"' ) && false !== strpos( $h, '_wpnonce' ) && false !== strpos( $h, 'name="podpub_image"' ) );
 check( 'podcast page: GIF offered for show art', false !== strpos( $h, 'image/gif' ) );
 check( 'podcast page: feed address shown', false !== strpos( $h, "https://example.com/wp-content/uploads/podpublisher/$pdir/$pdir.xml" ) && false !== strpos( $h, 'not written yet' ) );
-check( 'podcast page: episodes section with Add episode', false !== strpos( $h, '<h2>Episodes' ) && false !== strpos( $h, 'episode=new' ) && false !== strpos( $h, 'No episodes yet' ) );
+check( 'podcast page: episodes section with Add episode', false !== strpos( $h, 'data-tab="episodes"' ) && false !== strpos( $h, 'episode=new' ) && false !== strpos( $h, 'No episodes yet' ) );
 check( 'podcast page: delete podcast form, files box not ticked by default, confirmation text', false !== strpos( $h, 'value="podpub_delete_podcast"' ) && false !== strpos( $h, 'name="podpub_delete_files" value="1">' ) && false === strpos( $h, 'podpub_delete_files" value="1" checked' ) && false !== strpos( $h, 'onsubmit="return confirm(' ) && false !== strpos( $h, 'This cannot be undone' ) );
 
 PodPub_Feeds::save_details( 5, array( 'title' => 'My Show', 'description' => 'About', 'language' => 'en', 'explicit' => 'no' ) );
@@ -103,7 +104,7 @@ check( 'edit episode form: values filled in, delete button with confirm', false 
 $_GET['episode'] = '99999';
 check( 'edit episode form: unknown episode says not found', false !== strpos( page( 5 ), 'Episode not found' ) );
 $_GET['episode'] = 'abc';
-check( 'bad episode value falls back to the podcast page', false !== strpos( page( 5 ), 'Podcast details' ) );
+check( 'bad episode value falls back to the podcast page', false !== strpos( page( 5 ), 'name="podpub[title]"' ) && false !== strpos( page( 5 ), 'data-tab="details"' ) );
 
 // Audio source controls on the episode form.
 $_GET['episode'] = (string) $eid;
@@ -121,7 +122,7 @@ $hb    = page( $blank );
 check( 'podcast page: OP3 tick box present and off, no statistics link yet', false !== strpos( $h, 'name="podpub[op3]"' ) && false === strpos( $h, 'checked=\'checked\'> Count downloads' ) && false === strpos( $h, 'op3.dev/show/' ) && false !== strpos( $h, 'Count downloads with OP3' ) );
 check( 'podcast page: explicit is a required yes/no select; a new podcast starts on Choose, a saved one shows its answer', false !== strpos( $hb, '<select id="pp_explicit" name="podpub[explicit]" required><option value="" selected>Choose&hellip;</option><option value="yes">Yes</option><option value="no">No</option>' ) && false !== strpos( $h, '<option value="no" selected>No</option>' ) && false !== strpos( $h, 'This feed contains explicit content' ) && false !== strpos( $h, 'name="podpub[keywords]"' ) && false !== strpos( $h, 'managing editor' ) );
 check( 'podcast page: trailers and live episodes with date pickers and a status list', false !== strpos( $h, 'name="podpub_p20[trailers][0][pubdate]"' ) && false !== strpos( $h, '<input type="datetime-local" name="podpub_p20[live][0][start]"' ) && false !== strpos( $h, '<select name="podpub_p20[live][0][status]">' ) && false !== strpos( $h, '<option value="pending">Pending</option>' ) );
-check( 'podcast page: add-episode link, and the copy link once there is an episode', false !== strpos( $h, 'class="page-title-action">Add episode</a>' ) && false !== strpos( $h, 'Add episode, copying details from the latest' ) && false !== strpos( $h, 'copy=1' ) );
+check( 'podcast page: add-episode link, and the copy link once there is an episode', false !== strpos( $h, 'class="button button-primary">Add episode</a>' ) && false !== strpos( $h, 'Add episode, copying details from the latest' ) && false !== strpos( $h, 'copy=1' ) );
 $_GET['episode'] = (string) $eid;
 $h = page( 5 );
 check( 'audio: shows the episode folder to copy files into, and that none are there yet', false !== strpos( $h, "podpublisher/$pdir/First_One</code>" ) && false !== strpos( $h, 'No audio files found' ) );
@@ -154,9 +155,9 @@ PodPub_Feeds::save_p20( 5, array(
 	'block' => array( array( 'id' => 'google', 'value' => 'yes' ) ), 'podroll' => array( array( 'feed_guid' => '917393e3-1b1e-5cef-ace4-edaa54e1f810' ) ),
 ) );
 $h = page( 5 );
-check( 'p20 form on the podcast page: own form, action and nonce', false !== strpos( $h, 'value="podpub_save_p20"' ) && false !== strpos( $h, '<h2>Podcasting 2.0</h2>' ) );
-check( 'p20 form: every podcast-level section', false !== strpos( $h, '<h3>Funding</h3>' ) && false !== strpos( $h, '<h3>Location</h3>' ) && false !== strpos( $h, '<h3>People</h3>' ) && false !== strpos( $h, '<h3>License</h3>' ) && false !== strpos( $h, '<h3>Payments (value)</h3>' ) && false !== strpos( $h, '<h3>Block</h3>' ) && false !== strpos( $h, '<h3>Podroll</h3>' ) );
-check( 'p20 form: podcast page has no time splits', false === strpos( $h, 'Value time splits' ) );
+check( 'p20 form on the podcast page: own form, action and nonce', false !== strpos( $h, 'value="podpub_save_p20"' ) && false !== strpos( $h, 'data-tab="p20"' ) );
+check( 'p20 form: every podcast-level section', false !== strpos( $h, '<summary>Funding' ) && false !== strpos( $h, '<summary>Location' ) && false !== strpos( $h, '<summary>People' ) && false !== strpos( $h, '<summary>License' ) && false !== strpos( $h, '<summary>Payments (value)' ) && false !== strpos( $h, '<summary>Block' ) && false !== strpos( $h, '<summary>Podroll' ) );
+check( 'p20 form: podcast page has no time splits', false === strpos( $h, '<summary>Value time splits' ) );
 check( 'p20 form: saved values shown, quote escaped', false !== strpos( $h, 'name="podpub_p20[funding][0][url]" value="https://example.com/donate"' ) && false !== strpos( $h, 'value="Fund &quot;us&quot;"' ) && false !== strpos( $h, 'name="podpub_p20[locations][0][name]" value="Melbourne"' ) );
 check( 'p20 form: three spare empty rows after the saved one', false !== strpos( $h, 'name="podpub_p20[funding][3][url]"' ) && false === strpos( $h, 'name="podpub_p20[funding][4][url]"' ) );
 check( 'p20 form: Lightning address recipient with fee ticked, and no keysend, node or custom record fields', false !== strpos( $h, 'name="podpub_p20[recipients][0][fee]" value="1" checked' ) && false !== strpos( $h, 'name="podpub_p20[recipients][0][address]" value="me@example.com"' ) && false === stripos( $h, 'keysend' ) && false === strpos( $h, 'value_method' ) && false === strpos( $h, '[custom_key]' ) && false === strpos( $h, '<option value="node"' ) );
@@ -164,7 +165,7 @@ check( 'p20 form: block and podroll rows', false !== strpos( $h, 'name="podpub_p
 
 $_GET['episode'] = (string) $eid;
 $h = page( 5 );
-check( 'p20 on the episode form: same sections plus time splits, no block or podroll', false !== strpos( $h, '<h3>Funding</h3>' ) && false !== strpos( $h, '<h3>People</h3>' ) && false !== strpos( $h, 'Value time splits' ) && false !== strpos( $h, 'name="podpub_ep[timesplits][0][feed_guid]"' ) && false === strpos( $h, '<h3>Block</h3>' ) && false === strpos( $h, '<h3>Podroll</h3>' ) );
+check( 'p20 on the episode form: same sections plus time splits, no block or podroll', false !== strpos( $h, '<summary>Funding' ) && false !== strpos( $h, '<summary>People' ) && false !== strpos( $h, 'Value time splits' ) && false !== strpos( $h, 'name="podpub_ep[timesplits][0][feed_guid]"' ) && false === strpos( $h, '<summary>Block' ) && false === strpos( $h, '<summary>Podroll' ) );
 check( 'p20 on the episode form: the time splits import box (paste or file, replace or add) is there', false !== strpos( $h, 'name="podpub_ep[splits_import]"' ) && false !== strpos( $h, 'name="podpub_splits_file"' ) && false !== strpos( $h, 'name="podpub_ep[splits_mode]"' ) && false !== strpos( $h, 'Import time splits' ) );
 check( 'p20 on the episode form: is part of the episode form, using its own field names', false !== strpos( $h, 'name="podpub_ep[funding][0][url]"' ) && false !== strpos( $h, 'name="podpub_ep[value_suggested]"' ) && false !== strpos( $h, 'Leave this empty to use the podcast' ) );
 
@@ -239,6 +240,36 @@ check( 'search handler: too short gives a message, no fetch', $r['success'] === 
 $_POST = array( 'q' => array( 'x' ) );
 try { PodPub_Admin::handle_geo_search(); $r = null; } catch ( Stop $e ) { $r = $e->p; }
 check( 'search handler: an array instead of text is treated as empty', $r['success'] === false );
+
+// ---- Tabs, cards and look (TODO 20 and 27) ----
+$_GET = array(); unset( $_GET['episode'] );
+$h = page( 5 );
+check( 'tabs: the podcast page has Episodes, Details, Podcasting 2.0 and Feed and files, each with a panel', 4 === preg_match_all( '/role="tab" id="podpub-t-(episodes|details|p20|feed)"/', $h ) && 4 === preg_match_all( '/role="tabpanel" id="podpub-tab-(episodes|details|p20|feed)"/', $h ) );
+check( 'tabs: aria links between tab and panel, and the default tab is marked', false !== strpos( $h, 'aria-controls="podpub-tab-details"' ) && false !== strpos( $h, 'aria-labelledby="podpub-t-details"' ) && false !== strpos( $h, 'data-default="episodes"' ) );
+check( 'tabs: with scripts off every panel is still in the page (the server hides none)', 0 === preg_match( '/<section[^>]* hidden/', $h ) );
+check( 'tabs: styles and script printed once, with a rule that shows an invalid field in a hidden tab', 1 === substr_count( $h, 'id="podpub-css"' ) && 1 === substr_count( $h, 'id="podpub-js"' ) && false !== strpos( $h, '"invalid"' ) );
+check( 'tabs: each podcast form keeps its own Save and write feed button in a save bar', 2 === substr_count( $h, 'Save and write feed</button>' ) && 2 <= substr_count( $h, 'class="podpub-savebar"' ) );
+$_GET['tab'] = 'p20';
+check( 'tabs: ?tab= picks the tab to show first (used after saving)', false !== strpos( page( 5 ), 'data-default="p20"' ) );
+$_GET['tab'] = 'nonsense"><script>';
+$hx = page( 5 );
+check( 'tabs: an unknown or hostile tab value is ignored', false !== strpos( $hx, 'data-default="episodes"' ) && false === strpos( $hx, '<script>"' ) );
+$_GET = array();
+check( 'hero: shows a feed status label, the feed address, a copy button and the episode count', false !== strpos( $h, 'podpub-hero' ) && false !== strpos( $h, 'podpub-pill' ) && false !== strpos( $h, 'data-podpub-copy=' ) && false !== strpos( $h, ' episode' ) );
+check( 'cards: Podcasting 2.0 sections are open/close cards with summaries', false !== strpos( $h, '<details class="podpub-card"' ) && false !== strpos( $h, '<summary>Funding' ) && 0 === preg_match( '/<h3>/', $h ) );
+check( 'feed tab: shows the files folder, feed file, the three-backup note and the delete section in a danger box', false !== strpos( $h, 'Files folder' ) && false !== strpos( $h, '.bak3' ) && false !== strpos( $h, 'podpub-danger' ) && false !== strpos( $h, 'podpub_delete_podcast' ) );
+$_GET['episode'] = (string) $eid;
+$he = page( 5 );
+check( 'episode page: tabs Episode, Audio, Notes and picture, Podcasting 2.0 inside the one form', 4 === preg_match_all( '/role="tab" id="podpub-t-(episode|audio|notes|p20)"/', $he ) && 1 === substr_count( $he, 'value="podpub_save_episode"' ) );
+check( 'episode page: every field is still there, each once', 1 === substr_count( $he, 'name="podpub_ep[title]"' ) && 1 === substr_count( $he, 'name="podpub_ep[show_notes]"' ) && 1 === substr_count( $he, 'name="podpub_audio"' ) && 1 === substr_count( $he, 'name="podpub_ep[published]"' ) && 1 === substr_count( $he, 'name="podpub_ep[status]"' ) && 1 === substr_count( $he, 'name="podpub_ep[duration]"' ) && 1 === substr_count( $he, 'name="podpub_ep_image"' ) && 1 === substr_count( $he, 'name="podpub_ep[explicit]"' ) );
+preg_match( '#id="podpub-tab-audio".*?</section>#s', $he, $pa ); preg_match( '#id="podpub-tab-notes".*?</section>#s', $he, $pn ); preg_match( '#id="podpub-tab-episode".*?</section>#s', $he, $pe );
+check( 'episode page: fields are on the right tab (audio and duration on Audio; show notes on Notes; title and date on Episode)', false !== strpos( $pa[0], 'name="podpub_audio"' ) && false !== strpos( $pa[0], 'name="podpub_ep[duration]"' ) && false !== strpos( $pn[0], 'name="podpub_ep[show_notes]"' ) && false !== strpos( $pe[0], 'name="podpub_ep[title]"' ) && false !== strpos( $pe[0], 'name="podpub_ep[published]"' ) && false === strpos( $pe[0], 'name="podpub_audio"' ) );
+check( 'episode page: the button says Save episode, it remembers the tab, and the old long label is gone', false !== strpos( $he, 'Save episode</button>' ) && false !== strpos( $he, 'data-podpub-tabfield' ) && false === strpos( $he, 'Save episode and write feed' ) );
+$_GET['tab'] = 'audio';
+check( 'episode page: ?tab= selects the starting tab', false !== strpos( page( 5 ), 'data-default="audio"' ) );
+$_GET = array();
+$hl = ( function () { ob_start(); $_GET = array( 'page' => 'podpublisher' ); PodPub_Admin::render_list(); return ob_get_clean(); } )();
+check( 'list page: podcasts are cards with an episode count', false !== strpos( $hl, 'podpub-grid' ) && false !== strpos( $hl, 'podpub-podcast' ) && false !== strpos( $hl, ' episode' ) && false === strpos( $hl, 'wp-list-table' ) );
 
 $it = new RecursiveIteratorIterator( new RecursiveDirectoryIterator( $tmp, FilesystemIterator::SKIP_DOTS ), RecursiveIteratorIterator::CHILD_FIRST );
 foreach ( $it as $f ) { $f->isDir() ? rmdir( $f ) : unlink( $f ); }

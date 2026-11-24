@@ -158,7 +158,7 @@ class PodPub_Admin {
 		}
 		$result = PodPub_Feeds::save_details( $id, $input, $file );
 		set_transient( 'podpub_notice_' . get_current_user_id(), $result, 120 );
-		wp_safe_redirect( add_query_arg( 'page', self::SLUG_FEED . $id, admin_url( 'admin.php' ) ) );
+		wp_safe_redirect( self::feed_page_url( $id, array( 'tab' => 'details' ) ) );
 		exit;
 	}
 
@@ -197,7 +197,8 @@ class PodPub_Admin {
 		$result['input'] = $result['errors'] ? $input : null;
 		set_transient( 'podpub_notice_' . get_current_user_id(), $result, 120 );
 		$go = $result['errors'] ? ( $eid ? (string) $eid : 'new' ) : (string) $result['id'];
-		wp_safe_redirect( self::feed_page_url( $pid, array( 'episode' => $go ) ) );
+		$tab = isset( $_POST['podpub_tab'] ) ? sanitize_key( wp_unslash( $_POST['podpub_tab'] ) ) : '';
+		wp_safe_redirect( self::feed_page_url( $pid, array_merge( array( 'episode' => $go ), '' !== $tab ? array( 'tab' => $tab ) : array() ) ) );
 		exit;
 	}
 
@@ -213,7 +214,7 @@ class PodPub_Admin {
 		$eid    = isset( $_POST['podpub_episode_id'] ) ? (int) $_POST['podpub_episode_id'] : 0;
 		$result = PodPub_Episodes::delete( $pid, $eid );
 		set_transient( 'podpub_notice_' . get_current_user_id(), $result, 120 );
-		wp_safe_redirect( self::feed_page_url( $pid ) );
+		wp_safe_redirect( self::feed_page_url( $pid, array( 'tab' => 'episodes' ) ) );
 		exit;
 	}
 
@@ -264,7 +265,7 @@ class PodPub_Admin {
 		$result['form']  = 'p20';
 		$result['input'] = $result['errors'] ? $input : null;
 		set_transient( 'podpub_notice_' . get_current_user_id(), $result, 120 );
-		wp_safe_redirect( self::feed_page_url( $id ) );
+		wp_safe_redirect( self::feed_page_url( $id, array( 'tab' => 'p20' ) ) );
 		exit;
 	}
 
@@ -307,10 +308,182 @@ class PodPub_Admin {
 	 * @param array  $cols Columns: key, label, type (text, select, check), options, ph, class.
 	 * @param int    $max  Most rows allowed.
 	 */
+	/**
+	 * Styles and the small script for tabs, copy buttons and cards. Each admin screen calls this
+	 * once, at the top of its page.
+	 */
+	private static function assets() {
+		echo '<style id="podpub-css">' . self::css() . '</style>';
+		echo '<script id="podpub-js">' . self::js() . '</script>';
+	}
+
+	private static function css() {
+		return <<<'CSS'
+.podpub{--pp-accent:#2271b1;--pp-border:#c3c4c7;--pp-soft:#f6f7f7;--pp-text:#1d2327;--pp-muted:#646970;--pp-ok:#00a32a;--pp-warn:#dba617;--pp-bad:#d63638;max-width:1100px}
+.podpub h1{margin-bottom:8px}
+.podpub-back{display:inline-block;margin:0 0 10px;text-decoration:none;color:var(--pp-muted)}
+.podpub-back:hover{color:var(--pp-accent)}
+.podpub-hero{display:flex;gap:16px;align-items:center;background:#fff;border:1px solid var(--pp-border);border-radius:8px;padding:14px 18px;margin:12px 0 18px}
+.podpub-hero-art{flex:0 0 72px;width:72px;height:72px;border-radius:8px;overflow:hidden;background:var(--pp-soft);border:1px solid var(--pp-border)}
+.podpub-hero-art img{width:100%;height:100%;object-fit:cover;display:block}
+.podpub-hero-main{flex:1;min-width:0}
+.podpub-feedline{margin:8px 0 2px;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.podpub-feedline code{background:var(--pp-soft);padding:3px 8px;border-radius:4px;word-break:break-all}
+.podpub-meta{color:var(--pp-muted);margin-top:4px}
+.podpub-pill{display:inline-block;padding:2px 10px;border-radius:999px;font-size:12px;font-weight:600;line-height:20px;background:#f0f0f1;color:var(--pp-text);border:1px solid transparent}
+.podpub-pill--ok{background:#edfaef;color:#005c12;border-color:#b8e6bf}
+.podpub-pill--warn{background:#fcf9e8;color:#614a00;border-color:#f0d980}
+.podpub-pill--bad{background:#fcf0f1;color:#8a2424;border-color:#f1b1b4}
+.podpub-pill--draft{background:#f0f0f1;color:var(--pp-muted);border-color:#dcdcde}
+.podpub-tabs .nav-tab-wrapper{margin:0;padding-top:0;border-bottom:1px solid var(--pp-border);overflow-x:auto;white-space:nowrap;display:flex;flex-wrap:nowrap}
+.podpub-tabs .nav-tab{float:none;margin-bottom:-1px;flex:0 0 auto;padding:10px 16px;font-size:14px}
+.podpub-tabs .nav-tab:focus{box-shadow:0 0 0 2px var(--pp-accent);outline:2px solid transparent}
+.podpub-panel{background:#fff;border:1px solid var(--pp-border);border-top:0;border-radius:0 0 8px 8px;padding:6px 22px 4px}
+.podpub-panel[hidden]{display:none}
+.podpub-panel .form-table{margin-top:6px}
+.podpub-panel .form-table th{padding-left:0;width:190px}
+.podpub-panel h2{margin:18px 0 6px}
+.podpub-panel .description{max-width:70em}
+.podpub-actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:16px 0 4px}
+.podpub-card{border:1px solid var(--pp-border);border-radius:8px;background:#fff;margin:12px 0}
+.podpub-card>summary{cursor:pointer;padding:12px 16px;font-size:14px;font-weight:600;list-style:none;display:flex;align-items:center;gap:8px;border-radius:8px}
+.podpub-card>summary::-webkit-details-marker{display:none}
+.podpub-card>summary::before{content:"\25B8";color:var(--pp-muted);transition:transform .12s}
+.podpub-card[open]>summary::before{transform:rotate(90deg)}
+.podpub-card>summary:hover{background:var(--pp-soft)}
+.podpub-card>summary:focus-visible{outline:2px solid var(--pp-accent)}
+.podpub-card[open]>summary{border-bottom:1px solid var(--pp-border);border-radius:8px 8px 0 0}
+.podpub-card-body{padding:6px 16px 12px}
+.podpub-card .podpub-badge{margin-left:auto;font-weight:400;font-size:12px;color:var(--pp-muted)}
+.podpub-savebar{position:sticky;bottom:0;z-index:20;margin:18px -22px 0;padding:12px 22px;background:rgba(246,247,247,.96);border-top:1px solid var(--pp-border);border-radius:0 0 8px 8px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.podpub-savebar .submit{margin:0;padding:0}
+.podpub-savebar .podpub-hint{color:var(--pp-muted);font-size:12px}
+.podpub-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px;margin-top:16px}
+.podpub-podcast{display:flex;gap:14px;align-items:center;background:#fff;border:1px solid var(--pp-border);border-radius:8px;padding:14px;text-decoration:none;color:inherit;transition:box-shadow .12s,border-color .12s}
+.podpub-podcast:hover,.podpub-podcast:focus{border-color:var(--pp-accent);box-shadow:0 1px 6px rgba(0,0,0,.08);color:inherit}
+.podpub-podcast .podpub-hero-art{flex-basis:64px;width:64px;height:64px}
+.podpub-podcast strong{display:block;font-size:15px;margin-bottom:2px;color:var(--pp-accent)}
+.podpub-empty{background:#fff;border:1px dashed var(--pp-border);border-radius:8px;padding:28px;text-align:center;color:var(--pp-muted);margin-top:16px}
+.podpub-box{background:#fff;border:1px solid var(--pp-border);border-radius:8px;padding:6px 22px 14px;margin:14px 0;max-width:900px}
+.podpub-box h2{margin-top:16px}
+.podpub-danger{border:1px solid #f1b1b4;background:#fffafa;border-radius:8px;padding:6px 18px 14px;margin:18px 0 12px}
+.podpub-danger h2{color:#8a2424;margin-top:12px}
+.podpub-table{border-radius:6px;overflow:hidden}
+.podpub-table td,.podpub-table th{vertical-align:middle}
+.podpub .widefat input[type=text],.podpub .widefat select{max-width:100%}
+.podpub .podpub-rows{overflow-x:auto;max-width:100%}
+@media (max-width:782px){
+.podpub-hero{flex-direction:column;align-items:flex-start}
+.podpub-panel{padding:4px 14px}
+.podpub-savebar{margin:16px -14px 0;padding:10px 14px}
+.podpub-panel .form-table th{width:auto}
+.podpub-tabs .nav-tab{padding:9px 12px}
+.podpub-card-body{padding:4px 10px 10px}
+}
+@media (prefers-reduced-motion:reduce){.podpub-card>summary::before{transition:none}}
+CSS;
+	}
+
+	private static function js() {
+		return <<<'JS'
+(function(){
+function ready(f){if(document.readyState!=="loading")f();else document.addEventListener("DOMContentLoaded",f);}
+ready(function(){
+document.querySelectorAll("[data-podpub-tabs]").forEach(function(root){
+var tabs=[].slice.call(root.querySelectorAll('[role="tab"]')),panels=[].slice.call(root.querySelectorAll('[role="tabpanel"]'));
+if(!tabs.length)return;
+root.classList.add("podpub-js");
+function show(k,focus){var found=false;tabs.forEach(function(t){var on=t.getAttribute("data-tab")===k;if(on)found=true;t.classList.toggle("nav-tab-active",on);t.setAttribute("aria-selected",on?"true":"false");t.tabIndex=on?0:-1;if(on&&focus)t.focus();});
+if(!found)return false;panels.forEach(function(p){p.hidden=p.getAttribute("data-tab")!==k;});return true;}
+var h=(location.hash||"").replace("#podpub-tab-","");
+if(!show(h,false))show(root.getAttribute("data-default")||tabs[0].getAttribute("data-tab"),false);
+window.addEventListener("hashchange",function(){var k=(location.hash||"").replace("#podpub-tab-","");if(k)show(k,false);});
+tabs.forEach(function(t,i){
+t.addEventListener("click",function(e){e.preventDefault();var k=t.getAttribute("data-tab");show(k,false);if(history.replaceState)history.replaceState(null,"","#podpub-tab-"+k);});
+t.addEventListener("keydown",function(e){var n=null;if(e.key==="ArrowRight")n=tabs[(i+1)%tabs.length];else if(e.key==="ArrowLeft")n=tabs[(i-1+tabs.length)%tabs.length];else if(e.key==="Home")n=tabs[0];else if(e.key==="End")n=tabs[tabs.length-1];
+if(n){e.preventDefault();show(n.getAttribute("data-tab"),true);}});
+});
+root.addEventListener("invalid",function(e){var p=e.target.closest&&e.target.closest('[role="tabpanel"]');if(p&&p.hidden){show(p.getAttribute("data-tab"),false);}},true);
+});
+document.querySelectorAll("[data-podpub-tabfield]").forEach(function(f){if(!f.form)return;f.form.addEventListener("submit",function(){var a=f.form.querySelector('[role="tab"][aria-selected="true"]');if(a)f.value=a.getAttribute("data-tab");});});
+document.querySelectorAll("[data-podpub-copy]").forEach(function(b){b.addEventListener("click",function(){var v=b.getAttribute("data-podpub-copy"),old=b.textContent;
+function done(){b.textContent="Copied";setTimeout(function(){b.textContent=old;},1500);}
+if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(v).then(done,function(){});}else{var t=document.createElement("textarea");t.value=v;document.body.appendChild(t);t.select();try{document.execCommand("copy");done();}catch(x){}document.body.removeChild(t);}
+});});
+});
+})();
+JS;
+	}
+
+	/**
+	 * Print a set of tabs. The first tab is shown by default unless $default names another;
+	 * without scripts every panel is simply shown one after the other.
+	 *
+	 * @param array  $tabs    key => array( 'label' => text, 'html' => panel content ).
+	 * @param string $default Key of the tab to show first.
+	 */
+	private static function render_tabs( $tabs, $default ) {
+		if ( ! isset( $tabs[ $default ] ) ) {
+			$keys    = array_keys( $tabs );
+			$default = $keys[0];
+		}
+		echo '<div class="podpub-tabs" data-podpub-tabs data-default="' . esc_attr( $default ) . '">';
+		echo '<nav class="nav-tab-wrapper" role="tablist" aria-label="Sections">';
+		foreach ( $tabs as $k => $t ) {
+			echo '<a class="nav-tab' . ( $k === $default ? ' nav-tab-active' : '' ) . '" role="tab" id="podpub-t-' . esc_attr( $k ) . '" href="#podpub-tab-' . esc_attr( $k ) . '" aria-controls="podpub-tab-' . esc_attr( $k ) . '" aria-selected="' . ( $k === $default ? 'true' : 'false' ) . '" data-tab="' . esc_attr( $k ) . '">' . esc_html( $t['label'] ) . '</a>';
+		}
+		echo '</nav>';
+		foreach ( $tabs as $k => $t ) {
+			echo '<section class="podpub-panel" role="tabpanel" id="podpub-tab-' . esc_attr( $k ) . '" aria-labelledby="podpub-t-' . esc_attr( $k ) . '" data-tab="' . esc_attr( $k ) . '">' . $t['html'] . '</section>'; // phpcs:ignore WordPress.Security.EscapeOutput
+		}
+		echo '</div>';
+	}
+
+	/**
+	 * The bar with the save button, kept in view at the bottom of a form.
+	 *
+	 * @param string $label Button text.
+	 * @param string $hint  Optional small text beside the button.
+	 */
+	private static function render_savebar( $label, $hint = '' ) {
+		echo '<div class="podpub-savebar">';
+		submit_button( $label, 'primary', 'submit', false );
+		if ( '' !== $hint ) {
+			echo '<span class="podpub-hint">' . esc_html( $hint ) . '</span>';
+		}
+		echo '</div>';
+	}
+
+	/** A small status label. */
+	private static function pill( $text, $kind = 'draft' ) {
+		return '<span class="podpub-pill podpub-pill--' . esc_attr( $kind ) . '">' . esc_html( $text ) . '</span>';
+	}
+
+	/**
+	 * Turn the "<h3>Title</h3> ..." sections in some Podcasting 2.0 form HTML into cards that open
+	 * and close. A card is open when it already holds something.
+	 *
+	 * @param string $html Form HTML from render_p20_fields().
+	 * @return string
+	 */
+	private static function cards( $html ) {
+		$parts = preg_split( '#(?=<h3>)#', $html );
+		$out   = array_shift( $parts );
+		foreach ( $parts as $chunk ) {
+			if ( ! preg_match( '#^<h3>(.*?)</h3>(.*)$#s', $chunk, $m ) ) {
+				$out .= $chunk;
+				continue;
+			}
+			$full = ( preg_match( '#<input(?![^>]*type="(?:hidden|checkbox|file|button|submit)")[^>]*\svalue="[^"]+"#', $m[2] ) || preg_match( '#<textarea[^>]*>[^<\s]#', $m[2] ) || preg_match( '#<input[^>]*type="checkbox"[^>]*\schecked#', $m[2] ) );
+			$out .= '<details class="podpub-card"' . ( $full ? ' open' : '' ) . '><summary>' . $m[1] . ( $full ? '<span class="podpub-badge">in use</span>' : '' ) . '</summary><div class="podpub-card-body">' . $m[2] . '</div></details>';
+		}
+		return $out;
+	}
+
 	private static function render_rows( $name, $rows, $cols, $max ) {
 		$rows = array_values( $rows );
 		$n    = min( $max, count( $rows ) + 3 );
-		echo '<table class="widefat striped" style="max-width:70em"><thead><tr>';
+		echo '<div class="podpub-rows"><table class="widefat striped podpub-table"><thead><tr>';
 		foreach ( $cols as $c ) {
 			echo '<th>' . esc_html( $c['label'] ) . '</th>';
 		}
@@ -341,7 +514,7 @@ class PodPub_Admin {
 			}
 			echo '</tr>';
 		}
-		echo '</tbody></table><p class="description">Empty rows are ignored. Save to get more empty rows.</p>';
+		echo '</tbody></table></div><p class="description">Empty rows are ignored. Save to get more empty rows.</p>';
 	}
 
 	/**
@@ -378,6 +551,12 @@ class PodPub_Admin {
 	}
 
 	private static function render_p20_fields( $prefix, $d, $in, $item, $ctx = null ) {
+		ob_start();
+		self::render_p20_fields_raw( $prefix, $d, $in, $item, $ctx );
+		echo self::cards( (string) ob_get_clean() ); // phpcs:ignore WordPress.Security.EscapeOutput
+	}
+
+	private static function render_p20_fields_raw( $prefix, $d, $in, $item, $ctx = null ) {
 		$v    = function ( $k, $fallback ) use ( $in ) {
 			return null !== $in && isset( $in[ $k ] ) && is_scalar( $in[ $k ] ) ? (string) $in[ $k ] : (string) $fallback;
 		};
@@ -582,24 +761,34 @@ class PodPub_Admin {
 	 * @param int $id Podcast record id.
 	 */
 	private static function render_episode_list( $id ) {
-		echo '<hr><h2>Episodes <a href="' . esc_url( self::feed_page_url( $id, array( 'episode' => 'new' ) ) ) . '" class="page-title-action">Add episode</a>';
-		if ( PodPub_Episodes::all( $id ) ) {
-			echo ' <a href="' . esc_url( self::feed_page_url( $id, array( 'episode' => 'new', 'copy' => 1 ) ) ) . '" class="page-title-action">Add episode, copying details from the latest</a>';
-		}
-		echo '</h2>';
 		$eps = PodPub_Episodes::all( $id );
+		echo '<div class="podpub-actions"><a href="' . esc_url( self::feed_page_url( $id, array( 'episode' => 'new' ) ) ) . '" class="button button-primary">Add episode</a>';
+		if ( $eps ) {
+			echo ' <a href="' . esc_url( self::feed_page_url( $id, array( 'episode' => 'new', 'copy' => 1 ) ) ) . '" class="button">Add episode, copying details from the latest</a>';
+		}
+		echo '</div>';
 		if ( ! $eps ) {
-			echo '<p>No episodes yet.</p>';
+			echo '<div class="podpub-empty">No episodes yet. Use <strong>Add episode</strong> to create the first one.</div>';
 			return;
 		}
-		echo '<table class="wp-list-table widefat fixed striped"><thead><tr><th>Episode</th><th style="width:12em">Date</th><th style="width:8em">Status</th></tr></thead><tbody>';
+		echo '<table class="wp-list-table widefat fixed striped podpub-table"><thead><tr><th>Episode</th><th style="width:12em">Date</th><th style="width:11em">Status</th></tr></thead><tbody>';
 		foreach ( $eps as $e ) {
 			$d    = PodPub_Episodes::details( $e->ID );
 			$link = self::feed_page_url( $id, array( 'episode' => (int) $e->ID ) );
-			$stat = 'published' === $d['status'] ? ( ! PodPub_Episodes::has_audio( $d ) ? 'Published (no audio)' : 'Published' ) : 'Draft';
-			echo '<tr><td><strong><a href="' . esc_url( $link ) . '">' . esc_html( $e->post_title ) . '</a></strong></td><td>' . esc_html( PodPub_Episodes::format_date( $d['published'] ) ) . '</td><td>' . esc_html( $stat ) . '</td></tr>';
+			if ( 'published' !== $d['status'] ) {
+				$stat = self::pill( 'Draft', 'draft' );
+			} elseif ( ! PodPub_Episodes::has_audio( $d ) ) {
+				$stat = self::pill( 'Published (no audio)', 'warn' );
+			} else {
+				$stat = self::pill( 'Published', 'ok' );
+			}
+			$num = '';
+			if ( $d['episode'] ) {
+				$num = ( $d['season'] ? 'S' . (int) $d['season'] . ' ' : '' ) . 'E' . (int) $d['episode'] . ' &middot; ';
+			}
+			echo '<tr><td>' . $num . '<strong><a href="' . esc_url( $link ) . '">' . esc_html( $e->post_title ) . '</a></strong></td><td>' . esc_html( PodPub_Episodes::format_date( $d['published'] ) ) . '</td><td>' . $stat . '</td></tr>'; // phpcs:ignore WordPress.Security.EscapeOutput
 		}
-		echo '</tbody></table>';
+		echo '</tbody></table><p class="description" style="margin:10px 0 14px">Saving an episode stores it on the server. The feed file changes only when you use Save and write feed on the Details or Podcasting 2.0 tab.</p>';
 	}
 
 	/**
@@ -613,7 +802,7 @@ class PodPub_Admin {
 	private static function render_episode( $id, $feed, $which, $notice ) {
 		$eid  = 'new' === $which ? 0 : (int) $which;
 		$post = $eid ? PodPub_Episodes::get( $eid, $id ) : null;
-		echo '<p><a href="' . esc_url( self::feed_page_url( $id ) ) . '">&larr; Back to ' . esc_html( $feed->post_title ) . '</a></p>';
+		echo '<a class="podpub-back" href="' . esc_url( self::feed_page_url( $id, array( 'tab' => 'episodes' ) ) ) . '">&larr; Back to ' . esc_html( $feed->post_title ) . '</a>';
 		if ( $eid && ! $post ) {
 			echo '<h2>Episode not found</h2>';
 			return;
@@ -641,7 +830,11 @@ class PodPub_Admin {
 		$v     = function ( $k, $fallback ) use ( $in ) {
 			return null !== $in && isset( $in[ $k ] ) && is_scalar( $in[ $k ] ) ? (string) $in[ $k ] : (string) $fallback;
 		};
-		echo '<h2>' . ( $post ? 'Edit episode' : 'Add episode' ) . '</h2>';
+		echo '<h2 style="margin:6px 0 12px">' . ( $post ? 'Edit episode' : 'Add episode' );
+		if ( $post ) {
+			echo ' ' . ( 'published' === $d['status'] ? self::pill( 'Published', 'ok' ) : self::pill( 'Draft', 'draft' ) ); // phpcs:ignore WordPress.Security.EscapeOutput
+		}
+		echo '</h2>';
 		if ( $copied ) {
 			echo '<p class="description">Started from the latest episode: the title, description, show notes, subtitle, summary, keywords, season, people, funding, location, licence, payments and comments are copied. Not copied: the guid (each episode gets its own), the date and time, the explicit choice, the audio and anything tied to the audio (chapters, transcripts, soundbites, alternate files, picture, time splits). Change the title and anything else that differs.</p>';
 		} elseif ( ! $post ) {
@@ -650,7 +843,8 @@ class PodPub_Admin {
 		echo '<form method="post" enctype="multipart/form-data" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '">';
 		echo '<input type="hidden" name="action" value="podpub_save_episode"><input type="hidden" name="podpub_id" value="' . (int) $id . '"><input type="hidden" name="podpub_episode_id" value="' . (int) $eid . '">';
 		wp_nonce_field( 'podpub_save_episode' );
-		echo '<table class="form-table" role="presentation">';
+		echo '<input type="hidden" name="podpub_tab" value="" data-podpub-tabfield>';
+		ob_start();
 		echo '<tr><th scope="row"><label for="ep_title">Title</label></th><td><input type="text" id="ep_title" class="regular-text" required name="podpub_ep[title]" value="' . esc_attr( $v( 'title', $title ) ) . '"></td></tr>';
 		echo '<tr><th scope="row"><label for="ep_desc">Description</label></th><td><textarea id="ep_desc" name="podpub_ep[description]" rows="3" class="large-text" required>' . esc_textarea( $v( 'description', $d['description'] ) ) . '</textarea><p class="description">Plain text summary shown in podcast apps.</p></td></tr>';
 		echo '<tr><th scope="row"><label for="ep_sub">Subtitle</label></th><td><input type="text" id="ep_sub" class="large-text" maxlength="255" name="podpub_ep[subtitle]" value="' . esc_attr( $v( 'subtitle', $d['subtitle'] ) ) . '"><p class="description">Optional. One short line.</p></td></tr>';
@@ -729,17 +923,51 @@ class PodPub_Admin {
 		echo '</select></td></tr>';
 		$status = $v( 'status', $d['status'] );
 		echo '<tr><th scope="row"><label for="ep_status">Status</label></th><td><select id="ep_status" name="podpub_ep[status]"><option value="draft"' . selected( $status, 'draft', false ) . '>Draft (not in the feed)</option><option value="published"' . selected( $status, 'published', false ) . '>Published (in the feed; needs audio)</option></select></td></tr>';
-		echo '</table>';
-		echo '<hr><h2>Podcasting 2.0</h2>';
+		$all_rows = ob_get_clean();
+		preg_match_all( '#<tr>.*?</tr>#s', $all_rows, $mm );
+		$by = array();
+		foreach ( $mm[0] as $row ) {
+			if ( preg_match( '#for="(ep_\w+)"#', $row, $idm ) ) {
+				$by[ $idm[1] ] = $row;
+			}
+		}
+		$placed = array( 'ep_title', 'ep_desc', 'ep_date', 'ep_status', 'ep_type', 'ep_season', 'ep_num', 'ep_ex', 'ep_src', 'ep_dur', 'ep_notes', 'ep_sub', 'ep_sum', 'ep_kw', 'ep_img' );
+		$group  = function ( $ids ) use ( $by, $placed ) {
+			$h = '<table class="form-table" role="presentation">';
+			foreach ( $ids as $k ) {
+				if ( isset( $by[ $k ] ) ) {
+					$h .= $by[ $k ];
+				}
+			}
+			if ( 'ep_title' === $ids[0] ) { // A row nobody placed is never dropped: it goes on the first tab.
+				foreach ( array_diff( array_keys( $by ), $placed ) as $k ) {
+					$h .= $by[ $k ];
+				}
+			}
+			return $h . '</table>';
+		};
+		$tabs = array(
+			'episode' => array( 'label' => 'Episode', 'html' => $group( array( 'ep_title', 'ep_desc', 'ep_date', 'ep_status', 'ep_type', 'ep_season', 'ep_num', 'ep_ex' ) ) ),
+			'audio'   => array( 'label' => 'Audio', 'html' => $group( array( 'ep_src', 'ep_dur' ) ) ),
+			'notes'   => array( 'label' => 'Notes and picture', 'html' => $group( array( 'ep_notes', 'ep_sub', 'ep_sum', 'ep_kw', 'ep_img' ) ) ),
+		);
+		ob_start();
+		echo '<p class="description" style="margin-top:14px">Optional extras for apps that support Podcasting 2.0. Sections that already hold something are open.</p>';
 		self::render_p20_fields( 'podpub_ep', $d, $in, true, $eid ? array( 'podcast' => (int) $id, 'episode' => $eid ) : null );
-		submit_button( 'Save episode' );
+		$tabs['p20'] = array( 'label' => 'Podcasting 2.0', 'html' => ob_get_clean() );
+		$want = isset( $_GET['tab'] ) ? sanitize_key( wp_unslash( $_GET['tab'] ) ) : '';
+		self::render_tabs( $tabs, isset( $tabs[ $want ] ) ? $want : 'episode' );
+		echo '<div class="podpub-savebar" style="margin:0;border:1px solid var(--pp-border);border-radius:8px;margin-top:14px">';
+		submit_button( 'Save episode', 'primary', 'submit', false );
+		echo '<span class="podpub-hint">Stores the episode on the server. The feed file is updated when you use Save and write feed on the podcast page.</span></div>';
 		echo '</form>';
 		if ( $post ) {
 			echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '" onsubmit="return confirm(\'Delete this episode and its audio file? This cannot be undone.\');">';
 			echo '<input type="hidden" name="action" value="podpub_delete_episode"><input type="hidden" name="podpub_id" value="' . (int) $id . '"><input type="hidden" name="podpub_episode_id" value="' . (int) $eid . '">';
 			wp_nonce_field( 'podpub_delete_episode' );
+			echo '<div class="podpub-danger" style="margin-top:18px">';
 			submit_button( 'Delete episode', 'delete', 'submit', false );
-			echo '</form>';
+			echo '</div></form>';
 		}
 	}
 
@@ -751,7 +979,9 @@ class PodPub_Admin {
 			return;
 		}
 		$action = isset( $_GET['action'] ) ? sanitize_key( wp_unslash( $_GET['action'] ) ) : '';
-		echo '<div class="wrap"><h1 class="wp-heading-inline">PodPublisher</h1>';
+		echo '<div class="wrap podpub">';
+		self::assets();
+		echo '<h1 class="wp-heading-inline">PodPublisher</h1>';
 		echo ' <a href="' . esc_url( self::list_url( array( 'action' => 'new' ) ) ) . '" class="page-title-action">New podcast</a>';
 		echo ' <a href="' . esc_url( self::list_url( array( 'action' => 'import' ) ) ) . '" class="page-title-action">Adopt a feed</a>';
 		echo '<hr class="wp-header-end">';
@@ -803,7 +1033,7 @@ class PodPub_Admin {
 		$n   = count( PodPub_Episodes::all( $id ) );
 		$dir = PodPub_Feeds::dir_name( $id );
 		$msg = 'Delete this podcast and its ' . $n . ( 1 === $n ? ' episode' : ' episodes' ) . ' from PodPublisher? This cannot be undone. If you ticked the box to delete the files, the feed, show art and audio files are deleted from the server too, and apps or directories that use this feed will stop working.';
-		echo '<hr><h2>Delete podcast</h2>';
+		echo '<h2>Delete podcast</h2>';
 		echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '" onsubmit="return confirm(' . esc_attr( wp_json_encode( $msg ) ) . ');">';
 		echo '<input type="hidden" name="action" value="podpub_delete_podcast"><input type="hidden" name="podpub_id" value="' . (int) $id . '">';
 		wp_nonce_field( 'podpub_delete_podcast' );
@@ -819,19 +1049,27 @@ class PodPub_Admin {
 	private static function render_table() {
 		$feeds = PodPub_Feeds::all();
 		if ( ! $feeds ) {
-			echo '<p>No podcasts yet. Use <strong>New podcast</strong> to start one, or <strong>Adopt a feed</strong> to bring in one already on your server.</p>';
+			echo '<div class="podpub-empty"><p style="font-size:15px;margin-top:0"><strong>No podcasts yet.</strong></p><p>Use <strong>New podcast</strong> to start one, or <strong>Adopt a feed</strong> to bring in one already on your server.</p></div>';
 			return;
 		}
-		echo '<table class="wp-list-table widefat fixed striped"><thead><tr><th>Podcast</th></tr></thead><tbody>';
+		$base = PodPub_Storage::base_url();
+		echo '<div class="podpub-grid">';
 		foreach ( $feeds as $feed ) {
 			$url = add_query_arg( 'page', self::SLUG_FEED . (int) $feed->ID, admin_url( 'admin.php' ) );
-			echo '<tr><td><strong><a href="' . esc_url( $url ) . '">' . esc_html( $feed->post_title ) . '</a></strong></td></tr>';
+			$d   = PodPub_Details::get( $feed->ID );
+			$dir = PodPub_Feeds::dir_name( $feed->ID );
+			$n   = count( PodPub_Episodes::all( $feed->ID ) );
+			echo '<a class="podpub-podcast" href="' . esc_url( $url ) . '"><span class="podpub-hero-art">';
+			if ( '' !== $d['image'] && '' !== $base && '' !== $dir ) {
+				echo '<img src="' . esc_url( $base . '/' . $dir . '/' . $d['image'] ) . '" alt="">';
+			}
+			echo '</span><span><strong>' . esc_html( $feed->post_title ) . '</strong><span class="podpub-meta">' . (int) $n . ( 1 === $n ? ' episode' : ' episodes' ) . '</span></span></a>';
 		}
-		echo '</tbody></table>';
+		echo '</div>';
 	}
 
 	private static function render_new() {
-		echo '<h2>New podcast</h2>';
+		echo '<div class="podpub-box"><h2>New podcast</h2>';
 		if ( isset( $_GET['podpub_error'] ) ) {
 			echo '<div class="notice notice-error"><p>' . esc_html( rawurldecode( sanitize_text_field( wp_unslash( $_GET['podpub_error'] ) ) ) ) . '</p></div>';
 		}
@@ -841,14 +1079,14 @@ class PodPub_Admin {
 		echo '<table class="form-table"><tr><th scope="row"><label for="podpub_title">Title</label></th>';
 		echo '<td><input type="text" id="podpub_title" name="podpub_title" class="regular-text" required></td></tr></table>';
 		submit_button( 'Create podcast' );
-		echo '</form>';
+		echo '</form></div>';
 	}
 
 	/**
 	 * Adopt a feed already on this server (or on the web): check it, show what would be lost, confirm.
 	 */
 	private static function render_import() {
-		echo '<h2>Adopt a feed</h2>';
+		echo '<div class="podpub-box"><h2>Adopt a feed</h2>';
 		echo '<p>Bring an existing podcast feed under PodPublisher. Give the feed address (https://) or the full path of the feed file on this server. Nothing is changed until you have read the report and confirmed.</p>';
 		$source = '';
 		$report = null;
@@ -874,6 +1112,7 @@ class PodPub_Admin {
 		if ( $report ) {
 			self::render_adopt_report( $source, $report );
 		}
+		echo '</div>';
 	}
 
 	/**
@@ -903,7 +1142,7 @@ class PodPub_Admin {
 			echo '</ul>';
 		}
 		if ( ! empty( $r['lost'] ) ) {
-			echo '<h4>Tags in the old feed that would be lost</h4><table class="widefat striped" style="max-width:900px"><thead><tr><th>Tag</th><th>In old feed</th><th>In new feed</th><th>Example</th></tr></thead><tbody>';
+			echo '<h4>Tags in the old feed that would be lost</h4><table class="widefat striped podpub-table" style="max-width:900px"><thead><tr><th>Tag</th><th>In old feed</th><th>In new feed</th><th>Example</th></tr></thead><tbody>';
 			foreach ( $r['lost'] as $l ) {
 				echo '<tr><td>' . esc_html( $l['label'] ) . '</td><td>' . (int) $l['old'] . '</td><td>' . (int) $l['new'] . '</td><td>' . esc_html( (string) $l['sample'] ) . '</td></tr>';
 			}
@@ -986,7 +1225,8 @@ class PodPub_Admin {
 			return;
 		}
 		$feed = PodPub_Feeds::get( $id );
-		echo '<div class="wrap">';
+		echo '<div class="wrap podpub">';
+		self::assets();
 		if ( ! $feed ) {
 			echo '<h1>Podcast not found</h1><p><a href="' . esc_url( self::list_url() ) . '">Back to all podcasts</a></p></div>';
 			return;
@@ -1038,28 +1278,53 @@ class PodPub_Admin {
 		$dir  = PodPub_Feeds::dir_name( $id );
 		$d    = PodPub_Details::get( $id );
 		$base = PodPub_Storage::base_url();
-		if ( '' !== $dir ) {
-			echo '<p>Files folder: <code>' . esc_html( PodPub_Storage::base_path() . '/' . $dir ) . '</code></p>';
-			if ( '' !== $base ) {
-				$tgt      = PodPub_Feeds::feed_target( $id );
-				$feed_url = $tgt['url'];
-				echo '<p>Feed address: <code>' . esc_html( $feed_url ) . '</code>';
-				if ( is_file( $tgt['file'] ) ) {
-					echo ' <a href="' . esc_url( $feed_url ) . '" target="_blank" rel="noopener">Open feed</a>';
-				} else {
-					echo ' (not written yet: save the details below)';
-				}
-				echo '</p>';
+		$tgt  = PodPub_Feeds::feed_target( $id );
+		$eps  = PodPub_Episodes::all( $id );
+		$pub  = 0;
+		foreach ( $eps as $e ) {
+			if ( 'published' === PodPub_Episodes::details( $e->ID )['status'] ) {
+				++$pub;
 			}
 		}
+		$pills = array(
+			'current'   => array( 'Feed is up to date', 'ok' ),
+			'pending'   => array( 'Changes not in the feed yet', 'warn' ),
+			'unwritten' => array( 'Feed not written yet', 'warn' ),
+			'held'      => array( 'Needs your attention', 'bad' ),
+			'none'      => array( 'Fill in the details to create the feed', 'draft' ),
+		);
+		$pill = $pills[ isset( $pills[ $st['state'] ] ) ? $st['state'] : 'none' ];
+		echo '<div class="podpub-hero">';
+		if ( '' !== $d['image'] && '' !== $base && '' !== $dir ) {
+			echo '<div class="podpub-hero-art"><img src="' . esc_url( $base . '/' . $dir . '/' . $d['image'] ) . '" alt=""></div>';
+		}
+		echo '<div class="podpub-hero-main">' . self::pill( $pill[0], $pill[1] ); // phpcs:ignore WordPress.Security.EscapeOutput
+		if ( '' !== $dir && '' !== $base ) {
+			echo '<div class="podpub-feedline"><code>' . esc_html( $tgt['url'] ) . '</code>';
+			if ( is_file( $tgt['file'] ) ) {
+				echo ' <a class="button button-small" href="' . esc_url( $tgt['url'] ) . '" target="_blank" rel="noopener">Open feed</a>';
+			}
+			echo ' <button type="button" class="button button-small" data-podpub-copy="' . esc_attr( $tgt['url'] ) . '">Copy address</button></div>';
+		}
+		echo '<div class="podpub-meta">' . (int) count( $eps ) . ( 1 === count( $eps ) ? ' episode' : ' episodes' ) . ' &middot; ' . (int) $pub . ' published</div>';
+		echo '</div></div>';
 
 		$f = function ( $name, $value ) {
 			return 'name="podpub[' . esc_attr( $name ) . ']" value="' . esc_attr( $value ) . '"';
 		};
+		$tabs = array();
+
+		// Episodes.
+		ob_start();
+		self::render_episode_list( $id );
+		$tabs['episodes'] = array( 'label' => 'Episodes' . ( $eps ? ' (' . count( $eps ) . ')' : '' ), 'html' => ob_get_clean() );
+
+		// Details.
+		ob_start();
 		echo '<form method="post" enctype="multipart/form-data" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '">';
 		echo '<input type="hidden" name="action" value="podpub_save_details"><input type="hidden" name="podpub_id" value="' . (int) $id . '">';
 		wp_nonce_field( 'podpub_save_details' );
-		echo '<h2>Podcast details</h2><table class="form-table" role="presentation">';
+		echo '<table class="form-table" role="presentation">';
 		echo '<tr><th scope="row"><label for="pp_title">Title</label></th><td><input type="text" id="pp_title" class="regular-text" required ' . $f( 'title', $feed->post_title ) . '></td></tr>'; // phpcs:ignore WordPress.Security.EscapeOutput
 		echo '<tr><th scope="row"><label for="pp_desc">Description</label></th><td><textarea id="pp_desc" name="podpub[description]" rows="5" class="large-text" required>' . esc_textarea( $d['description'] ) . '</textarea></td></tr>';
 		echo '<tr><th scope="row"><label for="pp_lang">Language</label></th><td><select id="pp_lang" name="podpub[language]">';
@@ -1091,18 +1356,49 @@ class PodPub_Admin {
 		}
 		echo '<input type="file" id="pp_img" name="podpub_image" accept="image/jpeg,image/png,image/gif"><p class="description">JPEG, PNG or GIF, square, between 1400 x 1400 and 3000 x 3000 pixels, up to 10 MB. Saved in the podcast folder as cover.jpg, cover.png or cover.gif; smaller copies (300, 600, 1000 and 1500 pixels wide) are made automatically for apps to use (not for a GIF). Some directories (such as Apple Podcasts and Spotify) only take JPEG or PNG.</p></td></tr>';
 		echo '</table>';
-		submit_button( 'Save and write feed' );
+		self::render_savebar( 'Save and write feed', 'Saves the details and writes the feed file (the old file is kept as a backup).' );
 		echo '</form>';
+		$tabs['details'] = array( 'label' => 'Details', 'html' => ob_get_clean() );
+
+		// Podcasting 2.0.
 		$p20_in = is_array( $notice ) && isset( $notice['form'] ) && 'p20' === $notice['form'] && ! empty( $notice['input'] ) ? $notice['input'] : null;
-		echo '<hr><h2>Podcasting 2.0</h2><form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '">';
+		ob_start();
+		echo '<p class="description" style="margin-top:14px">Optional extras for apps that support Podcasting 2.0. Sections that already hold something are open.</p>';
+		echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '">';
 		echo '<input type="hidden" name="action" value="podpub_save_p20"><input type="hidden" name="podpub_id" value="' . (int) $id . '">';
 		wp_nonce_field( 'podpub_save_p20' );
 		self::render_p20_fields( 'podpub_p20', $d, $p20_in, false );
-		submit_button( 'Save and write feed' );
+		self::render_savebar( 'Save and write feed', 'Saves these settings and writes the feed file.' );
 		echo '</form>';
-		self::render_episode_list( $id );
+		$tabs['p20'] = array( 'label' => 'Podcasting 2.0', 'html' => ob_get_clean() );
+
+		// Feed and files, and deleting.
+		ob_start();
+		echo '<h2>Feed and files</h2><table class="form-table" role="presentation">';
+		if ( '' !== $dir ) {
+			echo '<tr><th scope="row">Files folder</th><td><code>' . esc_html( PodPub_Storage::base_path() . '/' . $dir ) . '</code></td></tr>';
+			if ( '' !== $base ) {
+				echo '<tr><th scope="row">Feed address</th><td><code>' . esc_html( $tgt['url'] ) . '</code>' . ( is_file( $tgt['file'] ) ? ' <a href="' . esc_url( $tgt['url'] ) . '" target="_blank" rel="noopener">Open feed</a>' : ' (not written yet: use Save and write feed)' ) . '</td></tr>';
+			}
+			echo '<tr><th scope="row">Feed file</th><td><code>' . esc_html( $tgt['file'] ) . '</code><p class="description">Each Save and write feed keeps the three most recent older copies next to it as <code>.bak</code> (newest), <code>.bak2</code> and <code>.bak3</code>.</p></td></tr>';
+		}
+		echo '</table>';
+		echo '<div class="podpub-danger">';
 		self::render_delete_podcast( $id, $feed );
-		echo '<p><a href="' . esc_url( self::list_url() ) . '">Back to all podcasts</a></p></div>';
+		echo '</div>';
+		$tabs['feed'] = array( 'label' => 'Feed and files', 'html' => ob_get_clean() );
+
+		if ( is_array( $notice ) && isset( $notice['form'] ) && 'p20' === $notice['form'] && ! empty( $notice['errors'] ) ) {
+			$default = 'p20';
+		} elseif ( is_array( $notice ) && ! empty( $notice['errors'] ) ) {
+			$default = 'details';
+		} elseif ( isset( $_GET['tab'] ) && isset( $tabs[ sanitize_key( wp_unslash( $_GET['tab'] ) ) ] ) ) {
+			$default = sanitize_key( wp_unslash( $_GET['tab'] ) );
+		} else {
+			$default = '' === trim( $d['description'] ) ? 'details' : 'episodes';
+		}
+		self::render_tabs( $tabs, $default );
+		echo '<p style="margin-top:16px"><a href="' . esc_url( self::list_url() ) . '">&larr; All podcasts</a></p></div>';
 	}
 
 	public static function render_settings() {
@@ -1110,9 +1406,10 @@ class PodPub_Admin {
 			return;
 		}
 		$checked = PodPub_Settings::get( 'delete_data_on_uninstall' ) ? ' checked' : '';
-		echo '<div class="wrap"><h1>PodPublisher settings</h1>';
+		echo '<div class="wrap podpub"><h1>PodPublisher settings</h1>';
+		self::assets();
 		settings_errors( 'podpub_settings' );
-		echo '<form method="post" action="options.php">';
+		echo '<div class="podpub-box"><form method="post" action="options.php">';
 		settings_fields( 'podpub_settings_group' );
 		$opt = esc_attr( PodPub_Settings::OPTION );
 		echo '<table class="form-table">';
@@ -1129,6 +1426,6 @@ class PodPub_Admin {
 		echo '<input type="checkbox" name="' . esc_attr( PodPub_Settings::OPTION ) . '[delete_data_on_uninstall]" value="1"' . $checked . '> '; // phpcs:ignore WordPress.Security.EscapeOutput
 		echo 'Delete podcasts and settings when the plugin is deleted</label></td></tr></table>';
 		submit_button();
-		echo '</form></div>';
+		echo '</form></div></div>';
 	}
 }
