@@ -918,6 +918,13 @@ class PodPub_Episodes {
 		if ( 'published' === $data['status'] && $data['published'] > time() ) {
 			$out['warnings'][] = 'This episode is dated in the future, so it is left out of the feed until the feed is written on or after that time (press Save and write feed on the podcast page). Automatic scheduling is not built yet.';
 		}
+		// A WordPress post only when the episode is published and the owner answered yes; only after everything above succeeded.
+		if ( 'published' === $data['status'] && isset( $input['wp_post'] ) && 'yes' === $input['wp_post'] ) {
+			$pr              = PodPub_Posts::sync_episode( $podcast_id, $id );
+			$out['post']     = $pr['post'];
+			$out['warnings'] = array_merge( $out['warnings'], $pr['warnings'] );
+		}
+		$out['warnings'] = array_merge( $out['warnings'], PodPub_Posts::sync_page( $podcast_id ) );
 		// The feed is not written here: only the podcast-level "Save and write feed" does that.
 		return $out;
 	}
@@ -955,7 +962,7 @@ class PodPub_Episodes {
 	 * @param int $id         Episode record id.
 	 * @return array { errors, warnings, written }
 	 */
-	public static function delete( $podcast_id, $id ) {
+	public static function delete( $podcast_id, $id, $delete_post = false ) {
 		$out  = array( 'errors' => array(), 'warnings' => array(), 'written' => false );
 		$post = self::get( $id, $podcast_id );
 		if ( ! $post ) {
@@ -968,7 +975,11 @@ class PodPub_Episodes {
 		if ( '' !== $ep_dir && $ep_dir === PodPub_Storage::slug( $ep_dir, '' ) && '' !== $pdir ) {
 			PodPub_Storage::remove_tree( PodPub_Storage::base_path() . '/' . $pdir . '/' . $ep_dir );
 		}
+		if ( $delete_post ) {
+			PodPub_Posts::trash_for_episode( $id );
+		}
 		wp_delete_post( (int) $id, true );
+		$out['warnings'] = array_merge( $out['warnings'], PodPub_Posts::sync_page( $podcast_id ) );
 		// The feed is not written here: only the podcast-level "Save and write feed" does that.
 		return $out;
 	}
@@ -1000,6 +1011,7 @@ class PodPub_Episodes {
 					'image_url'     => '' !== $d['image'] ? $base_url . '/' . $pdir . '/' . $ep_dir . '/' . $d['image'] : '',
 					'images_srcset' => PodPub_Images::srcset( $base_url . '/' . $pdir . '/' . $ep_dir, $d['image'], $d['image_w'], $d['image_sizes'] ),
 					'chapters_href' => $d['chapters'] ? $base_url . '/' . $pdir . '/' . $ep_dir . '/chapters.json' : $d['chapters_url'],
+					'post_url'  => PodPub_Posts::post_url( $post->ID ),
 					'title'     => $post->post_title,
 					'audio_url' => '' !== $d['external_url'] ? $d['external_url'] : $base_url . '/' . $pdir . '/' . $ep_dir . '/' . $d['audio'],
 				)

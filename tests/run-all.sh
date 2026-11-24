@@ -20,6 +20,7 @@ step "Admin pages render (podcast page, episode list and form)" php test_admin_r
 step "Podcasting 2.0 tags: checking, feed XML, saving" php test_p20.php
 step "Chunk D: chapters, transcripts, soundbites, alternate files, comments, status" php test_chunk_d.php
 step "Chunk D part 2: pictures and sizes, explicit, trailers, live, numbers, people" php test_chunk_d2.php
+step "WordPress posts and the podcast page" php test_posts.php
 step "OP3 download counting" php test_op3.php
 step "Delete podcast: records, episodes, optional folder removal" php test_delete_podcast.php
 step "Location search: parsing, cache, one-per-second lock, settings, OSM address" php test_geo.php

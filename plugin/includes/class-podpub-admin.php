@@ -24,6 +24,7 @@ class PodPub_Admin {
 		add_action( 'admin_post_podpub_save_details', array( __CLASS__, 'handle_save_details' ) );
 		add_action( 'admin_post_podpub_save_episode', array( __CLASS__, 'handle_save_episode' ) );
 		add_action( 'admin_post_podpub_save_p20', array( __CLASS__, 'handle_save_p20' ) );
+		add_action( 'admin_post_podpub_save_posts', array( __CLASS__, 'handle_save_posts' ) );
 		add_action( 'admin_post_podpub_delete_episode', array( __CLASS__, 'handle_delete_episode' ) );
 		add_action( 'admin_post_podpub_delete_podcast', array( __CLASS__, 'handle_delete_podcast' ) );
 		add_action( 'admin_post_podpub_write_feed_anyway', array( __CLASS__, 'handle_write_feed_anyway' ) );
@@ -203,6 +204,24 @@ class PodPub_Admin {
 	}
 
 	/**
+	 * WordPress posts tab handler (author, categories, page). Never writes the feed.
+	 */
+	public static function handle_save_posts() {
+		if ( ! current_user_can( self::CAP ) ) {
+			wp_die( esc_html__( 'You do not have permission to do that.', 'podpublisher' ), 403 );
+		}
+		check_admin_referer( 'podpub_save_posts' );
+		$id     = isset( $_POST['podpub_id'] ) ? (int) $_POST['podpub_id'] : 0;
+		$input  = isset( $_POST['podpub_posts'] ) && is_array( $_POST['podpub_posts'] ) ? wp_unslash( $_POST['podpub_posts'] ) : array(); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput
+		$result = PodPub_Posts::save_settings( $id, $input );
+		$result['form']  = 'posts';
+		$result['posts_saved'] = ! $result['errors'];
+		set_transient( 'podpub_notice_' . get_current_user_id(), $result, 120 );
+		wp_safe_redirect( self::feed_page_url( $id, array( 'tab' => 'posts' ) ) );
+		exit;
+	}
+
+	/**
 	 * Episode delete handler.
 	 */
 	public static function handle_delete_episode() {
@@ -212,7 +231,7 @@ class PodPub_Admin {
 		check_admin_referer( 'podpub_delete_episode' );
 		$pid    = isset( $_POST['podpub_id'] ) ? (int) $_POST['podpub_id'] : 0;
 		$eid    = isset( $_POST['podpub_episode_id'] ) ? (int) $_POST['podpub_episode_id'] : 0;
-		$result = PodPub_Episodes::delete( $pid, $eid );
+		$result = PodPub_Episodes::delete( $pid, $eid, ! empty( $_POST['podpub_delete_post'] ) );
 		set_transient( 'podpub_notice_' . get_current_user_id(), $result, 120 );
 		wp_safe_redirect( self::feed_page_url( $pid, array( 'tab' => 'episodes' ) ) );
 		exit;
@@ -244,7 +263,7 @@ class PodPub_Admin {
 		check_admin_referer( 'podpub_delete_podcast' );
 		$pid    = isset( $_POST['podpub_id'] ) ? (int) $_POST['podpub_id'] : 0;
 		$files  = ! empty( $_POST['podpub_delete_files'] );
-		$result = PodPub_Feeds::delete( $pid, $files );
+		$result = PodPub_Feeds::delete( $pid, $files, ! empty( $_POST['podpub_delete_posts'] ) );
 		$result['deleted_podcast'] = ! $result['errors'];
 		set_transient( 'podpub_notice_' . get_current_user_id(), $result, 120 );
 		wp_safe_redirect( $result['errors'] ? self::feed_page_url( $pid ) : self::list_url() );
@@ -923,15 +942,30 @@ JS;
 		echo '</select></td></tr>';
 		$status = $v( 'status', $d['status'] );
 		echo '<tr><th scope="row"><label for="ep_status">Status</label></th><td><select id="ep_status" name="podpub_ep[status]"><option value="draft"' . selected( $status, 'draft', false ) . '>Draft (not in the feed)</option><option value="published"' . selected( $status, 'published', false ) . '>Published (in the feed; needs audio)</option></select></td></tr>';
+		$ps = PodPub_Posts::settings( (int) $id );
+		if ( $ps['enabled'] ) {
+			$has_post = $eid ? PodPub_Posts::post_for( $eid ) : 0;
+			$answer   = $v( 'wp_post', $has_post ? 'no' : 'yes' );
+			echo '<tr id="ep_post_row"><th scope="row"><label for="ep_post">WordPress post</label></th><td>';
+			echo '<label><input type="radio" id="ep_post" name="podpub_ep[wp_post]" value="yes"' . checked( $answer, 'yes', false ) . '> ' . ( $has_post ? 'Update the WordPress post' : 'Create a WordPress post' ) . '</label> &nbsp; ';
+			echo '<label><input type="radio" name="podpub_ep[wp_post]" value="no"' . checked( $answer, 'no', false ) . '> No, leave ' . ( $has_post ? 'the post as it is' : 'WordPress alone' ) . '</label>';
+			if ( $has_post ) {
+				echo '<p class="description"><strong>Choosing update replaces the post\'s title and content</strong> with this episode\'s title and show notes; any changes made to that post in WordPress will be lost. <a href="' . esc_url( get_edit_post_link( $has_post ) ) . '">Open the post</a></p>';
+			} else {
+				echo '<p class="description">Asked only when the episode is published. The post is made after the episode has saved, using the author and categories set on the WordPress posts tab of the podcast.</p>';
+			}
+			echo '<script>(function(){var s=document.getElementById("ep_status"),r=document.getElementById("ep_post_row");if(!s||!r)return;function f(){r.hidden=s.value!=="published";}s.addEventListener("change",f);f();})();</script>';
+			echo '</td></tr>';
+		}
 		$all_rows = ob_get_clean();
-		preg_match_all( '#<tr>.*?</tr>#s', $all_rows, $mm );
+		preg_match_all( '#<tr[^>]*>.*?</tr>#s', $all_rows, $mm );
 		$by = array();
 		foreach ( $mm[0] as $row ) {
 			if ( preg_match( '#for="(ep_\w+)"#', $row, $idm ) ) {
 				$by[ $idm[1] ] = $row;
 			}
 		}
-		$placed = array( 'ep_title', 'ep_desc', 'ep_date', 'ep_status', 'ep_type', 'ep_season', 'ep_num', 'ep_ex', 'ep_src', 'ep_dur', 'ep_notes', 'ep_sub', 'ep_sum', 'ep_kw', 'ep_img' );
+		$placed = array( 'ep_title', 'ep_desc', 'ep_date', 'ep_status', 'ep_post', 'ep_type', 'ep_season', 'ep_num', 'ep_ex', 'ep_src', 'ep_dur', 'ep_notes', 'ep_sub', 'ep_sum', 'ep_kw', 'ep_img' );
 		$group  = function ( $ids ) use ( $by, $placed ) {
 			$h = '<table class="form-table" role="presentation">';
 			foreach ( $ids as $k ) {
@@ -947,7 +981,7 @@ JS;
 			return $h . '</table>';
 		};
 		$tabs = array(
-			'episode' => array( 'label' => 'Episode', 'html' => $group( array( 'ep_title', 'ep_desc', 'ep_date', 'ep_status', 'ep_type', 'ep_season', 'ep_num', 'ep_ex' ) ) ),
+			'episode' => array( 'label' => 'Episode', 'html' => $group( array( 'ep_title', 'ep_desc', 'ep_date', 'ep_status', 'ep_post', 'ep_type', 'ep_season', 'ep_num', 'ep_ex' ) ) ),
 			'audio'   => array( 'label' => 'Audio', 'html' => $group( array( 'ep_src', 'ep_dur' ) ) ),
 			'notes'   => array( 'label' => 'Notes and picture', 'html' => $group( array( 'ep_notes', 'ep_sub', 'ep_sum', 'ep_kw', 'ep_img' ) ) ),
 		);
@@ -966,6 +1000,9 @@ JS;
 			echo '<input type="hidden" name="action" value="podpub_delete_episode"><input type="hidden" name="podpub_id" value="' . (int) $id . '"><input type="hidden" name="podpub_episode_id" value="' . (int) $eid . '">';
 			wp_nonce_field( 'podpub_delete_episode' );
 			echo '<div class="podpub-danger" style="margin-top:18px">';
+			if ( PodPub_Posts::post_for( $eid ) ) {
+				echo '<p><label><input type="checkbox" name="podpub_delete_post" value="1"> Also move this episode\'s WordPress post to the trash</label></p>';
+			}
 			submit_button( 'Delete episode', 'delete', 'submit', false );
 			echo '</div></form>';
 		}
@@ -1017,6 +1054,9 @@ JS;
 		$text .= ! empty( $notice['files_deleted'] )
 			? 'Its folder and files were deleted too.'
 			: 'Its files were left on the server' . ( '' !== $notice['folder'] ? ' in ' . $notice['folder'] : '' ) . ', so the feed address still works.';
+		if ( ! empty( $notice['posts_trashed'] ) ) {
+			$text .= ' ' . (int) $notice['posts_trashed'] . ' WordPress ' . ( 1 === (int) $notice['posts_trashed'] ? 'post or page was' : 'posts and pages were' ) . ' moved to the trash.';
+		}
 		echo '<div class="notice notice-success"><p>' . esc_html( $text ) . '</p></div>';
 		foreach ( $notice['warnings'] as $m ) {
 			echo '<div class="notice notice-warning"><p>' . esc_html( $m ) . '</p></div>';
@@ -1029,6 +1069,41 @@ JS;
 	 * @param int     $id   Podcast record id.
 	 * @param WP_Post $feed Podcast record.
 	 */
+	/** The WordPress posts tab: whether episodes get posts, who they are by, categories, and the podcast page. */
+	private static function render_posts_tab( $id ) {
+		$s    = PodPub_Posts::settings( $id );
+		$page = PodPub_Posts::page_url( $id );
+		echo '<h2>WordPress posts</h2>';
+		echo '<p class="description">Each published episode can have an ordinary WordPress post with its title and show notes. The feed item then links to that post. These settings are only used when you answer yes on an episode; nothing here changes the feed file.</p>';
+		echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '">';
+		echo '<input type="hidden" name="action" value="podpub_save_posts"><input type="hidden" name="podpub_id" value="' . (int) $id . '">';
+		wp_nonce_field( 'podpub_save_posts' );
+		echo '<table class="form-table" role="presentation">';
+		echo '<tr><th scope="row">Posts</th><td><label><input type="checkbox" name="podpub_posts[enabled]" value="1"' . checked( $s['enabled'], true, false ) . '> Offer to create a WordPress post for each episode</label></td></tr>';
+		echo '<tr><th scope="row"><label for="pp_post_author">Author</label></th><td><select id="pp_post_author" name="podpub_posts[author]"><option value="0"' . selected( $s['author'], 0, false ) . '>Whoever saves the episode</option>';
+		foreach ( PodPub_Posts::authors() as $u ) {
+			echo '<option value="' . (int) $u->ID . '"' . selected( $s['author'], (int) $u->ID, false ) . '>' . esc_html( $u->display_name ) . '</option>';
+		}
+		echo '</select></td></tr>';
+		echo '<tr><th scope="row">Categories</th><td>';
+		$cats = PodPub_Posts::categories();
+		if ( ! $cats ) {
+			echo '<span class="description">There are no categories yet.</span>';
+		}
+		foreach ( $cats as $c ) {
+			echo '<label style="display:block"><input type="checkbox" name="podpub_posts[categories][]" value="' . (int) $c->term_id . '"' . checked( in_array( (int) $c->term_id, $s['categories'], true ), true, false ) . '> ' . esc_html( $c->name ) . '</label>';
+		}
+		echo '</td></tr>';
+		echo '<tr><th scope="row">Podcast page</th><td><label><input type="checkbox" name="podpub_posts[page]" value="1"' . checked( $s['page'], true, false ) . '> Keep a WordPress page for this podcast that lists its published episodes</label>';
+		echo '<p class="description">The page shows the show art and description, then each published episode (newest first) with a link to its post. It is made when you save this tab and kept up to date when episodes are saved or deleted. Unticking it leaves the page as it is.</p>';
+		if ( '' !== $page ) {
+			echo '<p><a href="' . esc_url( $page ) . '" target="_blank" rel="noopener">View the page</a></p>';
+		}
+		echo '</td></tr></table>';
+		self::render_savebar( 'Save WordPress post settings', 'Does not change the feed file.' );
+		echo '</form>';
+	}
+
 	private static function render_delete_podcast( $id, $feed ) {
 		$n   = count( PodPub_Episodes::all( $id ) );
 		$dir = PodPub_Feeds::dir_name( $id );
@@ -1042,6 +1117,7 @@ JS;
 			echo '<p><label><input type="checkbox" name="podpub_delete_files" value="1"> Also delete its folder on the server: <code>' . esc_html( PodPub_Storage::base_path() . '/' . $dir ) . '</code> (the feed file, show art, and every episode folder with its audio, chapters and other files)</label></p>';
 			echo '<p class="description">Left unticked, the files stay on the server and the feed address keeps working, so listeners are not cut off. Ticked, they are gone for good.</p>';
 		}
+		echo '<p><label><input type="checkbox" name="podpub_delete_posts" value="1"> Also move the WordPress posts of its episodes, and its page, to the trash</label></p>';
 		submit_button( 'Delete podcast', 'delete', 'submit', false );
 		echo '</form>';
 	}
@@ -1249,6 +1325,8 @@ JS;
 				foreach ( ! empty( $a['warnings'] ) ? $a['warnings'] : array() as $m ) {
 					echo '<div class="notice notice-warning"><p>' . esc_html( $m ) . '</p></div>';
 				}
+			} elseif ( ! empty( $notice['posts_saved'] ) ) {
+				echo '<div class="notice notice-success"><p>WordPress post settings saved. The feed file has not been changed.</p></div>';
 			} else {
 				echo '<div class="notice notice-success"><p>' . ( ! empty( $notice['written'] ) ? 'Saved. The feed file was written (the previous file was kept as a backup).' : 'Saved. The feed file has not been changed; press Save and write feed on the podcast page to publish.' ) . '</p></div>';
 			}
@@ -1372,6 +1450,11 @@ JS;
 		echo '</form>';
 		$tabs['p20'] = array( 'label' => 'Podcasting 2.0', 'html' => ob_get_clean() );
 
+		// WordPress posts and page.
+		ob_start();
+		self::render_posts_tab( $id );
+		$tabs['posts'] = array( 'label' => 'WordPress posts', 'html' => ob_get_clean() );
+
 		// Feed and files, and deleting.
 		ob_start();
 		echo '<h2>Feed and files</h2><table class="form-table" role="presentation">';
@@ -1390,6 +1473,8 @@ JS;
 
 		if ( is_array( $notice ) && isset( $notice['form'] ) && 'p20' === $notice['form'] && ! empty( $notice['errors'] ) ) {
 			$default = 'p20';
+		} elseif ( is_array( $notice ) && isset( $notice['form'] ) && 'posts' === $notice['form'] ) {
+			$default = 'posts';
 		} elseif ( is_array( $notice ) && ! empty( $notice['errors'] ) ) {
 			$default = 'details';
 		} elseif ( isset( $_GET['tab'] ) && isset( $tabs[ sanitize_key( wp_unslash( $_GET['tab'] ) ) ] ) ) {

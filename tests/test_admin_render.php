@@ -41,6 +41,9 @@ function wp_nonce_field() { echo '<input type="hidden" name="_wpnonce" value="n"
 function submit_button( $t = 'Save', $type = 'primary', $name = 'submit', $wrap = true ) { echo '<button class="' . $type . '">' . esc_html( $t ) . '</button>'; }
 function selected( $a, $b, $e = true ) { return (string) $a === (string) $b ? ' selected' : ''; }
 function checked( $a, $b, $e = true ) { return (string) $a === (string) $b ? ' checked' : ''; }
+function get_users( $a ) { return array( (object) array( 'ID' => 3, 'display_name' => 'Ann Author' ) ); }
+function get_categories( $a ) { return array( (object) array( 'term_id' => 7, 'name' => 'News' ) ); }
+function get_edit_post_link( $id ) { return 'https://example.com/wp-admin/post.php?post=' . $id; }
 function current_user_can() { return ! isset( $GLOBALS['can'] ) || $GLOBALS['can']; }
 class Stop extends Exception { public $p; }
 function wp_send_json_success( $d ) { $e = new Stop( 'ok' ); $e->p = array( 'success' => true, 'data' => $d ); throw $e; }
@@ -66,7 +69,7 @@ function add_action() {}
 class WP_Error { public $m; function __construct( $c, $m ) { $this->m = $m; } function get_error_message() { return $this->m; } }
 function is_wp_error( $x ) { return $x instanceof WP_Error; }
 
-foreach ( array( 'settings', 'storage', 'p20', 'images', 'geo', 'details', 'episodes', 'feedxml', 'feeds', 'admin' ) as $c ) { require __DIR__ . "/../plugin/includes/class-podpub-$c.php"; }
+foreach ( array( 'settings', 'storage', 'p20', 'images', 'geo', 'details', 'posts', 'episodes', 'feedxml', 'feeds', 'admin' ) as $c ) { require __DIR__ . "/../plugin/includes/class-podpub-$c.php"; }
 
 $fail = 0;
 function check( $name, $ok ) { global $fail; echo ( $ok ? 'ok   ' : 'FAIL ' ) . $name . "\n"; if ( ! $ok ) { $fail = 1; } }
@@ -105,6 +108,23 @@ $_GET['episode'] = '99999';
 check( 'edit episode form: unknown episode says not found', false !== strpos( page( 5 ), 'Episode not found' ) );
 $_GET['episode'] = 'abc';
 check( 'bad episode value falls back to the podcast page', false !== strpos( page( 5 ), 'name="podpub[title]"' ) && false !== strpos( page( 5 ), 'data-tab="details"' ) );
+
+// WordPress posts: episode prompt, posts tab, delete options.
+$_GET['episode'] = (string) $eid;
+$h = page( 5 );
+check( 'posts: episode form asks yes/no, default yes when there is no post', false !== strpos( $h, 'name="podpub_ep[wp_post]" value="yes" checked' ) && false !== strpos( $h, 'value="no"' ) && false !== strpos( $h, 'Create a WordPress post' ) && false === strpos( $h, 'podpub_delete_post' ) );
+update_post_meta( $eid, '_podpub_wp_post', 900 );
+$GLOBALS['posts'][900] = (object) array( 'ID' => 900, 'post_type' => 'post', 'post_status' => 'publish', 'post_title' => 'x', 'post_parent' => 0 );
+$h = page( 5 );
+check( 'posts: with an existing post the prompt warns, defaults to no, delete offers the post', false !== strpos( $h, 'Update the WordPress post' ) && false !== strpos( $h, 'replaces the post' ) && false !== strpos( $h, 'value="no" checked' ) && false !== strpos( $h, 'podpub_delete_post' ) );
+update_post_meta( 5, '_podpub_posts', array( 'enabled' => false ) );
+$h = page( 5 );
+check( 'posts: turned off, no prompt', false === strpos( $h, 'podpub_ep[wp_post]' ) );
+update_post_meta( 5, '_podpub_posts', array() );
+unset( $_GET['episode'] );
+$h = page( 5 );
+check( 'posts: podcast page has the WordPress posts tab with author, categories, page', false !== strpos( $h, 'data-tab="posts"' ) && false !== strpos( $h, 'name="podpub_posts[author]"' ) && false !== strpos( $h, 'Ann Author' ) && false !== strpos( $h, 'name="podpub_posts[categories][]" value="7"' ) && false !== strpos( $h, 'name="podpub_posts[page]"' ) && false !== strpos( $h, 'podpub_save_posts' ) );
+check( 'posts: delete podcast offers to trash posts and page', false !== strpos( $h, 'podpub_delete_posts' ) );
 
 // Audio source controls on the episode form.
 $_GET['episode'] = (string) $eid;

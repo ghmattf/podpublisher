@@ -247,7 +247,7 @@ class PodPub_Feeds {
 	 * @param bool $delete_files Also delete the podcast's folder and everything in it.
 	 * @return array { errors: string[], warnings: string[], episodes: int, files_deleted: bool, folder: string }
 	 */
-	public static function delete( $id, $delete_files ) {
+	public static function delete( $id, $delete_files, $delete_posts = false ) {
 		$out  = array( 'errors' => array(), 'warnings' => array(), 'episodes' => 0, 'files_deleted' => false, 'folder' => '' );
 		$feed = self::get( $id );
 		if ( ! $feed ) {
@@ -274,6 +274,9 @@ class PodPub_Feeds {
 		$target = self::feed_target( $id );
 		if ( $target['custom'] && $delete_files ) {
 			$out['warnings'][] = 'The feed file ' . $target['file'] . ' was adopted from outside the podcast\'s folder, so it was not deleted. A copy of the feed from before it was adopted may be next to it (.bak).';
+		}
+		if ( $delete_posts ) {
+			$out['posts_trashed'] = PodPub_Posts::trash_all( $id );
 		}
 		foreach ( PodPub_Episodes::all( $id ) as $episode ) {
 			wp_delete_post( (int) $episode->ID, true );
