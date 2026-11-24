@@ -245,13 +245,15 @@ foreach ( array( '../Hosted_Elsewhere/Hosted_Elsewhere.mp3', 'sub', 'nothere.mp3
 	check( "folder: refuses '$bad'", count( $r['errors'] ) >= 1 && PodPub_Episodes::details( $b )['audio'] === '' );
 }
 $r = esave( 5, $b, array_merge( $pick, array( 'audio_pick' => 'My Big File (final).MP3' ) ) );
+check( 'folder: a name that needs renaming is refused without the tick, with a warning naming both names, and nothing is renamed or saved', count( $r['errors'] ) >= 1 && false !== strpos( $r['errors'][0], 'My Big File (final).MP3' ) && false !== strpos( $r['errors'][0], 'My_Big_File_final.mp3' ) && false !== strpos( $r['errors'][0], 'Nothing was saved' ) && is_file( "$bf/My Big File (final).MP3" ) && PodPub_Episodes::details( $b )['audio'] === '' );
+$r = esave( 5, $b, array_merge( $pick, array( 'audio_pick' => 'My Big File (final).MP3', 'rename_ok' => '1' ) ) );
 $d = PodPub_Episodes::details( $b );
 check( 'folder: pick saved, file renamed to a safe name', $r['errors'] === array() && $d['audio'] === 'My_Big_File_final.mp3' && is_file( "$bf/My_Big_File_final.mp3" ) && ! file_exists( "$bf/My Big File (final).MP3" ) );
 check( 'folder: type, size and source stored', $d['audio_source'] === 'folder' && $d['audio_type'] === 'audio/mpeg' && $d['audio_size'] === strlen( $MP3 ) );
 check( 'folder: feed points at the picked file', false !== strpos( feed_dom( "$pf/$pdir.xml" )->evaluate( 'string(//item[title="Big File"]/enclosure/@url)' ), '/Big_File/My_Big_File_final.mp3' ) );
 put( "$bf/Second One.mp3", $MP3 );
 put( "$bf/Second_One.mp3", $MP3 );
-$r = esave( 5, $b, array_merge( $pick, array( 'audio_pick' => 'Second One.mp3' ) ) );
+$r = esave( 5, $b, array_merge( $pick, array( 'audio_pick' => 'Second One.mp3', 'rename_ok' => '1' ) ) );
 check( 'folder: a safe name that already exists gets _2, nothing overwritten', PodPub_Episodes::details( $b )['audio'] === 'Second_One_2.mp3' && is_file( "$bf/Second_One.mp3" ) );
 put( "$bf/clean-name.mp3", $MP3 );
 esave( 5, $b, array_merge( $pick, array( 'audio_pick' => 'clean-name.mp3' ) ) );

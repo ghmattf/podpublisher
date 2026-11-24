@@ -130,6 +130,7 @@ check( 'audio: one group each for upload, folder and external', 1 === substr_cou
 file_put_contents( "$tmp/uploads/podpublisher/$pdir/First_One/Raw Take.mp3", "ID3" . str_repeat( "\0", 30 ) );
 $h = page( 5 );
 check( 'audio: a copied-in file is listed, with a note when it will be renamed', false !== strpos( $h, 'value="Raw Take.mp3"' ) && false !== strpos( $h, 'will be renamed' ) && false === strpos( $h, 'No audio files found' ) );
+check( 'audio: a warning lists the old and new names and a Rename it box must be ticked', false !== strpos( $h, 'These file names have spaces or special characters' ) && false !== strpos( $h, 'Raw_Take.mp3' ) && false !== strpos( $h, 'name="podpub_ep[rename_ok]"' ) && false !== strpos( $h, 'anything linking to it will break' ) );
 $_GET['episode'] = 'new';
 $h = page( 5 );
 check( 'audio: a new episode explains it must be saved before picking a file', false !== strpos( $h, 'Save the episode first' ) );
@@ -164,6 +165,7 @@ check( 'p20 form: block and podroll rows', false !== strpos( $h, 'name="podpub_p
 $_GET['episode'] = (string) $eid;
 $h = page( 5 );
 check( 'p20 on the episode form: same sections plus time splits, no block or podroll', false !== strpos( $h, '<h3>Funding</h3>' ) && false !== strpos( $h, '<h3>People</h3>' ) && false !== strpos( $h, 'Value time splits' ) && false !== strpos( $h, 'name="podpub_ep[timesplits][0][feed_guid]"' ) && false === strpos( $h, '<h3>Block</h3>' ) && false === strpos( $h, '<h3>Podroll</h3>' ) );
+check( 'p20 on the episode form: the time splits import box (paste or file, replace or add) is there', false !== strpos( $h, 'name="podpub_ep[splits_import]"' ) && false !== strpos( $h, 'name="podpub_splits_file"' ) && false !== strpos( $h, 'name="podpub_ep[splits_mode]"' ) && false !== strpos( $h, 'Import time splits' ) );
 check( 'p20 on the episode form: is part of the episode form, using its own field names', false !== strpos( $h, 'name="podpub_ep[funding][0][url]"' ) && false !== strpos( $h, 'name="podpub_ep[value_suggested]"' ) && false !== strpos( $h, 'Leave this empty to use the podcast' ) );
 
 // After an error the Podcasting 2.0 form is refilled with what was typed.

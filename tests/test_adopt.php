@@ -122,7 +122,7 @@ check( 'episode 1: type, size, duration, season, episode, subtitle, summary, key
 check( 'episode 1: date kept (site time zone)', $one['published'] === strtotime( '2024-01-15 09:30:00 UTC' ) );
 check( 'episode 1: show notes simplified (script and image gone, link kept)', false !== strpos( $one['show_notes'], '<a href="https://example.com/a">link</a>' ) && false === strpos( $one['show_notes'], 'script' ) && false === strpos( $one['show_notes'], '<img' ) );
 check( 'episode 1: transcripts, soundbite, chapters address, people, location, social, alternate file with its first source and checksum', count( $one['transcripts'] ) === 2 && count( $one['soundbites'] ) === 1 && $one['chapters_url'] === 'https://oldshow.example.com/ep1-chapters.json' && count( $one['persons'] ) === 1 && count( $one['locations'] ) === 1 && count( $one['social'] ) === 1 && count( $one['enclosures'] ) === 1 && $one['enclosures'][0]['uri'] === 'https://media.example.com/ep1.mp4' && $one['enclosures'][0]['integrity_type'] === 'sri' );
-check( 'episode 1: payments and time split', count( $one['value']['recipients'] ) === 1 && count( $one['timesplits'] ) === 1 );
+check( 'episode 1: payments and time split', count( $one['value']['recipients'] ) === 1 && count( $one['timesplits'] ) === 1 && 10 === $one['timesplits'][0]['start'] && 21 === $one['timesplits'][0]['duration'] );
 $two = $ep['Episode Two (http audio)'];
 check( 'episode 2: http audio -> draft, no audio, guid kept', $two['status'] === 'draft' && $two['external_url'] === '' && $two['guid'] === 'ep-002-guid' );
 check( 'episode 3: no enclosure -> draft', $ep['Episode Three (no audio)']['status'] === 'draft' );

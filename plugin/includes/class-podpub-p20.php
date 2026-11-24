@@ -28,7 +28,7 @@ class PodPub_P20 {
 	const MAX_LIVE       = 10;
 	const MAX_PERSONS    = 30;
 	const MAX_RECIPIENTS = 20;
-	const MAX_SPLITS     = 30;
+	const MAX_SPLITS     = 100;
 	const MAX_BLOCK      = 10;
 	const MAX_PODROLL    = 30;
 
@@ -341,6 +341,28 @@ class PodPub_P20 {
 	}
 
 	/**
+	 * A time as whole seconds: "76", "76.645988" (rounded), "1:16.6" or "0:01:16". Empty is 0.
+	 * Time splits do not need fractions of a second, so they are rounded.
+	 *
+	 * @param string $text Text.
+	 * @return int|null Null if it is not a time.
+	 */
+	public static function parse_time( $text ) {
+		$text = trim( (string) $text );
+		if ( '' === $text ) {
+			return 0;
+		}
+		if ( ! preg_match( '/^(?:\d{1,7}(?:\.\d{1,9})?|\d{1,5}(?::[0-5]?\d){1,2}(?:\.\d{1,9})?)$/', $text ) ) {
+			return null;
+		}
+		$s = 0.0;
+		foreach ( explode( ':', $text ) as $p ) {
+			$s = $s * 60 + (float) $p;
+		}
+		return (int) round( $s );
+	}
+
+	/**
 	 * Time splits (episodes): for part of the episode, send a share of the payment to another feed.
 	 *
 	 * @param array $in      Form values.
@@ -356,11 +378,11 @@ class PodPub_P20 {
 		}
 		foreach ( $rows as $n => $r ) {
 			$p     = 'Time split ' . $n . ': ';
-			$start = PodPub_Episodes::parse_duration( $r['start'] );
-			$dur   = PodPub_Episodes::parse_duration( $r['duration'] );
-			$rs    = PodPub_Episodes::parse_duration( $r['remote_start'] );
+			$start = self::parse_time( $r['start'] );
+			$dur   = self::parse_time( $r['duration'] );
+			$rs    = self::parse_time( $r['remote_start'] );
 			if ( '' === $r['start'] || null === $start ) {
-				$errors[] = $p . 'enter the start as seconds, minutes:seconds or hours:minutes:seconds.';
+				$errors[] = $p . 'enter the start as seconds, minutes:seconds or hours:minutes:seconds (decimals are rounded to whole seconds).';
 			} elseif ( ! $dur ) {
 				$errors[] = $p . 'enter how long it lasts (more than 0 seconds).';
 			} elseif ( null === $rs ) {

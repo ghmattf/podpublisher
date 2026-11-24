@@ -67,4 +67,22 @@ check( 'podcast made in custom folder', PodPub_Storage::create_podcast_dir( 'Oth
 $it = new RecursiveIteratorIterator( new RecursiveDirectoryIterator( $tmp, FilesystemIterator::SKIP_DOTS ), RecursiveIteratorIterator::CHILD_FIRST );
 foreach ( $it as $f ) { $f->isDir() ? rmdir( $f ) : unlink( $f ); }
 rmdir( $tmp );
+// ---- Safe file names for uploaded files (TODO 25) ----
+foreach ( array(
+	'My Show (final) v2.MP3'      => 'My_Show_final_v2.mp3',
+	'ep 1 & more!.mp3'            => 'ep_1_more.mp3',
+	'a  b---c.m4a'                => 'a_b---c.m4a',
+	'  spaced name  .TXT'         => 'spaced_name.txt',
+	"caf\xc3\xa9 d\xc3\xa9j\xc3\xa0.vtt" => 'cafe_deja.vtt',
+	'..hidden/..\\x y.srt'        => 'x_y.srt',
+	'../../etc/passwd'            => 'passwd',
+	'name.tar.gz'                 => 'name_tar.gz',
+	'%20encoded%2Fslash.json'     => '20encoded_2Fslash.json',
+	'###.mp3'                     => 'audio.mp3',
+	'no_extension'                => 'no_extension',
+) as $in => $want ) {
+	$got = PodPub_Storage::file_name( $in, 'audio' );
+	check( 'file_name: ' . json_encode( $in ) . ' -> ' . $want, $got === $want && (bool) preg_match( "/^[A-Za-z0-9][A-Za-z0-9._-]*\$/", $got ) );
+}
+check( 'file_name: a very long name is cut and still safe', strlen( PodPub_Storage::file_name( str_repeat( 'long name ', 40 ) . '.mp3' ) ) <= 105 );
 exit( $fail );

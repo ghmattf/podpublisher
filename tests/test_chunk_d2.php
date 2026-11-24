@@ -169,7 +169,11 @@ $r = esave( $pid, $e1, array_merge( $ex, array( 'transcripts' => $tr ) ), null, 
 check( 'transcript upload: the same name again gets a number, not an overwrite', is_file( "$efolder/My_Talk_2.vtt" ) && count( PodPub_Episodes::details( $e1 )['transcripts'] ) === 2 );
 file_put_contents( "$efolder/notes.srt", "1\n00:00:00,000 --> 00:00:02,000\nHi\n" );
 file_put_contents( "$efolder/bad name.txt", 'x' );
-check( 'transcript pick: lists transcript files with safe names, not chapters.json, the empty index.html, names with spaces or other types', PodPub_Episodes::list_folder_transcripts( $pid, $e1 ) === array( 'My_Talk.vtt', 'My_Talk_2.vtt', 'notes.srt' ) );
+check( 'transcript pick: lists transcript files (also ones with spaces), not chapters.json, the empty index.html or other types', PodPub_Episodes::list_folder_transcripts( $pid, $e1 ) === array( 'My_Talk.vtt', 'My_Talk_2.vtt', 'bad name.txt', 'notes.srt' ) );
+$r = esave( $pid, $e1, array_merge( $ex, array( 'transcripts' => PodPub_Episodes::details( $e1 )['transcripts'], 'transcript_pick' => 'bad name.txt' ) ) );
+check( 'transcript pick: a name that needs renaming is refused without the tick, naming both names, and the file is untouched', count( $r['errors'] ) === 1 && false !== strpos( $r['errors'][0], 'bad name.txt' ) && false !== strpos( $r['errors'][0], 'bad_name.txt' ) && is_file( "$efolder/bad name.txt" ) && ! file_exists( "$efolder/bad_name.txt" ) );
+$r = esave( $pid, $e1, array_merge( $ex, array( 'transcripts' => PodPub_Episodes::details( $e1 )['transcripts'], 'transcript_pick' => 'bad name.txt', 'rename_ok' => '1' ) ) );
+check( 'transcript pick: with the tick, a name with a space is renamed with underscores when picked, and the list holds the safe URL', $r['errors'] === array() && is_file( "$efolder/bad_name.txt" ) && ! file_exists( "$efolder/bad name.txt" ) && false !== strpos( end( PodPub_Episodes::details( $e1 )['transcripts'] )['url'], '/bad_name.txt' ) );
 $tr = PodPub_Episodes::details( $e1 )['transcripts'];
 $r = esave( $pid, $e1, array_merge( $ex, array( 'transcripts' => $tr, 'transcript_pick' => 'notes.srt' ) ) );
 check( 'transcript pick: added with the SubRip type', $r['errors'] === array() && end( PodPub_Episodes::details( $e1 )['transcripts'] )['type'] === 'application/x-subrip' );

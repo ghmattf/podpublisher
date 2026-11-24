@@ -193,7 +193,7 @@ class PodPub_Admin {
 			}
 			return null;
 		};
-		$result          = PodPub_Episodes::save( $pid, $eid, $input, $file, $upload( 'podpub_ep_image' ), $upload( 'podpub_transcript' ), $upload( 'podpub_chapters_file' ) );
+		$result          = PodPub_Episodes::save( $pid, $eid, $input, $file, $upload( 'podpub_ep_image' ), $upload( 'podpub_transcript' ), $upload( 'podpub_chapters_file' ), $upload( 'podpub_splits_file' ) );
 		$result['input'] = $result['errors'] ? $input : null;
 		set_transient( 'podpub_notice_' . get_current_user_id(), $result, 120 );
 		$go = $result['errors'] ? ( $eid ? (string) $eid : 'new' ) : (string) $result['id'];
@@ -353,6 +353,30 @@ class PodPub_Admin {
 	 * @param bool       $item   True for an episode.
 	 * @param array|null $ctx    For a saved episode: { podcast, episode } ids (to list files in its folder).
 	 */
+	/**
+	 * When a folder file list holds names with spaces or special characters: say they will be
+	 * renamed and ask the owner to tick a box first (saving refuses without it).
+	 *
+	 * @param string[] $files File names in the list.
+	 */
+	private static function render_rename_ok( $files ) {
+		$bad = array();
+		foreach ( $files as $f ) {
+			if ( ! PodPub_Episodes::safe_file_name( $f ) ) {
+				$bad[ $f ] = PodPub_Storage::file_name( $f );
+			}
+		}
+		if ( ! $bad ) {
+			return;
+		}
+		echo '<div class="notice notice-warning inline"><p><strong>These file names have spaces or special characters, which can break their web address:</strong></p><ul style="list-style:disc;margin-left:20px">';
+		foreach ( $bad as $old => $new ) {
+			echo '<li><code>' . esc_html( $old ) . '</code> would be renamed to <code>' . esc_html( $new ) . '</code></li>';
+		}
+		echo '</ul><p>The old name will no longer exist, so anything linking to it will break. If you pick one of these files, tick the box to allow the rename, or rename it yourself first (by FTP).</p>';
+		echo '<p><label><input type="checkbox" name="podpub_ep[rename_ok]" value="1"> Rename it to the safe name when I save</label></p></div>';
+	}
+
 	private static function render_p20_fields( $prefix, $d, $in, $item, $ctx = null ) {
 		$v    = function ( $k, $fallback ) use ( $in ) {
 			return null !== $in && isset( $in[ $k ] ) && is_scalar( $in[ $k ] ) ? (string) $in[ $k ] : (string) $fallback;
@@ -436,6 +460,9 @@ class PodPub_Admin {
 				array( 'key' => 'item_guid', 'label' => 'Other episode\'s GUID (optional)', 'type' => 'text', 'class' => 'regular-text code' ),
 				array( 'key' => 'feed_url', 'label' => 'Other feed address (optional)', 'type' => 'text', 'ph' => 'https://' ),
 			), PodPub_P20::MAX_SPLITS );
+			echo '<h4>Import time splits</h4><p class="description">Paste time splits here or upload a file. The usual input is ready-made <code>&lt;podcast:valueTimeSplit&gt;</code> tags copied from a feed, but a whole value block, JSON, or lines separated by commas, tabs, semicolons or spaces (start, length, feed GUID, episode GUID, remote start, percentage, feed address) also work, with or without a header row. Decimals of a second are rounded to whole seconds. Nothing is kept until you save.</p>';
+			echo '<p><textarea name="' . esc_attr( $prefix ) . '[splits_import]" rows="6" class="large-text code" placeholder="&lt;podcast:valueTimeSplit startTime=&quot;76.645988&quot; duration=&quot;270.916411&quot; remotePercentage=&quot;99&quot;&gt;&#10;  &lt;podcast:remoteItem feedGuid=&quot;...&quot; itemGuid=&quot;...&quot;/&gt;&#10;&lt;/podcast:valueTimeSplit&gt;">' . esc_textarea( isset( $in['splits_import'] ) && is_string( $in['splits_import'] ) ? $in['splits_import'] : '' ) . '</textarea></p>';
+			echo '<p><label>Or upload a file (.txt, .xml, .csv or .json, up to 1 MB): <input type="file" name="podpub_splits_file" accept=".txt,.xml,.csv,.tsv,.json,text/plain,text/xml,application/json"></label> &nbsp; <label>When saving: <select name="' . esc_attr( $prefix ) . '[splits_mode]"><option value="replace">replace the time splits above</option><option value="add">add to the time splits above</option></select></label></p>';
 		} else {
 			echo '<h3>Block</h3><p class="description">Ask podcast apps not to list this podcast. Choose yes to block, no to say it is not blocked. To block or allow just one service, enter its id.</p>';
 			self::render_rows( $prefix . '[block]', $rows( 'block', $d['block'] ), array(
@@ -480,6 +507,7 @@ class PodPub_Admin {
 						echo '<option value="' . esc_attr( $f ) . '">' . esc_html( $f ) . '</option>';
 					}
 					echo '</select></label></p>';
+					self::render_rename_ok( $files );
 				}
 			}
 
@@ -672,6 +700,7 @@ class PodPub_Admin {
 					echo '<option value="' . esc_attr( $f ) . '"' . selected( $v( 'audio_pick', '' ), $f, false ) . '>' . esc_html( $f . ( PodPub_Episodes::safe_file_name( $f ) ? '' : ' (will be renamed to remove spaces and special characters)' ) ) . '</option>';
 				}
 				echo '</select></p>';
+				self::render_rename_ok( $files );
 			} else {
 				echo '<p class="description">No audio files found in that folder yet. Copy one in, then reload this page.</p>';
 			}
