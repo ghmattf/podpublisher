@@ -190,14 +190,14 @@ check( 'commit: the episode with no guid got a new one; all guids are different'
 
 // A second save of the adopted podcast writes in place again and makes another backup (every Save and write feed does); the first backup stays the original feed.
 PodPub_Feeds::save_details( $pid, array( 'title' => 'Old Show', 'description' => 'The old show & friends.', 'language' => 'en', 'explicit' => 'no' ) );
-check( 'saving later: writes the same file again, with a new backup (.bak2); .bak is still the original', file_exists( realpath( $OLD ) . '.bak' ) && file_exists( realpath( $OLD ) . '.bak2' ) && file_get_contents( realpath( $OLD ) . '.bak' ) === $before && false !== strpos( file_get_contents( $OLD ), 'PodPublisher 0.12.0' ) );
+check( 'saving later: writes the same file again, with a new backup: the original moves to .bak2, .bak holds the file just replaced', file_exists( realpath( $OLD ) . '.bak' ) && file_exists( realpath( $OLD ) . '.bak2' ) && file_get_contents( realpath( $OLD ) . '.bak2' ) === $before && false !== strpos( file_get_contents( $OLD ), 'PodPublisher 0.12.0' ) );
 
 // Adopting the same old feed again makes a second backup name (never overwrites a backup).
 file_put_contents( $OLD, $FIX );
 $l2   = PodPub_Adopt::load( $OLD );
 $p2   = PodPub_Adopt::plan( $l2 );
 $res2 = PodPub_Adopt::commit( $l2, $p2['report']['hash'] );
-check( 'adopting again: backups are never overwritten, the next number is used (.bak3)', is_array( $res2 ) && $res2['backup'] === realpath( $OLD ) . '.bak3' && file_get_contents( realpath( $OLD ) . '.bak' ) === $before );
+check( 'adopting again: the backups rotate (.bak2 -> .bak3, .bak -> .bak2), the new one is .bak, and the original is still held in .bak3', is_array( $res2 ) && $res2['backup'] === realpath( $OLD ) . '.bak' && file_get_contents( realpath( $OLD ) . '.bak3' ) === $before );
 
 // Not on this server: written into the podcast's own folder; the old feed is untouched.
 $res3 = PodPub_Adopt::commit( PodPub_Adopt::load( 'https://other.example.org/feed.xml' ), PodPub_Adopt::plan( PodPub_Adopt::load( 'https://other.example.org/feed.xml' ) )['report']['hash'] );

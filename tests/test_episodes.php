@@ -278,17 +278,17 @@ $st = PodPub_FeedXml::status( 5 );
 check( 'status: stored data that differs from the file is pending, with a message', 'pending' === $st['state'] && false !== strpos( $st['message'], 'Save and write feed' ) );
 $w = PodPub_FeedXml::write( 5 );
 $baks = glob( "$pf/$pdir.xml.bak*" ); usort( $baks, function ( $a, $b ) { return (int) substr( strrchr( $a, 'k' ), 1 ) - (int) substr( strrchr( $b, 'k' ), 1 ); } );
-check( 'podcast-level write: always makes a backup, holding the file as it was', ! is_wp_error( $w ) && count( $baks ) === $bak_before + 1 && sha1( file_get_contents( end( $baks ) ) ) === sha1( $before ) );
+check( 'podcast-level write: always makes a backup (.bak), holding the file as it was', ! is_wp_error( $w ) && sha1( file_get_contents( "$pf/$pdir.xml.bak" ) ) === sha1( $before ) );
 check( 'status: current again after the write', 'current' === PodPub_FeedXml::status( 5 )['state'] );
 $n = count( glob( "$pf/$pdir.xml.bak*" ) );
 PodPub_FeedXml::write( 5 );
-check( 'backup: every Save and write feed makes one more backup (as asked), up to the cap', count( glob( "$pf/$pdir.xml.bak*" ) ) === $n + 1 );
+check( 'backup: a second write rotates: .bak -> .bak2', ( function () use ( $pf, $pdir, $before ) { $old = file_get_contents( "$pf/$pdir.xml.bak" ); PodPub_FeedXml::write( 5 ); return file_get_contents( "$pf/$pdir.xml.bak2" ) === $old && file_exists( "$pf/$pdir.xml.bak" ); } )() );
 // Only the newest 19 extra backups are kept, and the first one is never removed.
 $feed = "$pf/$pdir.xml";
-file_put_contents( $feed . '.bak', 'FIRST' );
+file_put_contents( $feed . '.bak', 'FIRST' ); file_put_contents( $feed . '.bak7', 'OLD7' );
 for ( $i = 0; $i < 30; $i++ ) { file_put_contents( $feed, "<x>$i</x>" ); PodPub_FeedXml::backup( $feed ); }
 $left = glob( $feed . '.bak*' );
-check( 'backup: the first backup is never pruned, the newest 19 others are kept (20 in all)', count( $left ) === 20 && 'FIRST' === file_get_contents( $feed . '.bak' ) && is_file( $feed . '.bak31' ) );
+check( 'backup: only three are kept (.bak newest, .bak2, .bak3 oldest); .bak2 replaces .bak3, .bak replaces .bak2; older numbers removed', count( $left ) === 3 && '<x>29</x>' === file_get_contents( $feed . '.bak' ) && '<x>28</x>' === file_get_contents( $feed . '.bak2' ) && '<x>27</x>' === file_get_contents( $feed . '.bak3' ) && ! file_exists( $feed . '.bak4' ) && ! file_exists( $feed . '.bak31' ) );
 // A backup that cannot be made stops the write.
 @mkdir( "$tmp/rodir" );
 check( 'backup: returns an empty string when the copy cannot be made', '' === PodPub_FeedXml::backup( "$tmp/does_not_exist.xml" ) );

@@ -380,42 +380,26 @@ class PodPub_FeedXml {
 		return 'The feed file has changed since PodPublisher last wrote it, and these tags in it would be lost if it is rewritten: ' . implode( '; ', array_slice( $parts, 0, 12 ) ) . ( count( $parts ) > 12 ? '; and ' . ( count( $parts ) - 12 ) . ' more' : '' ) . '. Saving the podcast will NOT rewrite it. Use "Write feed anyway" to replace the file (a backup copy is kept).';
 	}
 
-	/** How many backup copies are kept besides the first one (name.xml.bak, usually the original feed). */
-	const KEEP_BACKUPS = 19;
-
 	/**
-	 * Copy a feed file to the next backup name (name.bak, then name.bak2, name.bak3, ...). Nothing
-	 * is copied if the newest backup already holds the same content. The first backup is never
-	 * removed; only the oldest of the others go once there are more than KEEP_BACKUPS.
+	 * Keep three backups of a feed file: name.xml.bak is the newest, .bak2 the one before, .bak3
+	 * the oldest. Before a new copy is made .bak2 becomes .bak3 (replacing it) and .bak becomes
+	 * .bak2. Numbered copies beyond .bak3 from earlier versions are removed.
 	 *
 	 * @param string $file Feed file.
-	 * @return string Path of the backup (new, or the identical newest one), or an empty string if it could not be made.
+	 * @return string Path of the new backup (name.xml.bak), or an empty string if it could not be made.
 	 */
 	public static function backup( $file ) {
-		$have = array();
-		foreach ( (array) glob( $file . '.bak*' ) as $b ) {
-			if ( preg_match( '/\.bak(\d*)$/', $b, $m ) ) {
-				$have[ '' === $m[1] ? 1 : (int) $m[1] ] = $b;
+		foreach ( (array) glob( $file . '.bak[0-9]*' ) as $b ) {
+			if ( preg_match( '/\.bak(\d+)$/', $b, $m ) && (int) $m[1] > 3 ) {
+				@unlink( $b ); // phpcs:ignore
 			}
 		}
-		ksort( $have );
-		if ( $have ) {
-			$last = end( $have );
-			if ( @sha1_file( $last ) === @sha1_file( $file ) ) { // phpcs:ignore
-				return $last;
-			}
-		}
-		$n      = $have ? max( array_keys( $have ) ) + 1 : 1;
-		$backup = $file . ( 1 === $n ? '.bak' : '.bak' . $n );
-		if ( ! @copy( $file, $backup ) ) { // phpcs:ignore
+		if ( is_file( $file . '.bak2' ) && ! @rename( $file . '.bak2', $file . '.bak3' ) ) { // phpcs:ignore
 			return '';
 		}
-		$have[ $n ] = $backup;
-		unset( $have[1] );
-		while ( count( $have ) > self::KEEP_BACKUPS ) {
-			$old = array_shift( $have );
-			@unlink( $old ); // phpcs:ignore
+		if ( is_file( $file . '.bak' ) && ! @rename( $file . '.bak', $file . '.bak2' ) ) { // phpcs:ignore
+			return '';
 		}
-		return $backup;
+		return @copy( $file, $file . '.bak' ) ? $file . '.bak' : ''; // phpcs:ignore
 	}
 }

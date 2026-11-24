@@ -146,7 +146,7 @@ $GLOBALS['can'] = true;
 check( 'held: Write feed anyway needs the capability', $threw && false !== strpos( file_get_contents( $OLD ), 'mystery' ) );
 $_POST = array( 'podpub_id' => $pid );
 try { PodPub_Admin::handle_write_feed_anyway(); } catch ( Redirect $r ) { $to = $r->to; }
-check( 'held: Write feed anyway backs up (.bak numbers go on), writes, and returns to the podcast page', false === strpos( file_get_contents( $OLD ), 'mystery' ) && ( file_exists( $OLD . '.bak2' ) || file_exists( $OLD . '.bak3' ) ) && false !== strpos( $to, 'podpublisher-feed-' . $pid ) && ! empty( get_transient( 'podpub_notice_1' )['written'] ) );
+check( 'held: Write feed anyway backs up (the old file is rotated into .bak), writes, and returns to the podcast page', false === strpos( file_get_contents( $OLD ), 'mystery' ) && file_exists( $OLD . '.bak2' ) && false !== strpos( $to, 'podpublisher-feed-' . $pid ) && ! empty( get_transient( 'podpub_notice_1' )['written'] ) );
 ob_start(); PodPub_Admin::render_feed( $pid ); $h = ob_get_clean();
 check( 'held: the warning is gone afterwards', false === strpos( $h, 'Write feed anyway</button>' ) );
 
