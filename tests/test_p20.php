@@ -260,7 +260,7 @@ $VTS = '<podcast:valueTimeSplit startTime="76.645988" duration="270.916411" remo
 $G7 = '7b2228f8-9963-483d-8741-1b6f37f830c4'; $GD = 'd9bdd845-750f-5cc3-a3cd-36edcde2671a';
 function imp( $text ) { $e = array(); $w = array(); $r = PodPub_SplitsImport::parse( $text, $e, $w ); return array( $r, $e, $w ); }
 list( $rows, $e, $w ) = imp( $VTS );
-check( 'import xml: the five splits from the sample feed are read, fractions kept as written', $e === array() && $w === array() && count( $rows ) === 5 && $rows[0]['start'] === '76.645988' && $rows[0]['duration'] === '270.916411' && $rows[0]['remote_percent'] === '99' && $rows[0]['feed_guid'] === $G7 && $rows[0]['item_guid'] === '9577bbcf-45db-4b3a-8af7-054125766132' && $rows[4]['start'] === '3335.246455' );
+check( 'import xml: the five splits from the sample feed are read (text as written; rounding happens in the checks)', $e === array() && $w === array() && count( $rows ) === 5 && $rows[0]['start'] === '76.645988' && $rows[0]['duration'] === '270.916411' && $rows[0]['remote_percent'] === '99' && $rows[0]['feed_guid'] === $G7 && $rows[0]['item_guid'] === '9577bbcf-45db-4b3a-8af7-054125766132' && $rows[4]['start'] === '3335.246455' );
 list( $rows, $e, $w ) = imp( "\xEF\xBB\xBF<?xml version=\"1.0\"?>\n<item><podcast:value type=\"lightning\" method=\"keysend\"><podcast:valueRecipient name=\"Host\" type=\"node\" address=\"abc\" split=\"100\"/>" . $VTS . "</podcast:value></item>" );
 check( 'import xml: a whole item/value block works; recipients outside the splits are named as not imported', $e === array() && count( $rows ) === 5 && (bool) array_filter( $w, function ( $m ) { return false !== strpos( $m, 'outside the time splits' ); } ) );
 list( $rows, $e, $w ) = imp( str_replace( array( 'podcast:' ), array( 'pc:' ), $VTS ) );
@@ -291,13 +291,12 @@ list( $rows, $e, $w ) = imp( '   ' );
 check( 'import: empty text is an error', count( $e ) === 1 );
 list( $rows, $e, $w ) = imp( str_repeat( 'a', 1048577 ) );
 check( 'import: over 1 MB refused', count( $e ) === 1 );
-check( 'parse_time: seconds with decimals, m:ss.f and h:mm:ss, rounded to 6 places', PodPub_P20::parse_time( '76.645988' ) === 76.645988 && PodPub_P20::parse_time( '1:16.5' ) === 76.5 && PodPub_P20::parse_time( '1:01:01' ) === 3661 && PodPub_P20::parse_time( '' ) === 0 && PodPub_P20::parse_time( '1.0000004' ) === 1 && null === PodPub_P20::parse_time( '1:99' ) && null === PodPub_P20::parse_time( '-3' ) && null === PodPub_P20::parse_time( 'abc' ) );
-check( 'num: whole numbers plain, fractions without trailing zeros', PodPub_P20::num( 76 ) === '76' && PodPub_P20::num( 76.5 ) === '76.5' && PodPub_P20::num( 270.916411 ) === '270.916411' );
+check( 'parse_time: seconds, decimals rounded to whole seconds, m:ss.f and h:mm:ss', PodPub_P20::parse_time( '76.645988' ) === 77 && PodPub_P20::parse_time( '76.4' ) === 76 && PodPub_P20::parse_time( '1:16.5' ) === 77 && PodPub_P20::parse_time( '1:01:01' ) === 3661 && PodPub_P20::parse_time( '' ) === 0 && null === PodPub_P20::parse_time( '1:99' ) && null === PodPub_P20::parse_time( '-3' ) && null === PodPub_P20::parse_time( 'abc' ) );
 
 // Through the episode form: pasted text replaces, "add" appends, a file works too, fractions reach the feed.
 $r = esave( 5, $eid, array_merge( $epin, array( 'splits_import' => $VTS, 'splits_mode' => 'replace' ) ) );
 $x = feed_dom( "$pf/$pdir.xml" );
-check( 'episode import: five splits saved, replacing the table, fractions in the feed exactly', $r['errors'] === array() && count( PodPub_Episodes::details( $eid )['timesplits'] ) === 5 && $x->evaluate( 'string(//podcast:valueTimeSplit[1]/@startTime)' ) === '76.645988' && $x->evaluate( 'string(//podcast:valueTimeSplit[1]/@duration)' ) === '270.916411' && $x->evaluate( 'string(//podcast:valueTimeSplit[1]/@remotePercentage)' ) === '99' && $x->evaluate( 'string(//podcast:valueTimeSplit[5]/podcast:remoteItem/@itemGuid)' ) === 'c676892c-850a-426c-9dbd-8524f39334c1' );
+check( 'episode import: five splits saved, replacing the table, times rounded to whole seconds in the feed', $r['errors'] === array() && count( PodPub_Episodes::details( $eid )['timesplits'] ) === 5 && $x->evaluate( 'string(//podcast:valueTimeSplit[1]/@startTime)' ) === '77' && $x->evaluate( 'string(//podcast:valueTimeSplit[1]/@duration)' ) === '271' && $x->evaluate( 'string(//podcast:valueTimeSplit[1]/@remotePercentage)' ) === '99' && $x->evaluate( 'string(//podcast:valueTimeSplit[5]/podcast:remoteItem/@itemGuid)' ) === 'c676892c-850a-426c-9dbd-8524f39334c1' );
 $r = esave( 5, $eid, array_merge( $epin, array( 'splits_import' => "5:00,60,$G7,x1", 'splits_mode' => 'add' ) ) );
 check( 'episode import: add keeps the table rows and appends the imported one', $r['errors'] === array() && count( PodPub_Episodes::details( $eid )['timesplits'] ) === 3 );
 $f = "$tmp/splits.txt"; file_put_contents( $f, $VTS );

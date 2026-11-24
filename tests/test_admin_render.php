@@ -130,6 +130,7 @@ check( 'audio: one group each for upload, folder and external', 1 === substr_cou
 file_put_contents( "$tmp/uploads/podpublisher/$pdir/First_One/Raw Take.mp3", "ID3" . str_repeat( "\0", 30 ) );
 $h = page( 5 );
 check( 'audio: a copied-in file is listed, with a note when it will be renamed', false !== strpos( $h, 'value="Raw Take.mp3"' ) && false !== strpos( $h, 'will be renamed' ) && false === strpos( $h, 'No audio files found' ) );
+check( 'audio: a warning lists the old and new names and a Rename it box must be ticked', false !== strpos( $h, 'These file names have spaces or special characters' ) && false !== strpos( $h, 'Raw_Take.mp3' ) && false !== strpos( $h, 'name="podpub_ep[rename_ok]"' ) && false !== strpos( $h, 'anything linking to it will break' ) );
 $_GET['episode'] = 'new';
 $h = page( 5 );
 check( 'audio: a new episode explains it must be saved before picking a file', false !== strpos( $h, 'Save the episode first' ) );

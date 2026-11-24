@@ -493,6 +493,17 @@ class PodPub_Episodes {
 	}
 
 	/**
+	 * The warning shown (and nothing saved) when a picked file would need renaming and the owner
+	 * has not ticked the box to allow it.
+	 *
+	 * @param string $name File name as it is in the folder.
+	 * @return string
+	 */
+	public static function rename_warning( $name ) {
+		return 'The file "' . $name . '" has spaces or special characters in its name, which can break its web address. To use it, PodPublisher has to rename it to "' . PodPub_Storage::file_name( $name ) . '"; the old name will no longer exist, so anything that links to it will break. Tick "Rename it" below the file list to go ahead, or rename the file yourself first (by FTP) and pick it again. Nothing was saved.';
+	}
+
+	/**
 	 * A file name that does not exist yet in a folder (name_2.ext, name_3.ext, ... if it does).
 	 *
 	 * @param string $folder Folder path.
@@ -651,6 +662,10 @@ class PodPub_Episodes {
 				$errors[] = 'That file is not in the episode folder.';
 				return null;
 			}
+			if ( ! self::safe_file_name( $pick ) && '1' !== $get( 'rename_ok' ) ) {
+				$errors[] = self::rename_warning( $pick );
+				return null;
+			}
 			$a = self::inspect_audio( $path, $pick );
 			if ( is_wp_error( $a ) ) {
 				$errors[] = $a->get_error_message();
@@ -724,6 +739,10 @@ class PodPub_Episodes {
 		$tpick = isset( $input['transcript_pick'] ) && is_scalar( $input['transcript_pick'] ) ? (string) $input['transcript_pick'] : '';
 		if ( '' !== $tpick && ( ! $id || ! in_array( $tpick, self::list_folder_transcripts( $podcast_id, $id ), true ) ) ) {
 			$out['errors'][] = 'The transcript file you picked is not in the episode folder.';
+			$tpick           = '';
+		}
+		if ( '' !== $tpick && ! self::safe_file_name( $tpick ) && ( ! isset( $input['rename_ok'] ) || '1' !== (string) $input['rename_ok'] ) ) {
+			$out['errors'][] = self::rename_warning( $tpick );
 			$tpick           = '';
 		}
 		if ( ( $tup || '' !== $tpick ) && '' === PodPub_Storage::base_url() ) {
