@@ -49,7 +49,7 @@ class WP_Error { public $m; function __construct( $c, $m ) { $this->m = $m; } fu
 function is_wp_error( $x ) { return $x instanceof WP_Error; }
 
 
-foreach ( array( 'settings', 'storage', 'p20', 'images', 'details', 'posts', 'episodes', 'feedxml', 'feeds' ) as $c ) { require __DIR__ . "/../plugin/includes/class-podpub-$c.php"; }
+foreach ( array( 'settings', 'storage', 'p20', 'images', 'details', 'posts', 'chunks', 'episodes', 'feedxml', 'feeds' ) as $c ) { require __DIR__ . "/../plugin/includes/class-podpub-$c.php"; }
 $fail = 0;
 function check( $name, $ok ) { global $fail; echo ( $ok ? 'ok   ' : 'FAIL ' ) . $name . "\n"; if ( ! $ok ) { $fail = 1; } }
 function put( $path, $bytes ) { file_put_contents( $path, $bytes ); return $path; }

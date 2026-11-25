@@ -69,7 +69,7 @@ function add_action() {}
 class WP_Error { public $m; function __construct( $c, $m ) { $this->m = $m; } function get_error_message() { return $this->m; } }
 function is_wp_error( $x ) { return $x instanceof WP_Error; }
 
-foreach ( array( 'settings', 'storage', 'p20', 'images', 'geo', 'details', 'posts', 'episodes', 'feedxml', 'feeds', 'admin' ) as $c ) { require __DIR__ . "/../plugin/includes/class-podpub-$c.php"; }
+foreach ( array( 'settings', 'storage', 'p20', 'images', 'geo', 'details', 'posts', 'chunks', 'episodes', 'feedxml', 'feeds', 'admin' ) as $c ) { require __DIR__ . "/../plugin/includes/class-podpub-$c.php"; }
 
 $fail = 0;
 function check( $name, $ok ) { global $fail; echo ( $ok ? 'ok   ' : 'FAIL ' ) . $name . "\n"; if ( ! $ok ) { $fail = 1; } }
@@ -93,6 +93,9 @@ $h = page( 5 );
 check( 'new episode form: fields, upload, status, no delete button', false !== strpos( $h, 'value="podpub_save_episode"' ) && false !== strpos( $h, 'name="podpub_audio"' ) && false !== strpos( $h, 'name="podpub_ep[published]"' ) && false !== strpos( $h, 'datetime-local' ) && false === strpos( $h, 'podpub_delete_episode' ) );
 check( 'new episode form: shows the server upload limit and the allowed types', false !== strpos( $h, '67108864 B' ) && false !== strpos( $h, 'MP3, M4A, OGG, OPUS, WAV, FLAC' ) );
 check( 'new episode form: Explicit starts blank (Choose...) and is required', false !== strpos( $h, '<option value="" selected>Choose&hellip;</option>' ) && false !== strpos( $h, 'name="podpub_ep[explicit]" required' ) );
+check( 'episode form: audio has a separate Upload button with progress bar, a hidden token for Save, and the data the script needs', false !== strpos( $h, 'data-podpub-chunk' ) && false !== strpos( $h, 'class="button podpub-chunk-go">Upload</button>' ) && false !== strpos( $h, '<progress' ) && false !== strpos( $h, 'name="podpub_ep[audio_staged]"' ) && false !== strpos( $h, 'data-nonce="nonce_podpub_chunk"' ) && false !== strpos( $h, 'data-chunk="' ) && false !== strpos( $h, 'name="podpub_audio"' ) );
+check( 'audio (new episode): Add audio button, rest of the audio section is in a pop-up with OK and Cancel, Duration is in the pop-up', false !== strpos( $h, 'data-podpub-audio-open>Add audio</button>' ) && false !== strpos( $h, '<dialog class="podpub-dialog podpub-audio-dlg"' ) && false !== strpos( $h, 'data-podpub-audio-ok>OK</button>' ) && false !== strpos( $h, 'data-podpub-audio-cancel>Cancel</button>' ) && preg_match( '#<dialog.*id="ep_dur".*</dialog>#s', $h ) && false !== strpos( $h, 'id="ep_audio_slot"' ) && false !== strpos( $h, 'data-slot="ep_audio_slot" data-fields="ep_audio_fields"' ) && false !== strpos( $h, 'No audio yet.' ) );
+check( 'audio: the Duration row is gone from the page (only in the pop-up)', 0 === preg_match( '#<tr><th[^>]*><label for="ep_dur"#', $h ) );
 foreach ( array( 'timesplits' => 'time split', 'chapters' => 'chapter', 'transcripts' => 'transcript', 'soundbites' => 'soundbite', 'enclosures' => 'alternate file', 'persons' => 'person', 'social' => 'comment link' ) as $k => $noun ) {
 	check( "episode form: $k is a list with Add/Edit/Remove ($noun)", false !== strpos( $h, 'data-podpub-list data-noun="' . $noun . '"' ) && false !== strpos( $h, 'name="podpub_ep[' . $k . '][0]' ) );
 }
@@ -132,6 +135,15 @@ $h = page( 5 );
 check( 'posts: podcast page has the WordPress posts tab with author, categories, page', false !== strpos( $h, 'data-tab="posts"' ) && false !== strpos( $h, 'name="podpub_posts[author]"' ) && false !== strpos( $h, 'Ann Author' ) && false !== strpos( $h, 'name="podpub_posts[categories][]" value="7"' ) && false !== strpos( $h, 'name="podpub_posts[page]"' ) && false !== strpos( $h, 'podpub_save_posts' ) );
 check( 'posts: delete podcast offers to trash posts and page', false !== strpos( $h, 'podpub_delete_posts' ) );
 
+// An episode that has audio: Replace audio, Open button, duration as plain text.
+$ae = PodPub_Episodes::save( 5, 0, array( 'title' => 'WithAudio', 'description' => 'D', 'explicit' => 'no', 'published' => '2026-03-01T09:30', 'status' => 'draft', 'duration' => '1:02:30', 'audio_source' => 'upload' ), array( 'error' => UPLOAD_ERR_OK, 'tmp_name' => ( function () use ( $tmp ) { @mkdir( "$tmp/in", 0755, true ); file_put_contents( "$tmp/in/w.mp3", "ID3\x04\x00\x00\x00\x00\x00\x00" . str_repeat( 'a', 200 ) ); return "$tmp/in/w.mp3"; } )(), 'name' => 'w.mp3' ) );
+$_GET['episode'] = (string) $ae['id'];
+$h = page( 5 );
+check( 'audio (episode with audio): Replace audio button, Open is a button, duration is plain text, no editable duration on the page', false !== strpos( $h, 'data-podpub-audio-open>Replace audio</button>' ) && preg_match( '#<a class="button button-small" href="[^"]*WithAudio\.mp3" target="_blank" rel="noopener">Open</a>#', $h ) && false !== strpos( $h, '<p class="podpub-audio-dur">Duration: 1:02:30</p>' ) && 0 === preg_match( '#<tr><th[^>]*><label for="ep_dur"#', $h ) );
+foreach ( array( 'image' => array( 'podpub_ep_image', 'podpub_ep[image_staged]' ), 'transcript' => array( 'podpub_transcript', 'podpub_ep[transcript_staged]' ), 'chapters' => array( 'podpub_chapters_file', 'podpub_ep[chapters_staged]' ), 'splits' => array( 'podpub_splits_file', 'podpub_ep[splits_staged]' ) ) as $k => $n ) {
+	check( "chunked upload ($k): box, plain file input and hidden token on the episode page", false !== strpos( $h, 'data-podpub-chunk data-kind="' . $k . '"' ) && 1 === preg_match( '#<input type="file"[^>]*name="' . preg_quote( $n[0], '#' ) . '"#', $h ) && false !== strpos( $h, 'name="' . $n[1] . '" value=""' ) );
+}
+unset( $_GET['episode'] );
 // Podcast page lists and the Live episodes move.
 unset( $_GET['episode'] );
 $h = page( 5 );
@@ -292,6 +304,7 @@ check( 'search handler: an array instead of text is treated as empty', $r['succe
 // ---- Tabs, cards and look (TODO 20 and 27) ----
 $_GET = array(); unset( $_GET['episode'] );
 $h = page( 5 );
+check( 'chunked upload (image): show art has the Upload box, a plain file input and a hidden token', false !== strpos( $h, 'data-podpub-chunk data-kind="image"' ) && 1 === preg_match( '#<input type="file" id="pp_img" name="podpub_image"#', $h ) && false !== strpos( $h, 'name="podpub[image_staged]" value=""' ) );
 check( 'tabs: the podcast page has Episodes, Details, Podcasting 2.0 and Feed and files, each with a panel', 4 === preg_match_all( '/role="tab" id="podpub-t-(episodes|details|p20|feed)"/', $h ) && 4 === preg_match_all( '/role="tabpanel" id="podpub-tab-(episodes|details|p20|feed)"/', $h ) );
 check( 'tabs: aria links between tab and panel, and the default tab is marked', false !== strpos( $h, 'aria-controls="podpub-tab-details"' ) && false !== strpos( $h, 'aria-labelledby="podpub-t-details"' ) && false !== strpos( $h, 'data-default="episodes"' ) );
 check( 'tabs: only the default panel is visible when the page loads (the others are hidden by the server, no flash)', 4 === preg_match_all( '/<section[^>]* hidden/', $h ) && 0 === preg_match( '/<section[^>]*data-tab="episodes"[^>]* hidden/', $h ) );
