@@ -30,6 +30,7 @@ class PodPub_Admin {
 		add_action( 'admin_post_podpub_delete_podcast', array( __CLASS__, 'handle_delete_podcast' ) );
 		add_action( 'admin_post_podpub_write_feed_anyway', array( __CLASS__, 'handle_write_feed_anyway' ) );
 		add_action( 'admin_post_podpub_adopt_confirm', array( __CLASS__, 'handle_adopt_confirm' ) );
+		add_action( 'wp_ajax_podpub_chunk', array( __CLASS__, 'handle_chunk' ) );
 		add_action( 'wp_ajax_podpub_geo_search', array( __CLASS__, 'handle_geo_search' ) );
 	}
 
@@ -186,6 +187,14 @@ class PodPub_Admin {
 				$file = null;
 			}
 		}
+		// A file uploaded in pieces with the Upload button is waiting in the staging folder; Save picks it up.
+		$staged = '';
+		$tok    = isset( $input['audio_staged'] ) && is_string( $input['audio_staged'] ) ? $input['audio_staged'] : '';
+		$srcsel = isset( $input['audio_source'] ) && is_string( $input['audio_source'] ) ? $input['audio_source'] : 'upload';
+		if ( PodPub_Chunks::valid_id( $tok ) && 'upload' === $srcsel && ( null === $file || ( isset( $file['error'] ) && UPLOAD_ERR_NO_FILE === (int) $file['error'] ) ) ) {
+			$file   = PodPub_Chunks::file( $tok, get_current_user_id() );
+			$staged = $tok;
+		}
 		$upload = function ( $field ) {
 			if ( isset( $_FILES[ $field ] ) && is_array( $_FILES[ $field ] ) ) {
 				$f = $_FILES[ $field ]; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput
@@ -197,6 +206,9 @@ class PodPub_Admin {
 		};
 		$result          = PodPub_Episodes::save( $pid, $eid, $input, $file, $upload( 'podpub_ep_image' ), $upload( 'podpub_transcript' ), $upload( 'podpub_chapters_file' ), $upload( 'podpub_splits_file' ) );
 		$result['input'] = $result['errors'] ? $input : null;
+		if ( '' !== $staged && ! $result['errors'] ) {
+			PodPub_Chunks::discard( $staged );
+		}
 		set_transient( 'podpub_notice_' . get_current_user_id(), $result, 120 );
 		$go = $result['errors'] ? ( $eid ? (string) $eid : 'new' ) : (string) $result['id'];
 		$tab = isset( $_POST['podpub_tab'] ) ? sanitize_key( wp_unslash( $_POST['podpub_tab'] ) ) : '';
@@ -261,6 +273,30 @@ class PodPub_Admin {
 	/**
 	 * Location search (admin-ajax): administrators only, nonce checked, one search per request.
 	 */
+	/**
+	 * One piece of a chunked audio upload (sent by the Upload button on the episode form).
+	 */
+	public static function handle_chunk() {
+		if ( ! current_user_can( self::CAP ) ) {
+			wp_send_json_error( array( 'message' => 'You do not have permission to do that.' ), 403 );
+		}
+		check_ajax_referer( 'podpub_chunk', 'nonce' );
+		$id    = isset( $_POST['id'] ) && is_string( $_POST['id'] ) ? sanitize_text_field( wp_unslash( $_POST['id'] ) ) : '';
+		$name  = isset( $_POST['name'] ) && is_string( $_POST['name'] ) ? sanitize_file_name( wp_unslash( $_POST['name'] ) ) : '';
+		$index = isset( $_POST['index'] ) ? (int) $_POST['index'] : -1;
+		$total = isset( $_POST['total'] ) ? (int) $_POST['total'] : 0;
+		$size  = isset( $_POST['size'] ) ? (int) $_POST['size'] : 0;
+		$tmp   = '';
+		if ( isset( $_FILES['chunk'] ) && is_array( $_FILES['chunk'] ) && isset( $_FILES['chunk']['tmp_name'], $_FILES['chunk']['error'] ) && UPLOAD_ERR_OK === (int) $_FILES['chunk']['error'] && is_uploaded_file( $_FILES['chunk']['tmp_name'] ) ) {
+			$tmp = $_FILES['chunk']['tmp_name']; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput
+		}
+		$r = PodPub_Chunks::receive( $id, $index, $total, $name, $size, $tmp, get_current_user_id() );
+		if ( is_wp_error( $r ) ) {
+			wp_send_json_error( array( 'message' => $r->get_error_message() ) );
+		}
+		wp_send_json_success( $r );
+	}
+
 	public static function handle_geo_search() {
 		if ( ! current_user_can( self::CAP ) ) {
 			wp_send_json_error( array( 'message' => 'You do not have permission to do that.' ), 403 );
@@ -420,6 +456,12 @@ class PodPub_Admin {
 .podpub-dialog .podpub-geo-or{margin:10px 0 0;font-weight:600}
 .podpub-tabs [hidden]{display:none!important}
 .podpub-livebox{margin-top:22px}
+.podpub-chunk-ui{display:none}
+.podpub-chunk-on .podpub-chunk-ui{display:block}
+.podpub-chunk-on .podpub-chunk-plain{display:none}
+.podpub-chunk progress{width:min(420px,100%);height:14px;display:block;margin:8px 0}
+.podpub-chunk-status{margin:4px 0}
+.podpub-chunk-status.podpub-bad{color:var(--pp-bad)}
 CSS;
 	}
 
@@ -543,6 +585,48 @@ go.addEventListener("click",run);q.addEventListener("keydown",function(e){if(e.k
 return b;}
 addBtn.addEventListener("click",function(){openDialog(null);});
 render();
+});
+document.querySelectorAll("[data-podpub-chunk]").forEach(function(box){
+var inp=box.querySelector("input[type=file]"),go=box.querySelector(".podpub-chunk-go"),bar=box.querySelector("progress"),st=box.querySelector(".podpub-chunk-status"),hid=box.querySelector("input[type=hidden]");
+var url=box.getAttribute("data-url"),nonce=box.getAttribute("data-nonce"),csize=parseInt(box.getAttribute("data-chunk"),10)||1048576;
+if(!inp||!go||!window.XMLHttpRequest||!window.FormData||!window.Blob||!Blob.prototype.slice)return;
+box.classList.add("podpub-chunk-on");inp.removeAttribute("name");
+var busy=false,form=inp.form;
+function fmt(n){return n>=1048576?(n/1048576).toFixed(1)+" MB":Math.max(1,Math.round(n/1024))+" KB";}
+function say(t,bad){st.textContent=t;st.className="podpub-chunk-status"+(bad?" podpub-bad":"");}
+function rid(){var a=new Uint8Array(16);(window.crypto||window.msCrypto).getRandomValues(a);var s="";for(var i=0;i<16;i++)s+=("0"+a[i].toString(16)).slice(-2);return s;}
+function send(id,file,i,total,done){
+var tries=0;
+(function attempt(){
+var x=new XMLHttpRequest(),d=new FormData(),from=i*csize,part=file.slice(from,Math.min(file.size,from+csize));
+d.append("action","podpub_chunk");d.append("nonce",nonce);d.append("id",id);d.append("index",i);d.append("total",total);d.append("name",file.name);d.append("size",file.size);d.append("chunk",part,"chunk.bin");
+x.open("POST",url);
+x.upload.onprogress=function(e){if(e.lengthComputable){bar.value=Math.min(file.size,from+e.loaded);}};
+x.onload=function(){var j=null;try{j=JSON.parse(x.responseText);}catch(e){}
+if(j&&j.success){done(null);return;}
+if(j&&j.data&&j.data.message){done(j.data.message);return;}
+retry("The server sent an unexpected reply (code "+x.status+").");};
+x.onerror=function(){retry("The connection was lost.");};
+function retry(m){tries++;if(tries<4){say(m+" Trying again…",true);setTimeout(attempt,1000*tries);}else{done(m+" Upload stopped; press Upload to start again.");}}
+x.send(d);
+})();}
+go.addEventListener("click",function(){
+if(busy)return;var f=inp.files&&inp.files[0];
+if(!f){say("Choose a file first.",true);return;}
+var total=Math.ceil(f.size/csize),id=rid();busy=true;go.disabled=inp.disabled=true;hid.value="";bar.hidden=false;bar.max=f.size;bar.value=0;say("Uploading "+f.name+" ("+fmt(f.size)+")…");
+var i=0;
+function next(){
+if(i>=total){hid.value=id;bar.value=f.size;busy=false;go.disabled=inp.disabled=false;say("Uploaded "+f.name+" ("+fmt(f.size)+"). It is used when you press Save.");return;}
+send(id,f,i,total,function(err){
+if(err){busy=false;go.disabled=inp.disabled=false;bar.hidden=true;say(err,true);return;}
+i++;next();});}
+next();});
+inp.addEventListener("change",function(){if(!busy){hid.value="";bar.hidden=true;say(inp.files&&inp.files.length?"Press Upload to send the file. Saving does not upload it.":"");}});
+if(form)form.addEventListener("submit",function(e){
+var s=document.getElementById("ep_src"),useUp=!s||s.value==="upload";
+if(busy){e.preventDefault();alert("The audio is still uploading. Wait for it to finish, then press Save.");return;}
+if(useUp&&inp.files&&inp.files.length&&!hid.value){e.preventDefault();say("Press Upload to send this file first, or choose another audio source.",true);inp.focus();}});
+window.addEventListener("beforeunload",function(e){if(busy){e.preventDefault();e.returnValue="";}});
 });
 });
 })();
@@ -1042,7 +1126,15 @@ JS;
 		}
 		echo '</select><p class="description">Choosing a new file, or entering a new address, replaces the current audio. Leave the fields empty to keep it.</p>';
 
-		echo '<div data-podpub-src="upload"><p><input type="file" id="ep_audio" name="podpub_audio" accept=".' . esc_attr( implode( ',.', array_keys( PodPub_Episodes::audio_types() ) ) ) . '"></p><p class="description">' . esc_html( strtoupper( implode( ', ', array_keys( PodPub_Episodes::audio_types() ) ) ) ) . '. Your server allows uploads up to ' . esc_html( size_format( wp_max_upload_size() ) ) . '. For a bigger file use the other options.</p></div>';
+		$staged_id   = $v( 'audio_staged', '' );
+		$staged_info = PodPub_Chunks::valid_id( $staged_id ) ? PodPub_Chunks::info( $staged_id, get_current_user_id() ) : null;
+		$exts        = esc_html( strtoupper( implode( ', ', array_keys( PodPub_Episodes::audio_types() ) ) ) );
+		echo '<div data-podpub-src="upload"><div class="podpub-chunk" data-podpub-chunk data-url="' . esc_url( admin_url( 'admin-ajax.php' ) ) . '" data-nonce="' . esc_attr( wp_create_nonce( 'podpub_chunk' ) ) . '" data-chunk="' . (int) PodPub_Chunks::chunk_size() . '">';
+		echo '<p><input type="file" id="ep_audio" name="podpub_audio" accept=".' . esc_attr( implode( ',.', array_keys( PodPub_Episodes::audio_types() ) ) ) . '"></p>';
+		echo '<div class="podpub-chunk-ui"><p><button type="button" class="button podpub-chunk-go">Upload</button></p><progress max="100" value="0" hidden></progress>';
+		echo '<p class="podpub-chunk-status" role="status">' . ( $staged_info ? esc_html( 'Uploaded ' . $staged_info['name'] . ' (' . size_format( $staged_info['size'] ) . '). It is used when you press Save.' ) : '' ) . '</p></div>';
+		echo '<input type="hidden" name="podpub_ep[audio_staged]" value="' . esc_attr( $staged_info ? $staged_id : '' ) . '">';
+		echo '<p class="description">' . $exts . '. The Upload button sends the file in pieces, so large files work; it is separate from Save, which then uses the uploaded file. <span class="podpub-chunk-plain">Your server allows direct uploads up to ' . esc_html( size_format( wp_max_upload_size() ) ) . '; for a bigger file use the other options.</span></p></div></div>';
 
 		echo '<div data-podpub-src="folder">';
 		if ( $eid ) {

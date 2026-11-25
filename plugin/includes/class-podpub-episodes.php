@@ -635,6 +635,10 @@ class PodPub_Episodes {
 			$src = 'upload';
 		}
 		if ( 'upload' === $src ) {
+			if ( is_array( $file ) && isset( $file['message'], $file['error'] ) && UPLOAD_ERR_OK !== (int) $file['error'] ) { // An upload sent in pieces that is no longer there.
+				$errors[] = (string) $file['message'];
+				return null;
+			}
 			if ( ! is_array( $file ) || ! isset( $file['error'] ) || UPLOAD_ERR_NO_FILE === (int) $file['error'] ) {
 				return null;
 			}

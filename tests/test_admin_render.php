@@ -69,7 +69,7 @@ function add_action() {}
 class WP_Error { public $m; function __construct( $c, $m ) { $this->m = $m; } function get_error_message() { return $this->m; } }
 function is_wp_error( $x ) { return $x instanceof WP_Error; }
 
-foreach ( array( 'settings', 'storage', 'p20', 'images', 'geo', 'details', 'posts', 'episodes', 'feedxml', 'feeds', 'admin' ) as $c ) { require __DIR__ . "/../plugin/includes/class-podpub-$c.php"; }
+foreach ( array( 'settings', 'storage', 'p20', 'images', 'geo', 'details', 'posts', 'chunks', 'episodes', 'feedxml', 'feeds', 'admin' ) as $c ) { require __DIR__ . "/../plugin/includes/class-podpub-$c.php"; }
 
 $fail = 0;
 function check( $name, $ok ) { global $fail; echo ( $ok ? 'ok   ' : 'FAIL ' ) . $name . "\n"; if ( ! $ok ) { $fail = 1; } }
@@ -93,6 +93,7 @@ $h = page( 5 );
 check( 'new episode form: fields, upload, status, no delete button', false !== strpos( $h, 'value="podpub_save_episode"' ) && false !== strpos( $h, 'name="podpub_audio"' ) && false !== strpos( $h, 'name="podpub_ep[published]"' ) && false !== strpos( $h, 'datetime-local' ) && false === strpos( $h, 'podpub_delete_episode' ) );
 check( 'new episode form: shows the server upload limit and the allowed types', false !== strpos( $h, '67108864 B' ) && false !== strpos( $h, 'MP3, M4A, OGG, OPUS, WAV, FLAC' ) );
 check( 'new episode form: Explicit starts blank (Choose...) and is required', false !== strpos( $h, '<option value="" selected>Choose&hellip;</option>' ) && false !== strpos( $h, 'name="podpub_ep[explicit]" required' ) );
+check( 'episode form: audio has a separate Upload button with progress bar, a hidden token for Save, and the data the script needs', false !== strpos( $h, 'data-podpub-chunk' ) && false !== strpos( $h, 'class="button podpub-chunk-go">Upload</button>' ) && false !== strpos( $h, '<progress' ) && false !== strpos( $h, 'name="podpub_ep[audio_staged]"' ) && false !== strpos( $h, 'data-nonce="nonce_podpub_chunk"' ) && false !== strpos( $h, 'data-chunk="' ) && false !== strpos( $h, 'name="podpub_audio"' ) );
 foreach ( array( 'timesplits' => 'time split', 'chapters' => 'chapter', 'transcripts' => 'transcript', 'soundbites' => 'soundbite', 'enclosures' => 'alternate file', 'persons' => 'person', 'social' => 'comment link' ) as $k => $noun ) {
 	check( "episode form: $k is a list with Add/Edit/Remove ($noun)", false !== strpos( $h, 'data-podpub-list data-noun="' . $noun . '"' ) && false !== strpos( $h, 'name="podpub_ep[' . $k . '][0]' ) );
 }
