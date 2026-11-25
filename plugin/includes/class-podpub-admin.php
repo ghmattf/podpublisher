@@ -775,6 +775,22 @@ JS;
 		return $out;
 	}
 
+	/**
+	 * Split card HTML from cards() into its cards, keyed by the card's title, so a few can be placed on other tabs.
+	 *
+	 * @param string $html Card HTML.
+	 * @return array { head: text before the first card, by: title => card HTML }
+	 */
+	private static function split_cards( $html ) {
+		$parts = preg_split( '#(?=<details class="podpub-card")#', $html );
+		$out   = array( 'head' => (string) array_shift( $parts ), 'by' => array() );
+		foreach ( $parts as $i => $chunk ) {
+			$t = preg_match( '#<summary>(.*?)(?:<span class="podpub-badge">|</summary>)#s', $chunk, $m ) ? trim( wp_strip_all_tags( $m[1] ) ) : 'card' . $i;
+			$out['by'][ $t ] = $chunk;
+		}
+		return $out;
+	}
+
 	private static function render_rows( $name, $rows, $cols, $max, $ui = array() ) {
 		$rows = array_values( $rows );
 		$n    = min( $max, count( $rows ) + 3 );
@@ -1334,15 +1350,30 @@ JS;
 			return $h . '</table>';
 		};
 		$tabs = array(
-			'episode' => array( 'label' => 'Episode', 'html' => $group( array( 'ep_title', 'ep_desc', 'ep_date', 'ep_status', 'ep_post', 'ep_type', 'ep_season', 'ep_num', 'ep_ex' ) ) ),
-			'audio'   => array( 'label' => 'Audio', 'html' => $group( array( 'ep_audio_open' ) ) ),
-			'notes'   => array( 'label' => 'Notes and picture', 'html' => $group( array( 'ep_notes', 'ep_sub', 'ep_sum', 'ep_kw', 'ep_img' ) ) ),
+			'episode' => array( 'label' => 'Episode', 'html' => $group( array( 'ep_img', 'ep_title', 'ep_desc', 'ep_date', 'ep_status', 'ep_post', 'ep_type', 'ep_season', 'ep_num', 'ep_ex' ) ) ),
+			'media'   => array( 'label' => 'Media', 'html' => $group( array( 'ep_audio_open' ) ) ),
+			'notes'   => array( 'label' => 'Notes', 'html' => $group( array( 'ep_notes', 'ep_sub', 'ep_sum', 'ep_kw' ) ) ),
 		);
 		ob_start();
-		echo '<p class="description" style="margin-top:14px">Optional extras for apps that support Podcasting 2.0. Sections that already hold something are open.</p>';
 		self::render_p20_fields( 'podpub_ep', $d, $in, true, $eid ? array( 'podcast' => (int) $id, 'episode' => $eid ) : null );
-		$tabs['p20'] = array( 'label' => 'Podcasting 2.0', 'html' => ob_get_clean() );
+		$cards = self::split_cards( (string) ob_get_clean() );
+		$take  = function ( $titles ) use ( &$cards ) {
+			$h = '';
+			foreach ( $titles as $t ) {
+				if ( isset( $cards['by'][ $t ] ) ) {
+					$h .= $cards['by'][ $t ];
+					unset( $cards['by'][ $t ] );
+				}
+			}
+			return $h;
+		};
+		$tabs['episode']['html'] .= $take( array( 'Location' ) );
+		$tabs['media']['html']   .= $take( array( 'Value time splits', 'Chapters', 'Transcripts', 'Soundbites', 'Alternate files' ) );
+		$tabs['p20'] = array( 'label' => 'Podcasting 2.0', 'html' => '<p class="description" style="margin-top:14px">Optional extras for apps that support Podcasting 2.0. Sections that already hold something are open.</p>' . $cards['head'] . implode( '', $cards['by'] ) );
 		$want = isset( $_GET['tab'] ) ? sanitize_key( wp_unslash( $_GET['tab'] ) ) : '';
+		if ( 'audio' === $want ) { // The old name of the Media tab.
+			$want = 'media';
+		}
 		self::render_tabs( $tabs, isset( $tabs[ $want ] ) ? $want : 'episode' );
 		echo '<div class="podpub-savebar" style="margin:0;border:1px solid var(--pp-border);border-radius:8px;margin-top:14px">';
 		submit_button( 'Save episode', 'primary', 'submit', false );

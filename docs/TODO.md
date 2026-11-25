@@ -11,7 +11,3 @@ Wording is the owner's. Completed items are removed from this list (the history 
 
 44. WordPress post content and link.
 45. Remove the Episode tab "WordPress post" option and instead prompt for it after clicking "Save episode".
-46. Move the episode "Episode picture" section to the top of the "Episode" tab.
-47. Move the episode Location section to the "Episode" tab.
-48. Move "Value time splits", Chapters, Transcripts, Soundbites and "Alternate files" sections to the "Audio" tab.
-49. Rename the "Audio" tab to "Media".
