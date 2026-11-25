@@ -96,7 +96,7 @@ $r = PodPub_Feeds::save_p20( $pid, array() );
 $x = feed_dom( "$tmp/uploads/podpublisher/$pdir/$pdir.xml" );
 check( 'podcast: clearing the form removes complete, locked and comments', $r['errors'] === array() && ev( $x, 'count(/rss/channel/podcast:complete | /rss/channel/podcast:locked | /rss/channel/podcast:socialInteract)' ) == 0 );
 
-$ep = array( 'title' => 'Ep D', 'description' => 'D', 'published' => '2026-01-15T09:30', 'status' => 'published', 'audio_source' => 'external', 'audio_url' => 'https://cdn.example.net/one.mp3', 'audio_size' => '1000', 'duration' => '10:00',
+$ep = array( 'title' => 'Ep D', 'description' => 'D', 'explicit' => 'no', 'published' => '2026-01-15T09:30', 'status' => 'published', 'audio_source' => 'external', 'audio_url' => 'https://cdn.example.net/one.mp3', 'audio_size' => '1000', 'duration' => '10:00',
 	'chapters' => array( array( 'start' => '30', 'title' => 'Later' ), array( 'start' => '0', 'title' => 'Start' ) ),
 	'transcripts' => array( array( 'url' => 'https://t.example/ep.srt', 'type' => 'application/x-subrip', 'language' => 'en' ) ),
 	'soundbites' => array( array( 'start' => '73', 'duration' => '60', 'title' => 'Best bit' ), array( 'start' => '200', 'duration' => '30' ) ),

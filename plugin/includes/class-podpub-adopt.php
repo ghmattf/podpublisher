@@ -798,7 +798,7 @@ class PodPub_Adopt {
 		$skipped  = 0;
 		foreach ( $m['episodes'] as $e ) {
 			$has = '' !== $e['audio']['url'];
-			$s   = PodPub_Episodes::sanitize( $e['in'], PodPub_Episodes::defaults(), $has );
+			$s   = PodPub_Episodes::sanitize( $e['in'], PodPub_Episodes::defaults(), $has, false );
 			if ( $s['errors'] ) {
 				$problems[] = 'Episode "' . $e['title'] . '" cannot be adopted and is left out: ' . implode( ' ', $s['errors'] );
 				++$skipped;

@@ -62,7 +62,7 @@ $pdir = PodPub_Storage::create_podcast_dir( 'My Show' );
 update_post_meta( 5, '_podpub_dir', $pdir );
 PodPub_Feeds::save_details( 5, array( 'title' => 'My Show', 'description' => 'About the show', 'language' => 'en', 'explicit' => 'no' ) );
 $pf  = "$tmp/uploads/podpublisher/$pdir";
-$ep  = array( 'title' => 'Episode One', 'description' => 'First one', 'show_notes' => '<p>Notes <a href="https://x.example">here</a></p>', 'published' => '2026-01-15T09:30', 'status' => 'published', 'duration' => '1:00' );
+$ep  = array( 'title' => 'Episode One', 'description' => 'First one', 'show_notes' => '<p>Notes <a href="https://x.example">here</a></p>', 'explicit' => 'no', 'published' => '2026-01-15T09:30', 'status' => 'published', 'duration' => '1:00' );
 $aud = function () use ( $tmp, $MP3 ) { return up( put( "$tmp/in/a.mp3", $MP3 ), 'a.mp3' ); };
 
 // Defaults.
@@ -114,7 +114,7 @@ check( 'yes after the post was trashed makes a new post', count( wp_posts( 'post
 // Posts off.
 PodPub_Posts::save_settings( 5, array( 'author' => 4 ) );
 $before = count( wp_posts( 'post' ) );
-$r = PodPub_Episodes::save( 5, 0, array_merge( $ep, array( 'title' => 'Two', 'wp_post' => 'yes', 'published' => '2026-02-15T09:30' ) ), $aud() );
+$r = PodPub_Episodes::save( 5, 0, array_merge( $ep, array( 'title' => 'Two', 'wp_post' => 'yes', 'explicit' => 'no', 'published' => '2026-02-15T09:30' ) ), $aud() );
 check( 'posts turned off: no post even when asked', count( wp_posts( 'post' ) ) === $before && 0 === PodPub_Posts::post_for( $r['id'] ) );
 $e2 = $r['id'];
 
@@ -128,7 +128,7 @@ check( 'settings: refusal saved nothing', ! PodPub_Posts::settings( 5 )['enabled
 // No right to publish posts.
 PodPub_Posts::save_settings( 5, array( 'enabled' => 1, 'author' => 3 ) );
 $GLOBALS['deny'] = array( 'publish_posts' );
-$r = PodPub_Episodes::save( 5, $e2, array_merge( $ep, array( 'title' => 'Two', 'published' => '2026-02-15T09:30', 'wp_post' => 'yes' ) ) );
+$r = PodPub_Episodes::save( 5, $e2, array_merge( $ep, array( 'title' => 'Two', 'explicit' => 'no', 'published' => '2026-02-15T09:30', 'wp_post' => 'yes' ) ) );
 check( 'without publish_posts: episode saved, warning, no post', $r['errors'] === array() && count( $r['warnings'] ) === 1 && 0 === PodPub_Posts::post_for( $e2 ) );
 $GLOBALS['deny'] = array();
 
@@ -142,7 +142,7 @@ check( 'page: description and both episodes, newest first, escaped', false !== s
 check( 'page: episode with a post is linked, one without is not', false !== strpos( $c, '<a href="https://example.com/?p=' . PodPub_Posts::post_for( $e1 ) . '">Episode One</a>' ) && false === strpos( $c, '>Two</a>' ) );
 PodPub_Posts::save_settings( 5, array( 'enabled' => 1, 'author' => 3, 'page' => 1 ) );
 check( 'page: saving again updates, never duplicates', count( wp_posts( 'page' ) ) === 1 );
-PodPub_Episodes::save( 5, $e2, array_merge( $ep, array( 'title' => 'Two <b>&</b>', 'published' => '2026-02-15T09:30' ) ) );
+PodPub_Episodes::save( 5, $e2, array_merge( $ep, array( 'title' => 'Two <b>&</b>', 'explicit' => 'no', 'published' => '2026-02-15T09:30' ) ) );
 check( 'page: kept up to date by an episode save, titles escaped', false !== strpos( $GLOBALS['posts'][ $pages[0]->ID ]->post_content, 'Two &lt;b&gt;&amp;&lt;/b&gt;' ) || false !== strpos( $GLOBALS['posts'][ $pages[0]->ID ]->post_content, 'Two &amp;' ) );
 $GLOBALS['deny'] = array( 'publish_pages' );
 PodPub_Posts::save_settings( 6, array( 'page' => 1 ) );

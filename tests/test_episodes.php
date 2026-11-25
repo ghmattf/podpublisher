@@ -79,13 +79,13 @@ check( 'date: round trip', PodPub_Episodes::format_date( $ts ) === '2026-01-15T0
 check( 'date: impossible and junk refused', PodPub_Episodes::parse_date( '2026-02-30T10:00' ) === null && PodPub_Episodes::parse_date( 'tomorrow' ) === null && PodPub_Episodes::parse_date( '' ) === null );
 
 // Form checking.
-$good = array( 'title' => 'Episode 1: The Start', 'description' => 'Hello', 'show_notes' => '<p>Notes <a href="https://x.example">link</a></p><script>alert(1)</script>', 'published' => '2026-01-15T09:30', 'season' => '2', 'episode' => '1', 'type' => 'bonus', 'duration' => '1:00:00', 'status' => 'draft' );
+$good = array( 'title' => 'Episode 1: The Start', 'description' => 'Hello', 'show_notes' => '<p>Notes <a href="https://x.example">link</a></p><script>alert(1)</script>', 'explicit' => 'no', 'published' => '2026-01-15T09:30', 'season' => '2', 'episode' => '1', 'type' => 'bonus', 'duration' => '1:00:00', 'status' => 'draft' );
 $r = PodPub_Episodes::sanitize( $good, PodPub_Episodes::defaults(), false );
 check( 'form: good draft has no errors', $r['errors'] === array() );
 check( 'form: script tag removed from show notes, links kept', false === strpos( $r['data']['show_notes'], '<script' ) && false !== strpos( $r['data']['show_notes'], '<a href=' ) );
 check( 'form: values kept', $r['data']['season'] === 2 && $r['data']['episode'] === 1 && $r['data']['type'] === 'bonus' && $r['data']['duration'] === 3600 );
 $r = PodPub_Episodes::sanitize( array(), PodPub_Episodes::defaults(), false );
-check( 'form: empty gives title, description, date errors', count( $r['errors'] ) === 3 );
+check( 'form: empty gives title, description, date errors', count( $r['errors'] ) === 4 );
 $r = PodPub_Episodes::sanitize( array_merge( $good, array( 'season' => '0', 'episode' => 'x', 'duration' => 'zz' ) ), PodPub_Episodes::defaults(), false );
 check( 'form: bad season, episode, duration each refused', count( $r['errors'] ) === 3 );
 $r = PodPub_Episodes::sanitize( array_merge( $good, array( 'status' => 'published' ) ), PodPub_Episodes::defaults(), false );
@@ -143,9 +143,9 @@ $r = esave( 5, 0, array_merge( $good, array( 'title' => 'No Audio', 'status' => 
 check( 'create: publishing without audio refused, no record and no folder made', count( $r['errors'] ) === 1 && count( $GLOBALS['posts'] ) === $before && ! is_dir( "$pf/No_Audio" ) );
 $r = esave( 5, 0, array_merge( $good, array( 'title' => 'Draft Idea' ) ), up( put( "$tmp/in/up3.mp3", $MP3 ), 'd.mp3' ) );
 check( 'create: draft with audio is saved but not in the feed', $r['errors'] === array() && feed_dom( "$pf/$pdir.xml" )->evaluate( 'count(//item)' ) === 1.0 );
-$r = esave( 5, 0, array_merge( $pub, array( 'title' => 'From The Future', 'published' => '2099-01-01T00:00' ) ), up( put( "$tmp/in/up4.mp3", $MP3 ), 'f.mp3' ) );
+$r = esave( 5, 0, array_merge( $pub, array( 'title' => 'From The Future', 'explicit' => 'no', 'published' => '2099-01-01T00:00' ) ), up( put( "$tmp/in/up4.mp3", $MP3 ), 'f.mp3' ) );
 check( 'create: future-dated episode left out of the feed with a warning', $r['errors'] === array() && count( $r['warnings'] ) === 1 && feed_dom( "$pf/$pdir.xml" )->evaluate( 'count(//item)' ) === 1.0 );
-$r = esave( 5, 0, array_merge( $pub, array( 'title' => 'Older One', 'published' => '2025-06-01T08:00' ) ), up( put( "$tmp/in/up5.mp3", $MP3 ), 'o.mp3' ) );
+$r = esave( 5, 0, array_merge( $pub, array( 'title' => 'Older One', 'explicit' => 'no', 'published' => '2025-06-01T08:00' ) ), up( put( "$tmp/in/up5.mp3", $MP3 ), 'o.mp3' ) );
 $x = feed_dom( "$pf/$pdir.xml" );
 check( 'feed: newest first', $x->evaluate( 'count(//item)' ) === 2.0 && $x->evaluate( 'string(//item[1]/title)' ) === 'Episode 1: The Start' && $x->evaluate( 'string(//item[2]/title)' ) === 'Older One' );
 $r = esave( 5, 0, array_merge( $good, array( 'title' => 'Episode 1: The Start' ) ) );

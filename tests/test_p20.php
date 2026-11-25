@@ -53,8 +53,8 @@ $e = array(); $f = PodPub_P20::funding( array( 'funding' => array( array( 'url' 
 check( 'funding: missing message becomes the default, Support the show!', $e === array() && $f[0]['message'] === 'Support the show!' );
 $e = array(); PodPub_P20::funding( array( 'funding' => array( array( 'url' => 'https://example.com', 'message' => str_repeat( 'a', 129 ) ) ) ), $e );
 check( 'funding: message over 128 refused', count( $e ) === 1 );
-$e = array(); PodPub_P20::funding( array( 'funding' => array_fill( 0, 11, array( 'url' => 'https://example.com', 'message' => 'x' ) ) ), $e );
-check( 'funding: more than 10 refused', count( $e ) === 1 );
+$e = array(); PodPub_P20::funding( array( 'funding' => array_fill( 0, 2, array( 'url' => 'https://example.com', 'message' => 'x' ) ) ), $e );
+check( 'funding: more than one refused (only one funding tag is used)', count( $e ) === 1 );
 $e = array(); PodPub_P20::funding( array( 'funding' => array( array( 'url' => 'https://exa mple.com', 'message' => 'x' ) ) ), $e );
 check( 'funding: address with a space refused', count( $e ) === 1 );
 
@@ -169,7 +169,7 @@ check( 'podcast: tags can be saved before the details (feed written later)', $r[
 PodPub_Feeds::save_details( 5, array( 'title' => 'My Show', 'description' => 'About', 'language' => 'en', 'explicit' => 'no' ) );
 check( 'podcast: saving the main details keeps the tags', PodPub_Details::get( 5 )['funding'][0]['message'] === 'Fund us' );
 $in = array(
-	'funding'  => array( array( 'url' => 'https://example.com/donate?a=1&b=2', 'message' => 'Fish & "Chips"' ), array( 'url' => 'https://example.com/patreon', 'message' => 'Patreon' ) ),
+	'funding'  => array( array( 'url' => 'https://example.com/donate?a=1&b=2', 'message' => 'Fish & "Chips"' ) ),
 	'locations' => array( array( 'name' => 'Melbourne', 'rel' => 'creator', 'geo' => '-37.8136,144.9631', 'osm' => 'R2316741', 'country' => 'AU' ), array( 'name' => 'Dreamworld', 'country' => 'AU' ) ),
 	'persons'  => array( array( 'name' => 'Jo', 'role' => 'host', 'group' => 'cast', 'img' => 'https://example.com/jo.jpg', 'href' => 'https://example.com/jo' ) ),
 	'license_name' => 'cc-by-4.0', 'license_url' => 'https://creativecommons.org/licenses/by/4.0/',
@@ -182,7 +182,7 @@ $r = PodPub_Feeds::save_p20( 5, $in );
 check( 'podcast: all tags saved and the feed written', $r['errors'] === array() && $r['written'] );
 $x = feed_dom( "$pf/$pdir.xml" );
 $dom = new DOMDocument(); check( 'feed: still well-formed with all tags', $dom->load( "$pf/$pdir.xml" ) );
-check( 'feed: two funding links, with & and quotes escaped correctly', n( $x->evaluate( 'count(/rss/channel/podcast:funding)' ) ) === 2.0 && $x->evaluate( 'string(/rss/channel/podcast:funding[1]/@url)' ) === 'https://example.com/donate?a=1&b=2' && $x->evaluate( 'string(/rss/channel/podcast:funding[1])' ) === 'Fish & "Chips"' );
+check( 'feed: one funding link, with & and quotes escaped correctly', n( $x->evaluate( 'count(/rss/channel/podcast:funding)' ) ) === 1.0 && $x->evaluate( 'string(/rss/channel/podcast:funding[1]/@url)' ) === 'https://example.com/donate?a=1&b=2' && $x->evaluate( 'string(/rss/channel/podcast:funding[1])' ) === 'Fish & "Chips"' );
 check( 'feed: location with rel, geo, osm and country', $x->evaluate( 'string(/rss/channel/podcast:location[1])' ) === 'Melbourne' && $x->evaluate( 'string(/rss/channel/podcast:location[1]/@rel)' ) === 'creator' && $x->evaluate( 'string(/rss/channel/podcast:location[1]/@geo)' ) === 'geo:-37.8136,144.9631' && $x->evaluate( 'string(/rss/channel/podcast:location[1]/@osm)' ) === 'R2316741' && $x->evaluate( 'string(/rss/channel/podcast:location[1]/@country)' ) === 'AU' );
 check( 'feed: second location, rel defaults to subject, no empty attributes', $x->evaluate( 'string(/rss/channel/podcast:location[2])' ) === 'Dreamworld' && $x->evaluate( 'string(/rss/channel/podcast:location[2]/@rel)' ) === 'subject' && $x->evaluate( 'count(/rss/channel/podcast:location[2]/@geo | /rss/channel/podcast:location[2]/@osm)' ) == 0 );
 check( 'feed: person', $x->evaluate( 'string(/rss/channel/podcast:person)' ) === 'Jo' && $x->evaluate( 'string(/rss/channel/podcast:person/@role)' ) === 'host' && $x->evaluate( 'string(/rss/channel/podcast:person/@group)' ) === 'cast' && $x->evaluate( 'string(/rss/channel/podcast:person/@img)' ) === 'https://example.com/jo.jpg' && $x->evaluate( 'string(/rss/channel/podcast:person/@href)' ) === 'https://example.com/jo' );
@@ -209,7 +209,7 @@ check( 'podcast: a keysend value block saved by 0.7.0 is left out of the feed', 
 check( 'podcast: unknown podcast refused', count( PodPub_Feeds::save_p20( 99, $in )['errors'] ) === 1 );
 
 // ---- saving for an episode ----
-$ep = array( 'title' => 'Ep One', 'description' => 'D', 'published' => '2026-01-15T09:30', 'status' => 'published', 'audio_source' => 'external', 'audio_url' => 'https://cdn.example.net/one.mp3', 'audio_size' => '1000', 'duration' => '10:00' );
+$ep = array( 'title' => 'Ep One', 'description' => 'D', 'explicit' => 'no', 'published' => '2026-01-15T09:30', 'status' => 'published', 'audio_source' => 'external', 'audio_url' => 'https://cdn.example.net/one.mp3', 'audio_size' => '1000', 'duration' => '10:00' );
 $GLOBALS['probe_unused'] = true;
 function wp_safe_remote_head() { return new WP_Error( 'x', 'offline' ); }
 $epin = array_merge( $ep, array(

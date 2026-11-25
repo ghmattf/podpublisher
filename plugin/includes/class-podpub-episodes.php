@@ -201,7 +201,7 @@ class PodPub_Episodes {
 	 * @param bool  $has_audio_after Whether the episode will have an audio file once saved (existing or just uploaded).
 	 * @return array { data: array, title: string, errors: string[] }
 	 */
-	public static function sanitize( $in, $current, $has_audio_after ) {
+	public static function sanitize( $in, $current, $has_audio_after, $require_explicit = true ) {
 		$in     = is_array( $in ) ? $in : array();
 		$errors = array();
 		$get    = function ( $k ) use ( $in ) {
@@ -255,8 +255,10 @@ class PodPub_Episodes {
 		}
 
 		$explicit = strtolower( $get( 'explicit' ) );
-		if ( ! in_array( $explicit, array( '', 'yes', 'no' ), true ) ) {
-			$errors[]  = 'Choose yes, no or "same as the podcast" for explicit content.';
+		if ( '' === $explicit && ! $require_explicit ) {
+			$explicit = ''; // An adopted feed item with no explicit tag stays as it was.
+		} elseif ( ! in_array( $explicit, array( 'yes', 'no' ), true ) ) {
+			$errors[]  = 'Choose yes or no for whether this episode is explicit.';
 			$explicit = '';
 		}
 		$data['explicit'] = $explicit;

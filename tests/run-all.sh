@@ -26,5 +26,8 @@ step "Delete podcast: records, episodes, optional folder removal" php test_delet
 step "Location search: parsing, cache, one-per-second lock, settings, OSM address" php test_geo.php
 step "Adopt a feed: read, report lost tags, confirm, in-place write" php test_adopt.php
 step "Adopt a feed screen and confirm handler" php test_adopt_admin.php
+step "Install zip: plugin folder is named podpublisher inside the zip (so WordPress upgrades, not installs a second plugin)" bash -c 'z=$(mktemp -u).zip; ./build-zip.sh "$z" >/dev/null && rm -f "$z"'
+step "Admin screen script is valid JavaScript" node -e "
+const s=require('fs').readFileSync('../plugin/includes/class-podpub-admin.php','utf8');const m=s.match(/<<<'JS'\\n([\\s\\S]*?)\\nJS;/);if(!m)process.exit(1);new Function(m[1]);"
 echo; [ $fail -eq 0 ] && echo "ALL CHECKS PASSED" || echo "SOME CHECKS FAILED"
 exit $fail
