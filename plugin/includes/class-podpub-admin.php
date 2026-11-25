@@ -455,11 +455,15 @@ class PodPub_Admin {
 .podpub-dialog .podpub-geo-list li{margin:4px 0}
 .podpub-dialog .podpub-geo-or{margin:10px 0 0;font-weight:600}
 .podpub-tabs [hidden]{display:none!important}
-.podpub-livebox{margin-top:22px}
+.podpub-livebox{margin-bottom:22px}
 .podpub-chunk-ui{display:none}
 .podpub-chunk-on .podpub-chunk-ui{display:block}
 .podpub-chunk-on .podpub-chunk-plain{display:none}
 .podpub-chunk progress{width:min(420px,100%);height:14px;display:block;margin:8px 0}
+.podpub-audio-slot progress{width:100%;height:16px;display:block;margin:8px 0}
+.podpub-audio-dlg .podpub-dialog-box{min-width:min(560px,86vw)}
+.podpub-audio-info p{margin:4px 0}
+.podpub-audio-pending{color:var(--pp-good,#0a6b2d);font-weight:600}
 .podpub-chunk-status{margin:4px 0}
 .podpub-chunk-status.podpub-bad{color:var(--pp-bad)}
 CSS;
@@ -587,46 +591,86 @@ addBtn.addEventListener("click",function(){openDialog(null);});
 render();
 });
 document.querySelectorAll("[data-podpub-chunk]").forEach(function(box){
-var inp=box.querySelector("input[type=file]"),go=box.querySelector(".podpub-chunk-go"),bar=box.querySelector("progress"),st=box.querySelector(".podpub-chunk-status"),hid=box.querySelector("input[type=hidden]");
+var inp=box.querySelector("input[type=file]"),go=box.querySelector(".podpub-chunk-go"),live=box.querySelector(".podpub-chunk-live"),bar=live&&live.querySelector("progress"),st=live&&live.querySelector(".podpub-chunk-status"),hid=box.querySelector("input[type=hidden]");
 var url=box.getAttribute("data-url"),nonce=box.getAttribute("data-nonce"),csize=parseInt(box.getAttribute("data-chunk"),10)||1048576;
-if(!inp||!go||!window.XMLHttpRequest||!window.FormData||!window.Blob||!Blob.prototype.slice)return;
+var slot=document.getElementById(box.getAttribute("data-slot")||""),fields=document.getElementById(box.getAttribute("data-fields")||""),home=live?live.parentNode:null;
+if(!inp||!go||!live||!window.XMLHttpRequest||!window.FormData||!window.Blob||!Blob.prototype.slice)return;
 box.classList.add("podpub-chunk-on");inp.removeAttribute("name");
-var busy=false,form=inp.form;
+var busy=false,cancelled=false,xhr=null,form=inp.form;
 function fmt(n){return n>=1048576?(n/1048576).toFixed(1)+" MB":Math.max(1,Math.round(n/1024))+" KB";}
 function say(t,bad){st.textContent=t;st.className="podpub-chunk-status"+(bad?" podpub-bad":"");}
 function rid(){var a=new Uint8Array(16);(window.crypto||window.msCrypto).getRandomValues(a);var s="";for(var i=0;i<16;i++)s+=("0"+a[i].toString(16)).slice(-2);return s;}
+function ev(state){box.dispatchEvent(new CustomEvent("podpub-upload",{bubbles:true,detail:{state:state}}));}
+function show(on){if(slot&&fields){if(on){slot.appendChild(live);fields.hidden=true;}else{home.appendChild(live);fields.hidden=false;}}}
+box.podpubAbort=function(){cancelled=true;if(xhr)xhr.abort();};
+box.podpubUploading=function(){return busy;};
 function send(id,file,i,total,done){
 var tries=0;
 (function attempt(){
-var x=new XMLHttpRequest(),d=new FormData(),from=i*csize,part=file.slice(from,Math.min(file.size,from+csize));
+if(cancelled){done("cancelled");return;}
+var x=new XMLHttpRequest(),d=new FormData(),from=i*csize,part=file.slice(from,Math.min(file.size,from+csize));xhr=x;
 d.append("action","podpub_chunk");d.append("nonce",nonce);d.append("id",id);d.append("index",i);d.append("total",total);d.append("name",file.name);d.append("size",file.size);d.append("chunk",part,"chunk.bin");
 x.open("POST",url);
 x.upload.onprogress=function(e){if(e.lengthComputable){bar.value=Math.min(file.size,from+e.loaded);}};
+x.onabort=function(){done("cancelled");};
 x.onload=function(){var j=null;try{j=JSON.parse(x.responseText);}catch(e){}
 if(j&&j.success){done(null);return;}
 if(j&&j.data&&j.data.message){done(j.data.message);return;}
 retry("The server sent an unexpected reply (code "+x.status+").");};
 x.onerror=function(){retry("The connection was lost.");};
-function retry(m){tries++;if(tries<4){say(m+" Trying again…",true);setTimeout(attempt,1000*tries);}else{done(m+" Upload stopped; press Upload to start again.");}}
+function retry(m){if(cancelled){done("cancelled");return;}tries++;if(tries<4){say(m+" Trying again…",true);setTimeout(attempt,1000*tries);}else{done(m+" Upload stopped; press Upload to start again.");}}
 x.send(d);
 })();}
 go.addEventListener("click",function(){
 if(busy)return;var f=inp.files&&inp.files[0];
 if(!f){say("Choose a file first.",true);return;}
-var total=Math.ceil(f.size/csize),id=rid();busy=true;go.disabled=inp.disabled=true;hid.value="";bar.hidden=false;bar.max=f.size;bar.value=0;say("Uploading "+f.name+" ("+fmt(f.size)+")…");
+var total=Math.ceil(f.size/csize),id=rid();busy=true;cancelled=false;hid.value="";box.removeAttribute("data-uploaded");bar.hidden=false;bar.max=f.size;bar.value=0;say("Uploading "+f.name+" ("+fmt(f.size)+")…");show(true);ev("start");
 var i=0;
+function end(){busy=false;show(false);ev("end");}
 function next(){
-if(i>=total){hid.value=id;bar.value=f.size;busy=false;go.disabled=inp.disabled=false;say("Uploaded "+f.name+" ("+fmt(f.size)+"). It is used when you press Save.");return;}
+if(i>=total){hid.value=id;bar.value=f.size;box.setAttribute("data-uploaded",f.name+" ("+fmt(f.size)+")");say("Uploaded "+f.name+" ("+fmt(f.size)+"). Press OK to use it.");end();return;}
 send(id,f,i,total,function(err){
-if(err){busy=false;go.disabled=inp.disabled=false;bar.hidden=true;say(err,true);return;}
+if(err){bar.hidden=true;say(err==="cancelled"?"Upload cancelled.":err,err!=="cancelled");end();return;}
 i++;next();});}
 next();});
-inp.addEventListener("change",function(){if(!busy){hid.value="";bar.hidden=true;say(inp.files&&inp.files.length?"Press Upload to send the file. Saving does not upload it.":"");}});
+inp.addEventListener("change",function(){if(!busy){hid.value="";box.removeAttribute("data-uploaded");bar.hidden=true;say(inp.files&&inp.files.length?"Press Upload to send the file. Choosing it does not upload it.":"");}});
 if(form)form.addEventListener("submit",function(e){
 var s=document.getElementById("ep_src"),useUp=!s||s.value==="upload";
 if(busy){e.preventDefault();alert("The audio is still uploading. Wait for it to finish, then press Save.");return;}
-if(useUp&&inp.files&&inp.files.length&&!hid.value){e.preventDefault();say("Press Upload to send this file first, or choose another audio source.",true);inp.focus();}});
+if(useUp&&inp.files&&inp.files.length&&!hid.value){e.preventDefault();say("Press Upload to send this file first, or choose another audio source.",true);box.dispatchEvent(new CustomEvent("podpub-show",{bubbles:true}));inp.focus();}});
 window.addEventListener("beforeunload",function(e){if(busy){e.preventDefault();e.returnValue="";}});
+});
+document.querySelectorAll("[data-podpub-audio]").forEach(function(dlg){
+var form=dlg.closest("form");if(!form||!dlg.showModal)return;
+var open=form.querySelector("[data-podpub-audio-open]"),ok=dlg.querySelector("[data-podpub-audio-ok]"),cancel=dlg.querySelector("[data-podpub-audio-cancel]"),err=dlg.querySelector(".podpub-dialog-err"),pend=form.querySelector(".podpub-audio-pending"),box=dlg.querySelector("[data-podpub-chunk]"),src=dlg.querySelector("#ep_src");
+var fields=[].slice.call(dlg.querySelectorAll("input,select,textarea")),snap=[],note="",upl=null,uploading=false,cur=dlg.getAttribute("data-current-url")||"";
+function st(){return box?box.querySelector(".podpub-chunk-status"):null;}
+function take(){snap=fields.map(function(f){return f.type==="checkbox"||f.type==="radio"?f.checked:(f.type==="file"?"":f.value);});var s=st();note=s?s.textContent:"";upl=box?box.getAttribute("data-uploaded"):null;}
+function put(){fields.forEach(function(f,i){if(f.type==="checkbox"||f.type==="radio")f.checked=snap[i];else if(f.type==="file")f.value="";else f.value=snap[i];});
+var s=st();if(s){s.textContent=note;s.className="podpub-chunk-status";}if(box){if(upl)box.setAttribute("data-uploaded",upl);else box.removeAttribute("data-uploaded");var b=box.querySelector("progress");if(b)b.hidden=true;}
+if(src)src.dispatchEvent(new Event("change"));}
+function pending(){
+var t="",v=src?src.value:"";
+if(v==="upload"){var h=box&&box.querySelector("input[type=hidden]");if(h&&h.value){t="New audio ready: "+(box.getAttribute("data-uploaded")||box.getAttribute("data-staged")||"uploaded file")+".";}}
+else if(v==="folder"){var p=dlg.querySelector("[name='podpub_ep[audio_pick]']");if(p&&p.value)t="New audio chosen from the episode folder: "+p.value+".";}
+else if(v==="external"){var u=dlg.querySelector("[name='podpub_ep[audio_url]']");if(u&&u.value.trim()!==""&&u.value.trim()!==cur)t="New audio address: "+u.value.trim()+".";}
+if(pend){pend.textContent=t?t+" It becomes the episode audio when you press Save.":"";pend.hidden=t==="";}}
+function openIt(){take();err.textContent="";dlg.showModal();}
+function closeIt(){if(dlg.open)dlg.close();}
+function doCancel(){
+if(uploading){if(!confirm("Cancel the upload in progress?"))return;if(box&&box.podpubAbort)box.podpubAbort();uploading=false;ok.disabled=false;}
+put();pending();closeIt();}
+function doOk(){
+if(uploading)return;
+var v=src?src.value:"";
+if(v==="upload"){var f=box&&box.querySelector("input[type=file]"),h=box&&box.querySelector("input[type=hidden]");if(f&&f.files&&f.files.length&&h&&!h.value){err.textContent="Press Upload to send the file first.";return;}}
+pending();closeIt();}
+if(open)open.addEventListener("click",openIt);
+ok.addEventListener("click",doOk);cancel.addEventListener("click",doCancel);
+dlg.addEventListener("cancel",function(e){e.preventDefault();doCancel();});
+dlg.addEventListener("podpub-upload",function(e){uploading=e.detail.state==="start";ok.disabled=uploading;err.textContent="";});
+dlg.addEventListener("podpub-show",function(){if(!dlg.open)openIt();});
+pending();
 });
 });
 })();
@@ -1107,8 +1151,12 @@ JS;
 		$ed       = PodPub_Episodes::dir_name( $eid );
 		$url      = PodPub_Storage::base_url();
 		$src_now  = $v( 'audio_source', $d['audio_source'] ? $d['audio_source'] : ( '' !== $d['audio'] ? 'upload' : 'upload' ) );
-		echo '<tr><th scope="row"><label for="ep_src">Audio</label></th><td>';
-		if ( PodPub_Episodes::has_audio( $d ) ) {
+		$has_audio   = PodPub_Episodes::has_audio( $d );
+		$staged_id   = $v( 'audio_staged', '' );
+		$staged_info = PodPub_Chunks::valid_id( $staged_id ) ? PodPub_Chunks::info( $staged_id, get_current_user_id() ) : null;
+		$exts        = esc_html( strtoupper( implode( ', ', array_keys( PodPub_Episodes::audio_types() ) ) ) );
+		echo '<tr><th scope="row"><label for="ep_audio_open">Audio</label></th><td><div class="podpub-audio-info">';
+		if ( $has_audio ) {
 			if ( '' !== $d['external_url'] ) {
 				echo '<p>Current audio, hosted elsewhere: <code>' . esc_html( $d['external_url'] ) . '</code>';
 			} else {
@@ -1116,25 +1164,31 @@ JS;
 			}
 			echo ' (' . esc_html( $d['audio_size'] ? size_format( $d['audio_size'] ) : 'size unknown' ) . ', ' . esc_html( $d['audio_type'] ) . ')';
 			if ( '' !== $d['audio'] && '' !== $url ) {
-				echo ' <a href="' . esc_url( $url . '/' . $pd . '/' . $ed . '/' . $d['audio'] ) . '" target="_blank" rel="noopener">Open</a>';
+				echo ' <a class="button button-small" href="' . esc_url( $url . '/' . $pd . '/' . $ed . '/' . $d['audio'] ) . '" target="_blank" rel="noopener">Open</a>';
 			}
-			echo '</p>';
+			echo '</p><p>Duration: ' . esc_html( $d['duration'] ? PodPub_Episodes::format_duration( $d['duration'] ) : 'not known' ) . '</p>';
+		} else {
+			echo '<p class="description">No audio yet.</p>';
 		}
-		echo '<select id="ep_src" name="podpub_ep[audio_source]">';
+		echo '<p class="podpub-audio-pending"' . ( $staged_info ? '' : ' hidden' ) . '>' . ( $staged_info ? esc_html( 'New audio ready: ' . $staged_info['name'] . ' (' . size_format( $staged_info['size'] ) . '). It becomes the episode audio when you press Save.' ) : '' ) . '</p>';
+		echo '<p><button type="button" class="button" id="ep_audio_open" data-podpub-audio-open>' . ( $has_audio ? 'Replace audio' : 'Add audio' ) . '</button></p>';
+		echo '</div>';
+
+		echo '<dialog class="podpub-dialog podpub-audio-dlg" data-podpub-audio data-current-url="' . esc_attr( $d['external_url'] ) . '"><div class="podpub-dialog-box">';
+		echo '<h2>' . ( $has_audio ? 'Replace audio' : 'Add audio' ) . '</h2>';
+		echo '<div id="ep_audio_fields">';
+		echo '<p><select id="ep_src" name="podpub_ep[audio_source]">';
 		foreach ( array( 'upload' => 'Upload a file', 'folder' => 'Pick a file I copied into the episode folder', 'external' => 'Use a file hosted elsewhere' ) as $k => $label ) {
 			echo '<option value="' . esc_attr( $k ) . '"' . selected( $src_now, $k, false ) . '>' . esc_html( $label ) . '</option>';
 		}
-		echo '</select><p class="description">Choosing a new file, or entering a new address, replaces the current audio. Leave the fields empty to keep it.</p>';
+		echo '</select></p><p class="description">Choosing new audio replaces the current audio when you press Save. Leave the fields empty to keep it.</p>';
 
-		$staged_id   = $v( 'audio_staged', '' );
-		$staged_info = PodPub_Chunks::valid_id( $staged_id ) ? PodPub_Chunks::info( $staged_id, get_current_user_id() ) : null;
-		$exts        = esc_html( strtoupper( implode( ', ', array_keys( PodPub_Episodes::audio_types() ) ) ) );
-		echo '<div data-podpub-src="upload"><div class="podpub-chunk" data-podpub-chunk data-url="' . esc_url( admin_url( 'admin-ajax.php' ) ) . '" data-nonce="' . esc_attr( wp_create_nonce( 'podpub_chunk' ) ) . '" data-chunk="' . (int) PodPub_Chunks::chunk_size() . '">';
+		echo '<div data-podpub-src="upload"><div class="podpub-chunk" data-podpub-chunk data-slot="ep_audio_slot" data-fields="ep_audio_fields"' . ( $staged_info ? ' data-staged="' . esc_attr( $staged_info['name'] . ' (' . size_format( $staged_info['size'] ) . ')' ) . '"' : '' ) . ' data-url="' . esc_url( admin_url( 'admin-ajax.php' ) ) . '" data-nonce="' . esc_attr( wp_create_nonce( 'podpub_chunk' ) ) . '" data-chunk="' . (int) PodPub_Chunks::chunk_size() . '">';
 		echo '<p><input type="file" id="ep_audio" name="podpub_audio" accept=".' . esc_attr( implode( ',.', array_keys( PodPub_Episodes::audio_types() ) ) ) . '"></p>';
-		echo '<div class="podpub-chunk-ui"><p><button type="button" class="button podpub-chunk-go">Upload</button></p><progress max="100" value="0" hidden></progress>';
-		echo '<p class="podpub-chunk-status" role="status">' . ( $staged_info ? esc_html( 'Uploaded ' . $staged_info['name'] . ' (' . size_format( $staged_info['size'] ) . '). It is used when you press Save.' ) : '' ) . '</p></div>';
+		echo '<div class="podpub-chunk-ui"><p><button type="button" class="button podpub-chunk-go">Upload</button></p>';
+		echo '<div class="podpub-chunk-live"><progress max="100" value="0" hidden></progress><p class="podpub-chunk-status" role="status">' . ( $staged_info ? esc_html( 'Uploaded ' . $staged_info['name'] . ' (' . size_format( $staged_info['size'] ) . '). Press OK to use it.' ) : '' ) . '</p></div></div>';
 		echo '<input type="hidden" name="podpub_ep[audio_staged]" value="' . esc_attr( $staged_info ? $staged_id : '' ) . '">';
-		echo '<p class="description">' . $exts . '. The Upload button sends the file in pieces, so large files work; it is separate from Save, which then uses the uploaded file. <span class="podpub-chunk-plain">Your server allows direct uploads up to ' . esc_html( size_format( wp_max_upload_size() ) ) . '; for a bigger file use the other options.</span></p></div></div>';
+		echo '<p class="description">' . $exts . '. The Upload button sends the file in pieces, so large files work. <span class="podpub-chunk-plain">Your server allows direct uploads up to ' . esc_html( size_format( wp_max_upload_size() ) ) . '; for a bigger file use the other options.</span></p></div></div>';
 
 		echo '<div data-podpub-src="folder">';
 		if ( $eid ) {
@@ -1161,10 +1215,15 @@ JS;
 			echo '<option value="' . esc_attr( $k ) . '"' . selected( $v( 'audio_ext_type', '' ), $k, false ) . '>' . esc_html( strtoupper( $k ) ) . '</option>';
 		}
 		echo '</select></p><p class="description">The address must start with https://. The size and type are asked from the other server when you leave them empty. The file itself is not checked, so make sure the address plays in a browser.</p></div>';
+		echo '<p><label for="ep_dur"><strong>Duration</strong></label><br><input type="text" id="ep_dur" class="small-text" name="podpub_ep[duration]" placeholder="1:02:30" value="' . esc_attr( $v( 'duration', $d['duration'] ? PodPub_Episodes::format_duration( $d['duration'] ) : '' ) ) . '"></p><p class="description">Hours:minutes:seconds. Leave empty to read it from the audio file when possible.</p>';
+		echo '</div>';
+		echo '<div id="ep_audio_slot" class="podpub-audio-slot"></div>';
+		echo '<p class="podpub-dialog-err" role="alert"></p>';
+		echo '<div class="podpub-dialog-foot"><button type="button" class="button button-primary" data-podpub-audio-ok>OK</button><button type="button" class="button" data-podpub-audio-cancel>Cancel</button></div>';
+		echo '</div></dialog>';
 		echo '<script>(function(){var s=document.getElementById("ep_src");if(!s)return;function f(){document.querySelectorAll("[data-podpub-src]").forEach(function(e){e.hidden=e.getAttribute("data-podpub-src")!==s.value;});}s.addEventListener("change",f);f();})();</script>';
 		echo '</td></tr>';
 		echo '<tr><th scope="row"><label for="ep_date">Date and time</label></th><td><input type="datetime-local" id="ep_date" name="podpub_ep[published]" required value="' . esc_attr( $v( 'published', PodPub_Episodes::format_date( $d['published'] ) ) ) . '"><p class="description">In the site time zone.</p></td></tr>';
-		echo '<tr><th scope="row"><label for="ep_dur">Duration</label></th><td><input type="text" id="ep_dur" class="small-text" name="podpub_ep[duration]" placeholder="1:02:30" value="' . esc_attr( $v( 'duration', $d['duration'] ? PodPub_Episodes::format_duration( $d['duration'] ) : '' ) ) . '"><p class="description">Hours:minutes:seconds. Leave empty to read it from the audio file when possible.</p></td></tr>';
 		echo '<tr><th scope="row"><label for="ep_season">Season</label></th><td><input type="number" min="1" id="ep_season" class="small-text" name="podpub_ep[season]" value="' . esc_attr( $v( 'season', $d['season'] ? $d['season'] : '' ) ) . '"></td></tr>';
 		echo '<tr><th scope="row"><label for="ep_num">Episode number</label></th><td><input type="number" min="1" id="ep_num" class="small-text" name="podpub_ep[episode]" value="' . esc_attr( $v( 'episode', $d['episode'] ? $d['episode'] : '' ) ) . '"></td></tr>';
 		$type = $v( 'type', $d['type'] );
@@ -1198,7 +1257,7 @@ JS;
 				$by[ $idm[1] ] = $row;
 			}
 		}
-		$placed = array( 'ep_title', 'ep_desc', 'ep_date', 'ep_status', 'ep_post', 'ep_type', 'ep_season', 'ep_num', 'ep_ex', 'ep_src', 'ep_dur', 'ep_notes', 'ep_sub', 'ep_sum', 'ep_kw', 'ep_img' );
+		$placed = array( 'ep_title', 'ep_desc', 'ep_date', 'ep_status', 'ep_post', 'ep_type', 'ep_season', 'ep_num', 'ep_ex', 'ep_audio_open', 'ep_notes', 'ep_sub', 'ep_sum', 'ep_kw', 'ep_img' );
 		$group  = function ( $ids ) use ( $by, $placed ) {
 			$h = '<table class="form-table" role="presentation">';
 			foreach ( $ids as $k ) {
@@ -1215,7 +1274,7 @@ JS;
 		};
 		$tabs = array(
 			'episode' => array( 'label' => 'Episode', 'html' => $group( array( 'ep_title', 'ep_desc', 'ep_date', 'ep_status', 'ep_post', 'ep_type', 'ep_season', 'ep_num', 'ep_ex' ) ) ),
-			'audio'   => array( 'label' => 'Audio', 'html' => $group( array( 'ep_src', 'ep_dur' ) ) ),
+			'audio'   => array( 'label' => 'Audio', 'html' => $group( array( 'ep_audio_open' ) ) ),
 			'notes'   => array( 'label' => 'Notes and picture', 'html' => $group( array( 'ep_notes', 'ep_sub', 'ep_sum', 'ep_kw', 'ep_img' ) ) ),
 		);
 		ob_start();
@@ -1627,9 +1686,9 @@ JS;
 
 		// Episodes.
 		ob_start();
-		self::render_episode_list( $id );
 		$live_in = is_array( $notice ) && isset( $notice['form'] ) && 'live' === $notice['form'] && ! empty( $notice['input'] ) ? $notice['input'] : null;
 		self::render_live_form( $id, $d, $live_in );
+		self::render_episode_list( $id );
 		$tabs['episodes'] = array( 'label' => 'Episodes' . ( $eps ? ' (' . count( $eps ) . ')' : '' ), 'html' => ob_get_clean() );
 
 		// Details.

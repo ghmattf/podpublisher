@@ -94,6 +94,8 @@ check( 'new episode form: fields, upload, status, no delete button', false !== s
 check( 'new episode form: shows the server upload limit and the allowed types', false !== strpos( $h, '67108864 B' ) && false !== strpos( $h, 'MP3, M4A, OGG, OPUS, WAV, FLAC' ) );
 check( 'new episode form: Explicit starts blank (Choose...) and is required', false !== strpos( $h, '<option value="" selected>Choose&hellip;</option>' ) && false !== strpos( $h, 'name="podpub_ep[explicit]" required' ) );
 check( 'episode form: audio has a separate Upload button with progress bar, a hidden token for Save, and the data the script needs', false !== strpos( $h, 'data-podpub-chunk' ) && false !== strpos( $h, 'class="button podpub-chunk-go">Upload</button>' ) && false !== strpos( $h, '<progress' ) && false !== strpos( $h, 'name="podpub_ep[audio_staged]"' ) && false !== strpos( $h, 'data-nonce="nonce_podpub_chunk"' ) && false !== strpos( $h, 'data-chunk="' ) && false !== strpos( $h, 'name="podpub_audio"' ) );
+check( 'audio (new episode): Add audio button, rest of the audio section is in a pop-up with OK and Cancel, Duration is in the pop-up', false !== strpos( $h, 'data-podpub-audio-open>Add audio</button>' ) && false !== strpos( $h, '<dialog class="podpub-dialog podpub-audio-dlg"' ) && false !== strpos( $h, 'data-podpub-audio-ok>OK</button>' ) && false !== strpos( $h, 'data-podpub-audio-cancel>Cancel</button>' ) && preg_match( '#<dialog.*id="ep_dur".*</dialog>#s', $h ) && false !== strpos( $h, 'id="ep_audio_slot"' ) && false !== strpos( $h, 'data-slot="ep_audio_slot" data-fields="ep_audio_fields"' ) && false !== strpos( $h, 'No audio yet.' ) );
+check( 'audio: the Duration row is gone from the page (only in the pop-up)', 0 === preg_match( '#<tr><th[^>]*><label for="ep_dur"#', $h ) );
 foreach ( array( 'timesplits' => 'time split', 'chapters' => 'chapter', 'transcripts' => 'transcript', 'soundbites' => 'soundbite', 'enclosures' => 'alternate file', 'persons' => 'person', 'social' => 'comment link' ) as $k => $noun ) {
 	check( "episode form: $k is a list with Add/Edit/Remove ($noun)", false !== strpos( $h, 'data-podpub-list data-noun="' . $noun . '"' ) && false !== strpos( $h, 'name="podpub_ep[' . $k . '][0]' ) );
 }
@@ -133,6 +135,12 @@ $h = page( 5 );
 check( 'posts: podcast page has the WordPress posts tab with author, categories, page', false !== strpos( $h, 'data-tab="posts"' ) && false !== strpos( $h, 'name="podpub_posts[author]"' ) && false !== strpos( $h, 'Ann Author' ) && false !== strpos( $h, 'name="podpub_posts[categories][]" value="7"' ) && false !== strpos( $h, 'name="podpub_posts[page]"' ) && false !== strpos( $h, 'podpub_save_posts' ) );
 check( 'posts: delete podcast offers to trash posts and page', false !== strpos( $h, 'podpub_delete_posts' ) );
 
+// An episode that has audio: Replace audio, Open button, duration as plain text.
+$ae = PodPub_Episodes::save( 5, 0, array( 'title' => 'WithAudio', 'description' => 'D', 'explicit' => 'no', 'published' => '2026-03-01T09:30', 'status' => 'draft', 'duration' => '1:02:30', 'audio_source' => 'upload' ), array( 'error' => UPLOAD_ERR_OK, 'tmp_name' => ( function () use ( $tmp ) { @mkdir( "$tmp/in", 0755, true ); file_put_contents( "$tmp/in/w.mp3", "ID3\x04\x00\x00\x00\x00\x00\x00" . str_repeat( 'a', 200 ) ); return "$tmp/in/w.mp3"; } )(), 'name' => 'w.mp3' ) );
+$_GET['episode'] = (string) $ae['id'];
+$h = page( 5 );
+check( 'audio (episode with audio): Replace audio button, Open is a button, duration is plain text, no editable duration on the page', false !== strpos( $h, 'data-podpub-audio-open>Replace audio</button>' ) && preg_match( '#<a class="button button-small" href="[^"]*WithAudio\.mp3" target="_blank" rel="noopener">Open</a>#', $h ) && false !== strpos( $h, '<p>Duration: 1:02:30</p>' ) && 0 === preg_match( '#<tr><th[^>]*><label for="ep_dur"#', $h ) );
+unset( $_GET['episode'] );
 // Podcast page lists and the Live episodes move.
 unset( $_GET['episode'] );
 $h = page( 5 );
