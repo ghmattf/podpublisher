@@ -31,7 +31,7 @@ function wp_max_upload_size() { return 67108864; }
 class WP_Error { public $m; function __construct( $c, $m ) { $this->m = $m; } function get_error_message() { return $this->m; } }
 function is_wp_error( $x ) { return $x instanceof WP_Error; }
 
-foreach ( array( 'settings', 'storage', 'p20', 'images', 'details', 'episodes', 'feedxml', 'feeds' ) as $c ) { require __DIR__ . "/../plugin/includes/class-podpub-$c.php"; }
+foreach ( array( 'settings', 'storage', 'p20', 'images', 'details', 'posts', 'episodes', 'feedxml', 'feeds' ) as $c ) { require __DIR__ . "/../plugin/includes/class-podpub-$c.php"; }
 
 $fail = 0;
 
@@ -62,7 +62,7 @@ $pdir = PodPub_Feeds::dir_name( $pid );
 $base = array( 'title' => 'Show O', 'description' => 'About', 'language' => 'en', 'explicit' => 'no' );
 PodPub_Feeds::save_details( $pid, $base );
 check( 'op3: off by default', PodPub_Details::get( $pid )['op3'] === 0 );
-$ep = array( 'title' => 'One', 'description' => 'D', 'published' => '2026-01-10T09:00', 'status' => 'published', 'audio_source' => 'external', 'audio_url' => 'https://cdn.example.net/one.mp3', 'audio_size' => '1000', 'duration' => '10:00' );
+$ep = array( 'title' => 'One', 'description' => 'D', 'explicit' => 'no', 'published' => '2026-01-10T09:00', 'status' => 'published', 'audio_source' => 'external', 'audio_url' => 'https://cdn.example.net/one.mp3', 'audio_size' => '1000', 'duration' => '10:00' );
 $r = esave( $pid, 0, array_merge( $ep, array( 'enclosures' => array( array( 'uri' => 'https://cdn.example.net/one.mp4', 'type' => 'video/mp4', 'length' => '99' ) ) ) ) );
 $folder = "$tmp/uploads/podpublisher/$pdir";
 $x = feed_dom( "$folder/$pdir.xml" );

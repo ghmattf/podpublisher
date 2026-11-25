@@ -41,6 +41,9 @@ function wp_nonce_field() { echo '<input type="hidden" name="_wpnonce" value="n"
 function submit_button( $t = 'Save', $type = 'primary', $name = 'submit', $wrap = true ) { echo '<button class="' . $type . '">' . esc_html( $t ) . '</button>'; }
 function selected( $a, $b, $e = true ) { return (string) $a === (string) $b ? ' selected' : ''; }
 function checked( $a, $b, $e = true ) { return (string) $a === (string) $b ? ' checked' : ''; }
+function get_users( $a ) { return array( (object) array( 'ID' => 3, 'display_name' => 'Ann Author' ) ); }
+function get_categories( $a ) { return array( (object) array( 'term_id' => 7, 'name' => 'News' ) ); }
+function get_edit_post_link( $id ) { return 'https://example.com/wp-admin/post.php?post=' . $id; }
 function current_user_can() { return ! isset( $GLOBALS['can'] ) || $GLOBALS['can']; }
 class Stop extends Exception { public $p; }
 function wp_send_json_success( $d ) { $e = new Stop( 'ok' ); $e->p = array( 'success' => true, 'data' => $d ); throw $e; }
@@ -66,7 +69,7 @@ function add_action() {}
 class WP_Error { public $m; function __construct( $c, $m ) { $this->m = $m; } function get_error_message() { return $this->m; } }
 function is_wp_error( $x ) { return $x instanceof WP_Error; }
 
-foreach ( array( 'settings', 'storage', 'p20', 'images', 'geo', 'details', 'episodes', 'feedxml', 'feeds', 'admin' ) as $c ) { require __DIR__ . "/../plugin/includes/class-podpub-$c.php"; }
+foreach ( array( 'settings', 'storage', 'p20', 'images', 'geo', 'details', 'posts', 'episodes', 'feedxml', 'feeds', 'admin' ) as $c ) { require __DIR__ . "/../plugin/includes/class-podpub-$c.php"; }
 
 $fail = 0;
 function check( $name, $ok ) { global $fail; echo ( $ok ? 'ok   ' : 'FAIL ' ) . $name . "\n"; if ( ! $ok ) { $fail = 1; } }
@@ -89,13 +92,19 @@ $_GET['episode'] = 'new';
 $h = page( 5 );
 check( 'new episode form: fields, upload, status, no delete button', false !== strpos( $h, 'value="podpub_save_episode"' ) && false !== strpos( $h, 'name="podpub_audio"' ) && false !== strpos( $h, 'name="podpub_ep[published]"' ) && false !== strpos( $h, 'datetime-local' ) && false === strpos( $h, 'podpub_delete_episode' ) );
 check( 'new episode form: shows the server upload limit and the allowed types', false !== strpos( $h, '67108864 B' ) && false !== strpos( $h, 'MP3, M4A, OGG, OPUS, WAV, FLAC' ) );
+check( 'new episode form: Explicit starts blank (Choose...) and is required', false !== strpos( $h, '<option value="" selected>Choose&hellip;</option>' ) && false !== strpos( $h, 'name="podpub_ep[explicit]" required' ) );
+foreach ( array( 'timesplits' => 'time split', 'chapters' => 'chapter', 'transcripts' => 'transcript', 'soundbites' => 'soundbite', 'enclosures' => 'alternate file', 'persons' => 'person', 'social' => 'comment link' ) as $k => $noun ) {
+	check( "episode form: $k is a list with Add/Edit/Remove ($noun)", false !== strpos( $h, 'data-podpub-list data-noun="' . $noun . '"' ) && false !== strpos( $h, 'name="podpub_ep[' . $k . '][0]' ) );
+}
+check( 'episode form: funding is a single URL and message', false !== strpos( $h, 'name="podpub_ep[funding][0][url]"' ) && false === strpos( $h, 'name="podpub_ep[funding][1][url]"' ) );
+check( 'episode form: location list has the search popup data', false !== strpos( $h, 'data-noun="location" data-add="Add location"' ) );
 
-$r = PodPub_Episodes::save( 5, 0, array( 'title' => 'First <b>One</b>', 'description' => 'D', 'published' => '2026-01-15T09:30', 'status' => 'draft', 'duration' => '12:34', 'season' => '1', 'episode' => '3' ) );
+$r = PodPub_Episodes::save( 5, 0, array( 'title' => 'First <b>One</b>', 'description' => 'D', 'explicit' => 'no', 'published' => '2026-01-15T09:30', 'status' => 'draft', 'duration' => '12:34', 'season' => '1', 'episode' => '3' ) );
 $eid = $r['id'];
 unset( $_GET['episode'] );
 $h = page( 5 );
 check( 'podcast page: episode listed with date and status', false !== strpos( $h, 'First One' ) && false !== strpos( $h, '2026-01-15T09:30' ) && false !== strpos( $h, 'Draft' ) && false !== strpos( $h, "episode=$eid" ) );
-$r2 = PodPub_Episodes::save( 5, 0, array( 'title' => 'Hosted Elsewhere', 'description' => 'D', 'published' => '2026-01-16T09:30', 'status' => 'published', 'audio_source' => 'external', 'audio_url' => 'https://cdn.example.net/x.mp3', 'audio_size' => '1000', 'duration' => '1:00' ) );
+$r2 = PodPub_Episodes::save( 5, 0, array( 'title' => 'Hosted Elsewhere', 'description' => 'D', 'explicit' => 'no', 'published' => '2026-01-16T09:30', 'status' => 'published', 'audio_source' => 'external', 'audio_url' => 'https://cdn.example.net/x.mp3', 'audio_size' => '1000', 'duration' => '1:00' ) );
 $h = page( 5 );
 check( 'podcast page: published episode with an https audio address is not labelled "no audio"', $r2['errors'] === array() && false !== strpos( $h, 'Hosted Elsewhere' ) && false === strpos( $h, 'Published (no audio)' ) );
 $_GET['episode'] = (string) $eid;
@@ -106,13 +115,52 @@ check( 'edit episode form: unknown episode says not found', false !== strpos( pa
 $_GET['episode'] = 'abc';
 check( 'bad episode value falls back to the podcast page', false !== strpos( page( 5 ), 'name="podpub[title]"' ) && false !== strpos( page( 5 ), 'data-tab="details"' ) );
 
+// WordPress posts: episode prompt, posts tab, delete options.
+$_GET['episode'] = (string) $eid;
+$h = page( 5 );
+check( 'posts: episode form asks yes/no, default yes when there is no post', false !== strpos( $h, 'name="podpub_ep[wp_post]" value="yes" checked' ) && false !== strpos( $h, 'value="no"' ) && false !== strpos( $h, 'Create a WordPress post' ) && false === strpos( $h, 'podpub_delete_post' ) );
+update_post_meta( $eid, '_podpub_wp_post', 900 );
+$GLOBALS['posts'][900] = (object) array( 'ID' => 900, 'post_type' => 'post', 'post_status' => 'publish', 'post_title' => 'x', 'post_parent' => 0 );
+$h = page( 5 );
+check( 'posts: with an existing post the prompt warns, defaults to no, delete offers the post', false !== strpos( $h, 'Update the WordPress post' ) && false !== strpos( $h, 'replaces the post' ) && false !== strpos( $h, 'value="no" checked' ) && false !== strpos( $h, 'podpub_delete_post' ) );
+update_post_meta( 5, '_podpub_posts', array( 'enabled' => false ) );
+$h = page( 5 );
+check( 'posts: turned off, no prompt', false === strpos( $h, 'podpub_ep[wp_post]' ) );
+update_post_meta( 5, '_podpub_posts', array() );
+unset( $_GET['episode'] );
+$h = page( 5 );
+check( 'posts: podcast page has the WordPress posts tab with author, categories, page', false !== strpos( $h, 'data-tab="posts"' ) && false !== strpos( $h, 'name="podpub_posts[author]"' ) && false !== strpos( $h, 'Ann Author' ) && false !== strpos( $h, 'name="podpub_posts[categories][]" value="7"' ) && false !== strpos( $h, 'name="podpub_posts[page]"' ) && false !== strpos( $h, 'podpub_save_posts' ) );
+check( 'posts: delete podcast offers to trash posts and page', false !== strpos( $h, 'podpub_delete_posts' ) );
+
+// Podcast page lists and the Live episodes move.
+unset( $_GET['episode'] );
+$h = page( 5 );
+foreach ( array( 'location', 'person', 'block', 'recommended podcast', 'comment link' ) as $noun ) {
+	check( "podcast page: $noun is a list with Add/Edit/Remove", false !== strpos( $h, 'data-podpub-list data-noun="' . $noun . '"' ) );
+}
+preg_match( '#<section[^>]*data-tab="episodes".*?</section>#s', $h, $m1 );
+preg_match( '#<section[^>]*data-tab="p20".*?</section>#s', $h, $m2 );
+check( 'podcast page: Live episodes section is on the Episodes tab with its own Save and write feed button', ! empty( $m1 ) && false !== strpos( $m1[0], 'value="podpub_save_live"' ) && false !== strpos( $m1[0], 'name="podpub_p20[live][0][title]"' ) && false !== strpos( $m1[0], 'Save and write feed</button>' ) );
+check( 'podcast page: Live episodes no longer on the Podcasting 2.0 tab', ! empty( $m2 ) && false === strpos( $m2[0], 'podpub_p20[live]' ) && false === strpos( $m2[0], 'Live episodes' ) );
+$live = array( 'live' => array( array( 'title' => 'Launch', 'status' => 'pending', 'start' => '2030-06-01T20:00', 'url' => 'https://live.example.com/s', 'type' => '' ) ) );
+$r = PodPub_Feeds::save_live( 5, $live );
+check( 'live: saved from the Episodes tab and the feed written', $r['errors'] === array() && $r['written'] && PodPub_Details::get( 5 )['live'][0]['title'] === 'Launch' );
+$r = PodPub_Feeds::save_p20( 5, array( 'funding' => array( array( 'url' => 'https://example.com/d', 'message' => 'Hi' ) ) ) );
+check( 'live: saving the Podcasting 2.0 tab does not wipe the live items', $r['errors'] === array() && count( PodPub_Details::get( 5 )['live'] ) === 1 );
+$r = PodPub_Feeds::save_live( 5, array( 'live' => array( array( 'title' => 'Bad', 'status' => 'nope' ) ) ) );
+check( 'live: a bad row is refused and nothing changes', count( $r['errors'] ) >= 1 && PodPub_Details::get( 5 )['live'][0]['title'] === 'Launch' && PodPub_Details::get( 5 )['funding'][0]['message'] === 'Hi' );
+$r = PodPub_Feeds::save_live( 5, array() );
+check( 'live: an empty list removes them and keeps the other tags', $r['errors'] === array() && PodPub_Details::get( 5 )['live'] === array() && PodPub_Details::get( 5 )['funding'][0]['message'] === 'Hi' );
+$e = PodPub_Episodes::save( 5, 0, array( 'title' => 'NoEx', 'description' => 'D', 'published' => '2026-01-15T09:30', 'status' => 'draft' ) );
+check( 'episode: blank explicit is refused (mandatory)', count( $e['errors'] ) === 1 && false !== strpos( $e['errors'][0], 'explicit' ) );
+
 // Audio source controls on the episode form.
 $_GET['episode'] = (string) $eid;
 $h = page( 5 );
 check( 'audio: source selector with all three ways', false !== strpos( $h, 'name="podpub_ep[audio_source]"' ) && false !== strpos( $h, 'Upload a file' ) && false !== strpos( $h, 'Pick a file I copied' ) && false !== strpos( $h, 'Use a file hosted elsewhere' ) );
 $h = page( 5 );
 check( 'episode form: chapters, transcripts, soundbites, alternate files and comments sections', false !== strpos( $h, 'name="podpub_ep[chapters][0][start]"' ) && false !== strpos( $h, 'name="podpub_ep[chapters_url]"' ) && false !== strpos( $h, 'name="podpub_ep[transcripts][0][type]"' ) && false !== strpos( $h, 'text/vtt' ) && false !== strpos( $h, 'name="podpub_ep[soundbites][0][duration]"' ) && false !== strpos( $h, 'name="podpub_ep[enclosures][0][default]"' ) && false !== strpos( $h, 'name="podpub_ep[social][0][protocol]"' ) );
-check( 'episode form: subtitle, summary, keywords, explicit select, picture and transcript upload', false !== strpos( $h, 'name="podpub_ep[subtitle]"' ) && false !== strpos( $h, 'name="podpub_ep[summary]"' ) && false !== strpos( $h, 'name="podpub_ep[keywords]"' ) && false !== strpos( $h, '<option value="" selected>Same as the podcast</option>' ) && false !== strpos( $h, 'name="podpub_ep_image"' ) && false !== strpos( $h, 'name="podpub_transcript"' ) && false !== strpos( $h, 'name="podpub_chapters_file"' ) && false !== strpos( $h, 'name="podpub_ep[enclosures][0][integrity_type]"' ) );
+check( 'episode form: subtitle, summary, keywords, explicit select (blank "Choose", required), picture and transcript upload', false !== strpos( $h, 'name="podpub_ep[explicit]" required' ) && false !== strpos( $h, 'name="podpub_ep[subtitle]"' ) && false !== strpos( $h, 'name="podpub_ep[summary]"' ) && false !== strpos( $h, 'name="podpub_ep[keywords]"' ) && false !== strpos( $h, '>Choose&hellip;</option>' ) && false !== strpos( $h, 'name="podpub_ep_image"' ) && false !== strpos( $h, 'name="podpub_transcript"' ) && false !== strpos( $h, 'name="podpub_chapters_file"' ) && false !== strpos( $h, 'name="podpub_ep[enclosures][0][integrity_type]"' ) );
 check( 'episode form: people role and group are drop-down lists from the taxonomy', false !== strpos( $h, '<select name="podpub_ep[persons][0][role]">' ) && false !== strpos( $h, '<option value="host">Host</option>' ) && false !== strpos( $h, '<option value="cover art designer">Cover Art Designer</option>' ) && false !== strpos( $h, '<select name="podpub_ep[persons][0][group]"><option value="" selected>Automatic (from the role)</option>' ) && false !== strpos( $h, '<option value="audio post-production">Audio Post-Production</option>' ) && false === strpos( $h, 'name="podpub_ep[persons][0][role]" value' ) );
 unset( $_GET['episode'] );
 $h = page( 5 );
@@ -159,7 +207,7 @@ check( 'p20 form on the podcast page: own form, action and nonce', false !== str
 check( 'p20 form: every podcast-level section', false !== strpos( $h, '<summary>Funding' ) && false !== strpos( $h, '<summary>Location' ) && false !== strpos( $h, '<summary>People' ) && false !== strpos( $h, '<summary>License' ) && false !== strpos( $h, '<summary>Payments (value)' ) && false !== strpos( $h, '<summary>Block' ) && false !== strpos( $h, '<summary>Podroll' ) );
 check( 'p20 form: podcast page has no time splits', false === strpos( $h, '<summary>Value time splits' ) );
 check( 'p20 form: saved values shown, quote escaped', false !== strpos( $h, 'name="podpub_p20[funding][0][url]" value="https://example.com/donate"' ) && false !== strpos( $h, 'value="Fund &quot;us&quot;"' ) && false !== strpos( $h, 'name="podpub_p20[locations][0][name]" value="Melbourne"' ) );
-check( 'p20 form: three spare empty rows after the saved one', false !== strpos( $h, 'name="podpub_p20[funding][3][url]"' ) && false === strpos( $h, 'name="podpub_p20[funding][4][url]"' ) );
+check( 'p20 form: funding is one URL and one message, no table', false !== strpos( $h, 'name="podpub_p20[funding][0][url]"' ) && false !== strpos( $h, 'name="podpub_p20[funding][0][message]"' ) && false === strpos( $h, 'name="podpub_p20[funding][1][url]"' ) );
 check( 'p20 form: Lightning address recipient with fee ticked, and no keysend, node or custom record fields', false !== strpos( $h, 'name="podpub_p20[recipients][0][fee]" value="1" checked' ) && false !== strpos( $h, 'name="podpub_p20[recipients][0][address]" value="me@example.com"' ) && false === stripos( $h, 'keysend' ) && false === strpos( $h, 'value_method' ) && false === strpos( $h, '[custom_key]' ) && false === strpos( $h, '<option value="node"' ) );
 check( 'p20 form: block and podroll rows', false !== strpos( $h, 'name="podpub_p20[block][0][id]" value="google"' ) && false !== strpos( $h, 'name="podpub_p20[podroll][0][feed_guid]" value="917393e3-1b1e-5cef-ace4-edaa54e1f810"' ) );
 
@@ -203,13 +251,13 @@ check( 'list page: delete notice (files deleted, one episode)', false !== strpos
 
 // Location search box (0.11.0): on the podcast page and the episode form, switchable off, escaped.
 ob_start(); PodPub_Admin::render_feed( 5 ); $h = ob_get_clean();
-check( 'location search: box above the Location rows with the rows name, ajax address and nonce', false !== strpos( $h, 'class="podpub-geo" data-rows="podpub_p20[locations]"' ) && false !== strpos( $h, 'data-ajax="https://example.com/wp-admin/admin-ajax.php"' ) && false !== strpos( $h, 'data-nonce="nonce_podpub_geo"' ) );
-check( 'location search: Search button, 120 character limit, OpenStreetMap credit, script posts the right action', false !== strpos( $h, 'podpub-geo-go">Search</button>' ) && false !== strpos( $h, 'maxlength="120"' ) && false !== strpos( $h, 'OpenStreetMap contributors' ) && false !== strpos( $h, 'podpub_geo_search' ) );
+check( 'location search: list data carries the ajax address and nonce for the Add location popup', false !== strpos( $h, 'data-geo-ajax="https://example.com/wp-admin/admin-ajax.php"' ) && false !== strpos( $h, 'data-geo-nonce="nonce_podpub_geo"' ) && false !== strpos( $h, 'data-add="Add location"' ) && false === strpos( $h, 'class="podpub-geo" data-rows=' ) );
+check( 'location search: popup has Search button, 120 character limit, OpenStreetMap credit, posts the right action', false !== strpos( $h, 'go=T("button","Search"' ) && false !== strpos( $h, 'q.maxLength=120' ) && false !== strpos( $h, 'OpenStreetMap contributors' ) && false !== strpos( $h, 'podpub_geo_search' ) );
 check( 'location search: results go on the page as text, never as HTML', false === strpos( $h, 'innerHTML' ) && false !== strpos( $h, 'textContent' ) );
 check( 'location search: the OSM id box says an openstreetmap.org address can be pasted', false !== strpos( $h, 'R2316741 or an openstreetmap.org address' ) );
 $GLOBALS['opts']['podpub_settings'] = array( 'geo_enabled' => 0 );
 ob_start(); PodPub_Admin::render_feed( 5 ); $h = ob_get_clean();
-check( 'location search: switched off in Settings, no box and no script (rows still there)', false === strpos( $h, 'class="podpub-geo"' ) && false === strpos( $h, 'podpub_geo_search' ) && false !== strpos( $h, 'podpub_p20[locations][0][name]' ) );
+check( 'location search: switched off in Settings, no search data on the list (rows still there)', false === strpos( $h, ' data-geo-ajax="' ) && false !== strpos( $h, 'podpub_p20[locations][0][name]' ) );
 $GLOBALS['opts']['podpub_settings'] = array();
 ob_start(); PodPub_Admin::render_settings(); $h = ob_get_clean();
 check( 'settings: location search tick box (on by default) and service address with the public default shown', false !== strpos( $h, 'name="podpub_settings[geo_enabled]" value="1" checked' ) && false !== strpos( $h, 'name="podpub_settings[geo_url]"' ) && false !== strpos( $h, 'placeholder="https://nominatim.openstreetmap.org"' ) && false !== strpos( $h, 'one request per second' ) );
@@ -246,9 +294,9 @@ $_GET = array(); unset( $_GET['episode'] );
 $h = page( 5 );
 check( 'tabs: the podcast page has Episodes, Details, Podcasting 2.0 and Feed and files, each with a panel', 4 === preg_match_all( '/role="tab" id="podpub-t-(episodes|details|p20|feed)"/', $h ) && 4 === preg_match_all( '/role="tabpanel" id="podpub-tab-(episodes|details|p20|feed)"/', $h ) );
 check( 'tabs: aria links between tab and panel, and the default tab is marked', false !== strpos( $h, 'aria-controls="podpub-tab-details"' ) && false !== strpos( $h, 'aria-labelledby="podpub-t-details"' ) && false !== strpos( $h, 'data-default="episodes"' ) );
-check( 'tabs: with scripts off every panel is still in the page (the server hides none)', 0 === preg_match( '/<section[^>]* hidden/', $h ) );
+check( 'tabs: only the default panel is visible when the page loads (the others are hidden by the server, no flash)', 4 === preg_match_all( '/<section[^>]* hidden/', $h ) && 0 === preg_match( '/<section[^>]*data-tab="episodes"[^>]* hidden/', $h ) );
 check( 'tabs: styles and script printed once, with a rule that shows an invalid field in a hidden tab', 1 === substr_count( $h, 'id="podpub-css"' ) && 1 === substr_count( $h, 'id="podpub-js"' ) && false !== strpos( $h, '"invalid"' ) );
-check( 'tabs: each podcast form keeps its own Save and write feed button in a save bar', 2 === substr_count( $h, 'Save and write feed</button>' ) && 2 <= substr_count( $h, 'class="podpub-savebar"' ) );
+check( 'tabs: each podcast form keeps its own Save and write feed button in a save bar (Episodes tab too)', 3 === substr_count( $h, 'Save and write feed</button>' ) && 3 <= substr_count( $h, 'class="podpub-savebar"' ) );
 $_GET['tab'] = 'p20';
 check( 'tabs: ?tab= picks the tab to show first (used after saving)', false !== strpos( page( 5 ), 'data-default="p20"' ) );
 $_GET['tab'] = 'nonsense"><script>';

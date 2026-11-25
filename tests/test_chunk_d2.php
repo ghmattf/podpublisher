@@ -32,7 +32,7 @@ function wp_max_upload_size() { return 67108864; }
 class WP_Error { public $m; function __construct( $c, $m ) { $this->m = $m; } function get_error_message() { return $this->m; } }
 function is_wp_error( $x ) { return $x instanceof WP_Error; }
 
-foreach ( array( 'settings', 'storage', 'p20', 'images', 'details', 'episodes', 'feedxml', 'feeds' ) as $c ) { require __DIR__ . "/../plugin/includes/class-podpub-$c.php"; }
+foreach ( array( 'settings', 'storage', 'p20', 'images', 'details', 'posts', 'episodes', 'feedxml', 'feeds' ) as $c ) { require __DIR__ . "/../plugin/includes/class-podpub-$c.php"; }
 
 $fail = 0;
 
@@ -123,17 +123,17 @@ $r = PodPub_Feeds::save_p20( $pid, array( 'live' => array( array_merge( $lv, arr
 check( 'channel: a bad live row saves nothing', count( $r['errors'] ) === 1 );
 
 // ---- episodes: numbers, extras, picture, transcripts, copy ----
-$ep = array( 'title' => 'First', 'description' => 'D', 'published' => '2026-01-10T09:00', 'status' => 'published', 'audio_source' => 'external', 'audio_url' => 'https://cdn.example.net/one.mp3', 'audio_size' => '1000', 'duration' => '10:00' );
+$ep = array( 'title' => 'First', 'description' => 'D', 'explicit' => 'no', 'published' => '2026-01-10T09:00', 'status' => 'published', 'audio_source' => 'external', 'audio_url' => 'https://cdn.example.net/one.mp3', 'audio_size' => '1000', 'duration' => '10:00' );
 $r1 = esave( $pid, 0, $ep );
 check( 'number: the first new full episode gets number 1 automatically', PodPub_Episodes::details( $r1['id'] )['episode'] === 1 );
-$r2 = esave( $pid, 0, array_merge( $ep, array( 'title' => 'Second', 'published' => '2026-01-17T09:00' ) ) );
+$r2 = esave( $pid, 0, array_merge( $ep, array( 'title' => 'Second', 'explicit' => 'no', 'published' => '2026-01-17T09:00' ) ) );
 check( 'number: the next gets 2', PodPub_Episodes::details( $r2['id'] )['episode'] === 2 );
-$r3 = esave( $pid, 0, array_merge( $ep, array( 'title' => 'Bonus bit', 'type' => 'bonus', 'published' => '2026-01-18T09:00' ) ) );
+$r3 = esave( $pid, 0, array_merge( $ep, array( 'title' => 'Bonus bit', 'type' => 'bonus', 'explicit' => 'no', 'published' => '2026-01-18T09:00' ) ) );
 check( 'number: a bonus or trailer episode is not numbered', PodPub_Episodes::details( $r3['id'] )['episode'] === 0 );
-$r4 = esave( $pid, 0, array_merge( $ep, array( 'title' => 'Season two', 'season' => '2', 'published' => '2026-02-01T09:00' ) ) );
+$r4 = esave( $pid, 0, array_merge( $ep, array( 'title' => 'Season two', 'season' => '2', 'explicit' => 'no', 'published' => '2026-02-01T09:00' ) ) );
 check( 'number: a new season starts again at 1', PodPub_Episodes::details( $r4['id'] )['episode'] === 1 );
-$r5 = esave( $pid, 0, array_merge( $ep, array( 'title' => 'Typed', 'episode' => '10', 'published' => '2026-02-08T09:00' ) ) );
-$r6 = esave( $pid, 0, array_merge( $ep, array( 'title' => 'After typed', 'published' => '2026-02-15T09:00' ) ) );
+$r5 = esave( $pid, 0, array_merge( $ep, array( 'title' => 'Typed', 'episode' => '10', 'explicit' => 'no', 'published' => '2026-02-08T09:00' ) ) );
+$r6 = esave( $pid, 0, array_merge( $ep, array( 'title' => 'After typed', 'explicit' => 'no', 'published' => '2026-02-15T09:00' ) ) );
 check( 'number: a number typed by hand is kept, and the next one carries on from the highest in the season', PodPub_Episodes::details( $r5['id'] )['episode'] === 10 && PodPub_Episodes::details( $r6['id'] )['episode'] === 11 );
 check( 'number: next_number follows the highest number in that season', PodPub_Episodes::next_number( $pid, 0 ) === 12 && PodPub_Episodes::next_number( $pid, 2 ) === 2 );
 $r7 = esave( $pid, $r1['id'], array_merge( $ep, array( 'episode' => '' ) ) );
@@ -149,6 +149,10 @@ $item = "//item[title='First']";
 $esrc = ev( $x, "string($item/podcast:images/@srcset)" );
 check( 'episode extras: explicit, subtitle, summary, keywords in the item', $r['errors'] === array() && ev( $x, "string($item/itunes:explicit)" ) === 'true' && ev( $x, "string($item/itunes:subtitle)" ) === 'A line' && ev( $x, "string($item/itunes:summary)" ) === 'A longer summary' && ev( $x, "string($item/itunes:keywords)" ) === 'a, b' );
 check( 'episode picture: image.jpg in the episode folder, itunes:image, copies, srcset', is_file( "$efolder/image.jpg" ) && is_file( "$efolder/image-300.jpg" ) && ev( $x, "string($item/itunes:image/@href)" ) === "https://example.com/wp-content/uploads/podpublisher/$pdir/$edir/image.jpg" && 0 === strpos( $esrc, "https://example.com/wp-content/uploads/podpublisher/$pdir/$edir/image-300.jpg 300w" ) && substr( $esrc, -5 ) === '1600w' );
+foreach ( PodPub_Episodes::all( $pid ) as $se ) { // A blank explicit can only come from before it was mandatory (or from an adopted feed).
+	if ( 'Second' === $se->post_title ) { $m = get_post_meta( $se->ID, '_podpub_ep', true ); $m['explicit'] = ''; update_post_meta( $se->ID, '_podpub_ep', $m ); }
+}
+PodPub_FeedXml::write( $pid ); $x = feed_dom( "$folder/$pdir.xml" );
 check( 'episode: an episode with explicit unset writes no explicit tag', ev( $x, "count(//item[title='Second']/itunes:explicit)" ) == 0 && ev( $x, "count(//item[title='Second']/itunes:image)" ) == 0 );
 $r = esave( $pid, $e1, array_merge( $ex, array( 'remove_image' => '1' ) ) );
 $x = feed_dom( "$folder/$pdir.xml" );

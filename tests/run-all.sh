@@ -20,10 +20,14 @@ step "Admin pages render (podcast page, episode list and form)" php test_admin_r
 step "Podcasting 2.0 tags: checking, feed XML, saving" php test_p20.php
 step "Chunk D: chapters, transcripts, soundbites, alternate files, comments, status" php test_chunk_d.php
 step "Chunk D part 2: pictures and sizes, explicit, trailers, live, numbers, people" php test_chunk_d2.php
+step "WordPress posts and the podcast page" php test_posts.php
 step "OP3 download counting" php test_op3.php
 step "Delete podcast: records, episodes, optional folder removal" php test_delete_podcast.php
 step "Location search: parsing, cache, one-per-second lock, settings, OSM address" php test_geo.php
 step "Adopt a feed: read, report lost tags, confirm, in-place write" php test_adopt.php
 step "Adopt a feed screen and confirm handler" php test_adopt_admin.php
+step "Install zip: plugin folder is named podpublisher inside the zip (so WordPress upgrades, not installs a second plugin)" bash -c 'z=$(mktemp -u).zip; ./build-zip.sh "$z" >/dev/null && rm -f "$z"'
+step "Admin screen script is valid JavaScript" node -e "
+const s=require('fs').readFileSync('../plugin/includes/class-podpub-admin.php','utf8');const m=s.match(/<<<'JS'\\n([\\s\\S]*?)\\nJS;/);if(!m)process.exit(1);new Function(m[1]);"
 echo; [ $fail -eq 0 ] && echo "ALL CHECKS PASSED" || echo "SOME CHECKS FAILED"
 exit $fail

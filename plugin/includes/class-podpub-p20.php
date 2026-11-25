@@ -16,7 +16,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 class PodPub_P20 {
 
-	const MAX_FUNDING    = 10;
+	const MAX_FUNDING    = 1;
 	const FUNDING_DEFAULT = 'Support the show!';
 	const MAX_LOCATIONS  = 10;
 	const MAX_TRANSCRIPTS = 10;
@@ -746,7 +746,9 @@ class PodPub_P20 {
 		$cur['social']     = self::social( $in, $errors );
 		$cur                = self::channel_flags( $in, $cur, $errors );
 		$cur['trailers']   = self::trailers( $in, $errors );
-		$cur['live']       = self::live( $in, $errors );
+		if ( array_key_exists( 'live', $in ) ) { // The Podcasting 2.0 form no longer holds live items; they are saved from the Episodes tab.
+			$cur['live'] = self::live( $in, $errors );
+		}
 		return $cur;
 	}
 

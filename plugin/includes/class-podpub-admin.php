@@ -24,6 +24,8 @@ class PodPub_Admin {
 		add_action( 'admin_post_podpub_save_details', array( __CLASS__, 'handle_save_details' ) );
 		add_action( 'admin_post_podpub_save_episode', array( __CLASS__, 'handle_save_episode' ) );
 		add_action( 'admin_post_podpub_save_p20', array( __CLASS__, 'handle_save_p20' ) );
+		add_action( 'admin_post_podpub_save_live', array( __CLASS__, 'handle_save_live' ) );
+		add_action( 'admin_post_podpub_save_posts', array( __CLASS__, 'handle_save_posts' ) );
 		add_action( 'admin_post_podpub_delete_episode', array( __CLASS__, 'handle_delete_episode' ) );
 		add_action( 'admin_post_podpub_delete_podcast', array( __CLASS__, 'handle_delete_podcast' ) );
 		add_action( 'admin_post_podpub_write_feed_anyway', array( __CLASS__, 'handle_write_feed_anyway' ) );
@@ -203,6 +205,44 @@ class PodPub_Admin {
 	}
 
 	/**
+	 * Live episodes handler (Episodes tab): saves the live items and writes the feed.
+	 */
+	public static function handle_save_live() {
+		if ( ! current_user_can( self::CAP ) ) {
+			wp_die( esc_html__( 'You do not have permission to do that.', 'podpublisher' ), 403 );
+		}
+		check_admin_referer( 'podpub_save_live' );
+		$id     = isset( $_POST['podpub_id'] ) ? (int) $_POST['podpub_id'] : 0;
+		$input  = isset( $_POST['podpub_p20'] ) && is_array( $_POST['podpub_p20'] ) ? wp_unslash( $_POST['podpub_p20'] ) : array(); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput
+		$result = PodPub_Feeds::save_live( $id, $input );
+		$result['form'] = 'live';
+		if ( $result['errors'] ) {
+			$result['input'] = $input;
+		}
+		set_transient( 'podpub_notice_' . get_current_user_id(), $result, 120 );
+		wp_safe_redirect( self::feed_page_url( $id, array( 'tab' => 'episodes' ) ) );
+		exit;
+	}
+
+	/**
+	 * WordPress posts tab handler (author, categories, page). Never writes the feed.
+	 */
+	public static function handle_save_posts() {
+		if ( ! current_user_can( self::CAP ) ) {
+			wp_die( esc_html__( 'You do not have permission to do that.', 'podpublisher' ), 403 );
+		}
+		check_admin_referer( 'podpub_save_posts' );
+		$id     = isset( $_POST['podpub_id'] ) ? (int) $_POST['podpub_id'] : 0;
+		$input  = isset( $_POST['podpub_posts'] ) && is_array( $_POST['podpub_posts'] ) ? wp_unslash( $_POST['podpub_posts'] ) : array(); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput
+		$result = PodPub_Posts::save_settings( $id, $input );
+		$result['form']  = 'posts';
+		$result['posts_saved'] = ! $result['errors'];
+		set_transient( 'podpub_notice_' . get_current_user_id(), $result, 120 );
+		wp_safe_redirect( self::feed_page_url( $id, array( 'tab' => 'posts' ) ) );
+		exit;
+	}
+
+	/**
 	 * Episode delete handler.
 	 */
 	public static function handle_delete_episode() {
@@ -212,7 +252,7 @@ class PodPub_Admin {
 		check_admin_referer( 'podpub_delete_episode' );
 		$pid    = isset( $_POST['podpub_id'] ) ? (int) $_POST['podpub_id'] : 0;
 		$eid    = isset( $_POST['podpub_episode_id'] ) ? (int) $_POST['podpub_episode_id'] : 0;
-		$result = PodPub_Episodes::delete( $pid, $eid );
+		$result = PodPub_Episodes::delete( $pid, $eid, ! empty( $_POST['podpub_delete_post'] ) );
 		set_transient( 'podpub_notice_' . get_current_user_id(), $result, 120 );
 		wp_safe_redirect( self::feed_page_url( $pid, array( 'tab' => 'episodes' ) ) );
 		exit;
@@ -244,7 +284,7 @@ class PodPub_Admin {
 		check_admin_referer( 'podpub_delete_podcast' );
 		$pid    = isset( $_POST['podpub_id'] ) ? (int) $_POST['podpub_id'] : 0;
 		$files  = ! empty( $_POST['podpub_delete_files'] );
-		$result = PodPub_Feeds::delete( $pid, $files );
+		$result = PodPub_Feeds::delete( $pid, $files, ! empty( $_POST['podpub_delete_posts'] ) );
 		$result['deleted_podcast'] = ! $result['errors'];
 		set_transient( 'podpub_notice_' . get_current_user_id(), $result, 120 );
 		wp_safe_redirect( $result['errors'] ? self::feed_page_url( $pid ) : self::list_url() );
@@ -267,36 +307,6 @@ class PodPub_Admin {
 		set_transient( 'podpub_notice_' . get_current_user_id(), $result, 120 );
 		wp_safe_redirect( self::feed_page_url( $id, array( 'tab' => 'p20' ) ) );
 		exit;
-	}
-
-	/**
-	 * The place search box above a Location table. Search runs only when Search is pressed;
-	 * "Use" copies a result into the first Location row with no place name. Nothing is saved
-	 * until the form is saved. Results are put on the page as text, never as HTML.
-	 *
-	 * @param string $rows_name Field name of the Location rows (for example podpub_p20[locations]).
-	 */
-	private static function render_geo_search( $rows_name ) {
-		if ( ! PodPub_Geo::enabled() ) {
-			return;
-		}
-		echo '<div class="podpub-geo" data-rows="' . esc_attr( $rows_name ) . '" data-ajax="' . esc_url( admin_url( 'admin-ajax.php' ) ) . '" data-nonce="' . esc_attr( wp_create_nonce( 'podpub_geo' ) ) . '" style="margin:8px 0">';
-		echo '<input type="text" class="regular-text podpub-geo-q" maxlength="120" placeholder="Search for a place, for example Melbourne"> ';
-		echo '<button type="button" class="button podpub-geo-go">Search</button> <span class="podpub-geo-status" role="status"></span>';
-		echo '<ul class="podpub-geo-list" style="margin:6px 0"></ul>';
-		echo '<p class="description podpub-geo-credit" hidden>Search results &copy; OpenStreetMap contributors. Pick Use to fill the first empty Location row; you can still change anything before saving.</p></div>';
-		echo '<script>(function(){function T(e,t,c){var n=document.createElement(e);if(t)n.textContent=t;if(c)n.className=c;return n;}'
-			. 'document.querySelectorAll(".podpub-geo").forEach(function(b){if(b.getAttribute("data-ready"))return;b.setAttribute("data-ready","1");var q=b.querySelector(".podpub-geo-q"),go=b.querySelector(".podpub-geo-go"),st=b.querySelector(".podpub-geo-status"),ul=b.querySelector(".podpub-geo-list"),cr=b.querySelector(".podpub-geo-credit"),f=b.closest("form"),busy=false;'
-			. 'function F(i,k){return f.querySelector("[name=\""+b.getAttribute("data-rows")+"["+i+"]["+k+"]\"]");}'
-			. 'function use(r){for(var i=0;i<10;i++){var n=F(i,"name");if(!n)break;if(n.value.trim()===""){n.value=r.name;["geo","osm","country"].forEach(function(k){var e=F(i,k);if(e)e.value=r[k]||"";});st.textContent="Filled in row "+(i+1)+". Save to keep it.";return;}}st.textContent="All the Location rows are in use. Clear a place name first.";}'
-			. 'function run(){if(busy)return;var v=q.value.trim();if(v.length<3){st.textContent="Type at least 3 characters.";return;}busy=true;go.disabled=true;st.textContent="Searching\u2026";ul.textContent="";cr.hidden=true;'
-			. 'var d=new FormData();d.append("action","podpub_geo_search");d.append("nonce",b.getAttribute("data-nonce"));d.append("q",v);'
-			. 'fetch(b.getAttribute("data-ajax"),{method:"POST",credentials:"same-origin",body:d}).then(function(r){return r.json();}).then(function(j){'
-			. 'if(!j||!j.success){st.textContent=(j&&j.data&&j.data.message)||"The search failed. Fill in the fields by hand.";return;}'
-			. 'var l=j.data.results||[];st.textContent=l.length?"":(j.data.message||"No places were found.");'
-			. 'l.forEach(function(r){var li=T("li");var u=T("button","Use","button button-small");u.type="button";u.addEventListener("click",function(){use(r);});li.appendChild(u);li.appendChild(T("span"," "+r.label));ul.appendChild(li);});if(l.length)cr.hidden=false;'
-			. '}).catch(function(){st.textContent="The search failed. Fill in the fields by hand.";}).then(function(){busy=false;go.disabled=false;});}'
-			. 'go.addEventListener("click",run);q.addEventListener("keydown",function(e){if(e.key==="Enter"){e.preventDefault();run();}});});})();</script>';
 	}
 
 	/**
@@ -381,6 +391,35 @@ class PodPub_Admin {
 .podpub-card-body{padding:4px 10px 10px}
 }
 @media (prefers-reduced-motion:reduce){.podpub-card>summary::before{transition:none}}
+.podpub-listmode .podpub-table-wrap,.podpub-listmode .podpub-rows-note{display:none}
+.podpub-items{display:grid;gap:8px;margin:8px 0}
+.podpub-item{display:flex;justify-content:space-between;align-items:center;gap:12px;background:#fff;border:1px solid var(--pp-border);border-radius:6px;padding:10px 12px}
+.podpub-item-main{min-width:0;display:flex;flex-direction:column;gap:2px}
+.podpub-item-main strong{overflow-wrap:anywhere}
+.podpub-item-meta{color:var(--pp-muted);font-size:12px;overflow-wrap:anywhere}
+.podpub-item-actions{display:flex;gap:6px;flex:0 0 auto}
+.podpub-remove{color:var(--pp-bad)!important;border-color:var(--pp-bad)!important}
+.podpub-none{color:var(--pp-muted);font-style:italic;margin:4px 0}
+.podpub-itembar{margin:8px 0}
+.podpub-dialog{border:0;border-radius:8px;padding:0;width:min(640px,calc(100vw - 24px));max-height:calc(100vh - 40px);box-shadow:0 10px 40px rgba(0,0,0,.35)}
+.podpub-dialog::backdrop{background:rgba(0,0,0,.5)}
+.podpub-dialog-box{padding:18px 20px;overflow:auto;max-height:calc(100vh - 40px)}
+.podpub-dialog-box h2{margin-top:0}
+.podpub-dialog-fields{display:grid;gap:12px}
+.podpub-field label{display:block;font-weight:600;margin-bottom:3px}
+.podpub-field input[type=text],.podpub-field input[type=datetime-local],.podpub-field select{width:100%;max-width:100%}
+.podpub-field-check{display:flex;align-items:center;gap:8px}
+.podpub-field-check label{margin:0}
+.podpub-dialog-err{color:var(--pp-bad);min-height:1.2em;margin:10px 0 0}
+.podpub-dialog-foot{display:flex;gap:8px;margin-top:10px}
+.podpub-dialog .podpub-geo{background:var(--pp-soft);border:1px solid var(--pp-border);border-radius:6px;padding:10px 12px;margin-bottom:14px}
+.podpub-dialog .podpub-geo h3{margin:0 0 8px}
+.podpub-dialog .podpub-geo-q{width:min(320px,100%)}
+.podpub-dialog .podpub-geo-list{margin:8px 0;padding:0;list-style:none}
+.podpub-dialog .podpub-geo-list li{margin:4px 0}
+.podpub-dialog .podpub-geo-or{margin:10px 0 0;font-weight:600}
+.podpub-tabs [hidden]{display:none!important}
+.podpub-livebox{margin-top:22px}
 CSS;
 	}
 
@@ -410,6 +449,101 @@ document.querySelectorAll("[data-podpub-copy]").forEach(function(b){b.addEventLi
 function done(){b.textContent="Copied";setTimeout(function(){b.textContent=old;},1500);}
 if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(v).then(done,function(){});}else{var t=document.createElement("textarea");t.value=v;document.body.appendChild(t);t.select();try{document.execCommand("copy");done();}catch(x){}document.body.removeChild(t);}
 });});
+document.querySelectorAll("[data-podpub-list]").forEach(function(root){
+if(!window.HTMLDialogElement||!root.querySelector("table"))return;
+var table=root.querySelector("table"),tbody=table.querySelector("tbody"),heads=[].slice.call(table.querySelectorAll("thead th"));
+var noun=root.getAttribute("data-noun")||"item",addText=root.getAttribute("data-add")||"Add",max=parseInt(root.getAttribute("data-max"),10)||50;
+var titleKeys=(root.getAttribute("data-title")||"").split(",").filter(Boolean);
+var none=root.getAttribute("data-none")||"Nothing here yet.";
+root.classList.add("podpub-listmode");
+var list=document.createElement("div"),bar=document.createElement("p"),note=document.createElement("p"),addBtn=document.createElement("button");
+list.className="podpub-items";bar.className="podpub-itembar";note.className="description";
+addBtn.type="button";addBtn.className="button";addBtn.textContent=addText;bar.appendChild(addBtn);
+note.textContent="Changes to this list are kept when you press the Save button below.";
+root.appendChild(list);root.appendChild(bar);root.appendChild(note);
+function T(e,t,c){var n=document.createElement(e);if(t)n.textContent=t;if(c)n.className=c;return n;}
+function rows(){return [].slice.call(tbody.querySelectorAll("tr"));}
+function ctl(row,i){return row.children[i].querySelector("input,select");}
+function keyOf(i){return heads[i].getAttribute("data-key");}
+function val(c){return c.type==="checkbox"?(c.checked?"1":""):c.value;}
+function isEmpty(row){for(var i=0;i<heads.length;i++){if(val(ctl(row,i)).trim()!=="")return false;}return true;}
+function shown(c){if(c.type==="checkbox")return c.checked?"Yes":"";if(c.tagName==="SELECT")return c.selectedIndex>=0&&c.value!==""?c.options[c.selectedIndex].text:"";return c.value.trim();}
+function render(){
+list.textContent="";var n=0;
+rows().forEach(function(row){
+if(isEmpty(row))return;n++;
+var title="",meta=[];
+for(var t=0;t<titleKeys.length&&!title;t++){for(var i=0;i<heads.length;i++){if(keyOf(i)===titleKeys[t]){title=shown(ctl(row,i));}}}
+for(var i=0;i<heads.length;i++){var s=shown(ctl(row,i));if(s!==""&&s!==title)meta.push(heads[i].textContent+": "+s);}
+var it=T("div",null,"podpub-item"),m=T("div",null,"podpub-item-main"),a=T("div",null,"podpub-item-actions");
+m.appendChild(T("strong",title||"(no "+heads[0].textContent.toLowerCase()+")"));
+if(meta.length)m.appendChild(T("span",meta.join(" · "),"podpub-item-meta"));
+var e=T("button","Edit","button button-small"),r=T("button","Remove","button button-small podpub-remove");e.type=r.type="button";
+e.addEventListener("click",function(){openDialog(row);});
+r.addEventListener("click",function(){if(!confirm("Remove this "+noun+"? It is removed from the feed when you save."))return;clear(row);render();});
+a.appendChild(e);a.appendChild(r);it.appendChild(m);it.appendChild(a);list.appendChild(it);
+});
+if(!n)list.appendChild(T("p",none,"podpub-none"));
+addBtn.disabled=n>=max;addBtn.title=n>=max?"The most allowed ("+max+") is already here.":"";
+}
+function clear(row){for(var i=0;i<heads.length;i++){var c=ctl(row,i);if(c.type==="checkbox")c.checked=false;else if(c.tagName==="SELECT")c.selectedIndex=0;else c.value="";}}
+function freeRow(){var rs=rows();for(var i=0;i<rs.length;i++){if(isEmpty(rs[i]))return rs[i];}
+var last=rs[rs.length-1],c=last.cloneNode(true),idx=rs.length;
+[].forEach.call(c.querySelectorAll("input,select"),function(e){e.name=e.name.replace(/\[\d+\]\[([^\]]+)\]$/,"["+idx+"][$1]");});
+tbody.appendChild(c);clear(c);return c;}
+function openDialog(row){
+var adding=!row,dlg=document.createElement("dialog"),box=T("div",null,"podpub-dialog-box"),fields={};
+dlg.className="podpub-dialog";
+box.appendChild(T("h2",(adding?"Add ":"Edit ")+noun));
+if(root.getAttribute("data-geo-ajax"))box.appendChild(geoBlock(fields));
+var grid=T("div",null,"podpub-dialog-fields");
+var proto=rows()[0];
+heads.forEach(function(h,i){
+var c=ctl(proto,i).cloneNode(true),src=row?ctl(row,i):null,id="ppd-"+Math.random().toString(36).slice(2);
+c.removeAttribute("name");c.id=id;
+if(c.type==="checkbox")c.checked=src?src.checked:false;else if(c.tagName==="SELECT")c.selectedIndex=src?src.selectedIndex:0;else c.value=src?src.value:"";
+var w=T("div",null,"podpub-field"),l=T("label",h.textContent+(h.getAttribute("data-req")?" *":""));l.setAttribute("for",id);
+if(c.type==="checkbox"){w.appendChild(c);w.appendChild(l);w.className+=" podpub-field-check";}else{w.appendChild(l);w.appendChild(c);}
+grid.appendChild(w);fields[h.getAttribute("data-key")]=c;
+});
+box.appendChild(grid);
+var err=T("p",null,"podpub-dialog-err");err.setAttribute("role","alert");box.appendChild(err);
+var foot=T("div",null,"podpub-dialog-foot"),ok=T("button",adding?"Add":"Save "+noun,"button button-primary"),no=T("button","Cancel","button");ok.type=no.type="button";
+foot.appendChild(ok);foot.appendChild(no);box.appendChild(foot);dlg.appendChild(box);document.body.appendChild(dlg);
+function close(){if(dlg.open)dlg.close();if(dlg.parentNode)dlg.parentNode.removeChild(dlg);}
+no.addEventListener("click",close);dlg.addEventListener("cancel",function(){setTimeout(close,0);});
+function save(){
+for(var i=0;i<heads.length;i++){var k=heads[i].getAttribute("data-key"),c=fields[k];if(heads[i].getAttribute("data-req")&&val(c).trim()===""){err.textContent=heads[i].textContent+" is required.";c.focus();return;}}
+var any=false;for(var k2 in fields){if(val(fields[k2]).trim()!=="")any=true;}
+if(!any){err.textContent="Fill in at least one field.";return;}
+var target=row||freeRow();
+for(var j=0;j<heads.length;j++){var d=ctl(target,j),s=fields[heads[j].getAttribute("data-key")];if(d.type==="checkbox")d.checked=s.checked;else if(d.tagName==="SELECT")d.selectedIndex=s.selectedIndex;else d.value=s.value;}
+close();render();}
+ok.addEventListener("click",save);
+dlg.addEventListener("keydown",function(e){if(e.key==="Enter"&&e.target.tagName==="INPUT"&&e.target.type!=="checkbox"&&!e.target.classList.contains("podpub-geo-q")){e.preventDefault();save();}});
+dlg.showModal();
+var first=grid.querySelector("input,select");if(root.getAttribute("data-geo-ajax")){var q=box.querySelector(".podpub-geo-q");if(q)q.focus();}else if(first)first.focus();
+}
+function geoBlock(fields){
+var b=T("div",null,"podpub-geo"),q=T("input",null,"regular-text podpub-geo-q"),go=T("button","Search","button"),st=T("span",null,"podpub-geo-status"),ul=T("ul",null,"podpub-geo-list"),cr=T("p","Search results © OpenStreetMap contributors. Pick Use to fill in the fields below; you can still change anything before adding.","description");
+b.appendChild(T("h3","Search for a place"));q.type="text";q.maxLength=120;q.placeholder="For example Melbourne";go.type="button";st.setAttribute("role","status");cr.hidden=true;
+var line=T("div");line.appendChild(q);line.appendChild(document.createTextNode(" "));line.appendChild(go);line.appendChild(document.createTextNode(" "));line.appendChild(st);
+b.appendChild(line);b.appendChild(ul);b.appendChild(cr);b.appendChild(T("p","Or fill in the details yourself:","podpub-geo-or"));
+var busy=false;
+function use(r){["name","geo","osm","country"].forEach(function(k){if(fields[k])fields[k].value=r[k]||"";});st.textContent="Filled in below.";}
+function run(){if(busy)return;var v=q.value.trim();if(v.length<3){st.textContent="Type at least 3 characters.";return;}
+busy=true;go.disabled=true;st.textContent="Searching…";ul.textContent="";cr.hidden=true;
+var d=new FormData();d.append("action","podpub_geo_search");d.append("nonce",root.getAttribute("data-geo-nonce"));d.append("q",v);
+fetch(root.getAttribute("data-geo-ajax"),{method:"POST",credentials:"same-origin",body:d}).then(function(r){return r.json();}).then(function(j){
+if(!j||!j.success){st.textContent=(j&&j.data&&j.data.message)||"The search failed. Fill in the fields by hand.";return;}
+var l=j.data.results||[];st.textContent=l.length?"":(j.data.message||"No places were found.");
+l.forEach(function(r){var li=T("li"),u=T("button","Use","button button-small");u.type="button";u.addEventListener("click",function(){use(r);});li.appendChild(u);li.appendChild(T("span"," "+r.label));ul.appendChild(li);});if(l.length)cr.hidden=false;
+}).catch(function(){st.textContent="The search failed. Fill in the fields by hand.";}).then(function(){busy=false;go.disabled=false;});}
+go.addEventListener("click",run);q.addEventListener("keydown",function(e){if(e.key==="Enter"){e.preventDefault();run();}});
+return b;}
+addBtn.addEventListener("click",function(){openDialog(null);});
+render();
+});
 });
 })();
 JS;
@@ -417,7 +551,7 @@ JS;
 
 	/**
 	 * Print a set of tabs. The first tab is shown by default unless $default names another;
-	 * without scripts every panel is simply shown one after the other.
+	 * the other panels start hidden (no flash of every section before the script runs).
 	 *
 	 * @param array  $tabs    key => array( 'label' => text, 'html' => panel content ).
 	 * @param string $default Key of the tab to show first.
@@ -434,7 +568,7 @@ JS;
 		}
 		echo '</nav>';
 		foreach ( $tabs as $k => $t ) {
-			echo '<section class="podpub-panel" role="tabpanel" id="podpub-tab-' . esc_attr( $k ) . '" aria-labelledby="podpub-t-' . esc_attr( $k ) . '" data-tab="' . esc_attr( $k ) . '">' . $t['html'] . '</section>'; // phpcs:ignore WordPress.Security.EscapeOutput
+			echo '<section class="podpub-panel" role="tabpanel" id="podpub-tab-' . esc_attr( $k ) . '" aria-labelledby="podpub-t-' . esc_attr( $k ) . '" data-tab="' . esc_attr( $k ) . '"' . ( $k === $default ? '' : ' hidden' ) . '>' . $t['html'] . '</section>'; // phpcs:ignore WordPress.Security.EscapeOutput
 		}
 		echo '</div>';
 	}
@@ -480,12 +614,21 @@ JS;
 		return $out;
 	}
 
-	private static function render_rows( $name, $rows, $cols, $max ) {
+	private static function render_rows( $name, $rows, $cols, $max, $ui = array() ) {
 		$rows = array_values( $rows );
 		$n    = min( $max, count( $rows ) + 3 );
-		echo '<div class="podpub-rows"><table class="widefat striped podpub-table"><thead><tr>';
+		$list = ! empty( $ui );
+		$ui   = array_merge( array( 'noun' => 'item', 'add' => 'Add', 'title' => '', 'none' => '', 'geo' => false ), $ui );
+		echo '<div class="podpub-rows"';
+		if ( $list ) {
+			echo ' data-podpub-list data-noun="' . esc_attr( $ui['noun'] ) . '" data-add="' . esc_attr( $ui['add'] ) . '" data-title="' . esc_attr( $ui['title'] ) . '" data-none="' . esc_attr( $ui['none'] ) . '" data-max="' . (int) $max . '"';
+			if ( $ui['geo'] && PodPub_Geo::enabled() ) {
+				echo ' data-geo-ajax="' . esc_url( admin_url( 'admin-ajax.php' ) ) . '" data-geo-nonce="' . esc_attr( wp_create_nonce( 'podpub_geo' ) ) . '"';
+			}
+		}
+		echo '><div class="podpub-table-wrap"><table class="widefat striped podpub-table"><thead><tr>';
 		foreach ( $cols as $c ) {
-			echo '<th>' . esc_html( $c['label'] ) . '</th>';
+			echo '<th data-key="' . esc_attr( $c['key'] ) . '"' . ( ! empty( $c['req'] ) ? ' data-req="1"' : '' ) . '>' . esc_html( $c['label'] ) . '</th>';
 		}
 		echo '</tr></thead><tbody>';
 		for ( $i = 0; $i < $n; $i++ ) {
@@ -514,7 +657,7 @@ JS;
 			}
 			echo '</tr>';
 		}
-		echo '</tbody></table></div><p class="description">Empty rows are ignored. Save to get more empty rows.</p>';
+		echo '</tbody></table></div><p class="description podpub-rows-note">Empty rows are ignored. Save to get more empty rows.</p></div>';
 	}
 
 	/**
@@ -550,6 +693,34 @@ JS;
 		echo '<p><label><input type="checkbox" name="podpub_ep[rename_ok]" value="1"> Rename it to the safe name when I save</label></p></div>';
 	}
 
+	/**
+	 * The Live episodes section, shown on the Episodes tab of a podcast in its own form.
+	 *
+	 * @param int        $id Podcast id.
+	 * @param array      $d  Saved podcast details.
+	 * @param array|null $in What was typed before an error, or null.
+	 */
+	private static function render_live_form( $id, $d, $in ) {
+		$live_rows = null !== $in && isset( $in['live'] ) && is_array( $in['live'] ) ? $in['live'] : $d['live'];
+		echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '" class="podpub-livebox">';
+		echo '<input type="hidden" name="action" value="podpub_save_live"><input type="hidden" name="podpub_id" value="' . (int) $id . '">';
+		wp_nonce_field( 'podpub_save_live' );
+		ob_start();
+		echo '<h3>Live episodes</h3><p class="description">A live stream that apps can announce before it starts and show while it runs. Give the stream address (https://) and its type (usually audio/mpeg); set the status to Pending until it is on air, Live while it is, and Ended afterwards. Change the status and save to update the feed. The link (optional) is a page where people can join.</p>';
+		self::render_rows( 'podpub_p20[live]', $live_rows, array(
+			array( 'key' => 'title', 'label' => 'Title', 'type' => 'text', 'req' => true ),
+			array( 'key' => 'status', 'label' => 'Status', 'type' => 'select', 'options' => array( '' => '', 'pending' => 'Pending', 'live' => 'Live', 'ended' => 'Ended' ) ),
+			array( 'key' => 'start', 'label' => 'Starts', 'type' => 'datetime' ),
+			array( 'key' => 'end', 'label' => 'Ends (optional)', 'type' => 'datetime' ),
+			array( 'key' => 'url', 'label' => 'Stream address', 'type' => 'text', 'ph' => 'https://' ),
+			array( 'key' => 'type', 'label' => 'Stream type', 'type' => 'text', 'ph' => 'audio/mpeg', 'class' => 'small-text' ),
+			array( 'key' => 'link', 'label' => 'Link', 'type' => 'text', 'ph' => 'https://' ),
+		), PodPub_P20::MAX_LIVE, array( 'noun' => 'live episode', 'add' => 'Add live episode', 'title' => 'title', 'none' => 'No live episodes yet.' ) );
+		echo self::cards( (string) ob_get_clean() ); // phpcs:ignore WordPress.Security.EscapeOutput
+		self::render_savebar( 'Save and write feed', 'Saves the live episodes and writes the feed file (the old file is kept as a backup).' );
+		echo '</form>';
+	}
+
 	private static function render_p20_fields( $prefix, $d, $in, $item, $ctx = null ) {
 		ob_start();
 		self::render_p20_fields_raw( $prefix, $d, $in, $item, $ctx );
@@ -568,21 +739,20 @@ JS;
 			echo '<tr><th scope="row"><label>' . esc_html( $label ) . '</label></th><td><input type="text" class="' . esc_attr( $class ) . '" name="' . esc_attr( $prefix . '[' . $k . ']' ) . '" value="' . esc_attr( $v( $k, $saved ) ) . '" placeholder="' . esc_attr( $ph ) . '"></td></tr>';
 		};
 
-		echo '<h3>Funding</h3><p class="description">Links where listeners can support the show. Leave the message empty to use &ldquo;' . esc_html( PodPub_P20::FUNDING_DEFAULT ) . '&rdquo;.' . esc_html( $inherit ) . '</p>';
-		self::render_rows( $prefix . '[funding]', $rows( 'funding', $d['funding'] ), array(
-			array( 'key' => 'url', 'label' => 'Web address', 'type' => 'text', 'ph' => 'https://' ),
-			array( 'key' => 'message', 'label' => 'Message (up to 128 characters)', 'type' => 'text', 'ph' => PodPub_P20::FUNDING_DEFAULT ),
-		), PodPub_P20::MAX_FUNDING );
+		echo '<h3>Funding</h3><p class="description">One link where listeners can support the show. Leave the message empty to use &ldquo;' . esc_html( PodPub_P20::FUNDING_DEFAULT ) . '&rdquo;.' . esc_html( $inherit ) . '</p>';
+		$fr = $rows( 'funding', $d['funding'] );
+		$f0 = isset( $fr[0] ) && is_array( $fr[0] ) ? $fr[0] : array();
+		echo '<table class="form-table" role="presentation"><tr><th scope="row"><label>Web address</label></th><td><input type="text" class="regular-text" name="' . esc_attr( $prefix . '[funding][0][url]' ) . '" value="' . esc_attr( isset( $f0['url'] ) && is_scalar( $f0['url'] ) ? (string) $f0['url'] : '' ) . '" placeholder="https://"></td></tr>';
+		echo '<tr><th scope="row"><label>Message (up to 128 characters)</label></th><td><input type="text" class="regular-text" maxlength="128" name="' . esc_attr( $prefix . '[funding][0][message]' ) . '" value="' . esc_attr( isset( $f0['message'] ) && is_scalar( $f0['message'] ) ? (string) $f0['message'] : '' ) . '" placeholder="' . esc_attr( PodPub_P20::FUNDING_DEFAULT ) . '"></td></tr></table>';
 
-		echo '<h3>Location</h3><p class="description">Where the ' . ( $item ? 'episode' : 'podcast' ) . ' is about (subject) or was made (creator). Add one row for each place. The name is required; the rest is recommended.' . esc_html( $inherit ) . '</p>';
-		self::render_geo_search( $prefix . '[locations]' );
+		echo '<h3>Location</h3><p class="description">Where the ' . ( $item ? 'episode' : 'podcast' ) . ' is about (subject) or was made (creator). Use Add location to search for a place or type its details yourself. The name is required; the rest is recommended.' . esc_html( $inherit ) . '</p>';
 		self::render_rows( $prefix . '[locations]', $rows( 'locations', $d['locations'] ), array(
-			array( 'key' => 'name', 'label' => 'Place name', 'type' => 'text', 'ph' => 'Melbourne' ),
+			array( 'key' => 'name', 'label' => 'Place name', 'type' => 'text', 'ph' => 'Melbourne', 'req' => true ),
 			array( 'key' => 'rel', 'label' => 'Place is', 'type' => 'select', 'options' => array( '' => 'The subject (default)', 'creator' => 'Where it was made' ) ),
 			array( 'key' => 'geo', 'label' => 'Coordinates', 'type' => 'text', 'ph' => '-37.8136,144.9631', 'class' => 'regular-text code' ),
 			array( 'key' => 'osm', 'label' => 'OpenStreetMap id', 'type' => 'text', 'ph' => 'R2316741 or an openstreetmap.org address', 'class' => 'regular-text code' ),
 			array( 'key' => 'country', 'label' => 'Country', 'type' => 'text', 'ph' => 'AU', 'class' => 'small-text' ),
-		), PodPub_P20::MAX_LOCATIONS );
+		), PodPub_P20::MAX_LOCATIONS, array( 'noun' => 'location', 'add' => 'Add location', 'title' => 'name', 'none' => 'No locations yet.', 'geo' => true ) );
 
 		$prows      = $rows( 'persons', $d['persons'] );
 		$role_opts  = array( '' => 'None' );
@@ -602,12 +772,12 @@ JS;
 		}
 		echo '<h3>People</h3><p class="description">Hosts, guests and others, shown by podcast apps.' . esc_html( $inherit ) . ' Role and group come from the Podcast namespace people taxonomy. Choose a role and the group is filled in for you (hosts and guests are in the group Cast, which is the default); choose a group only to put a role that appears in two groups (such as Editor) in the one you mean.</p>';
 		self::render_rows( $prefix . '[persons]', $prows, array(
-			array( 'key' => 'name', 'label' => 'Name', 'type' => 'text' ),
+			array( 'key' => 'name', 'label' => 'Name', 'type' => 'text', 'req' => true ),
 			array( 'key' => 'role', 'label' => 'Role', 'type' => 'select', 'options' => $role_opts ),
 			array( 'key' => 'group', 'label' => 'Group', 'type' => 'select', 'options' => $group_opts ),
 			array( 'key' => 'img', 'label' => 'Picture address', 'type' => 'text', 'ph' => 'https://' ),
 			array( 'key' => 'href', 'label' => 'Link', 'type' => 'text', 'ph' => 'https://' ),
-		), PodPub_P20::MAX_PERSONS );
+		), PodPub_P20::MAX_PERSONS, array( 'noun' => 'person', 'add' => 'Add person', 'title' => 'name', 'none' => 'No people yet.' ) );
 
 		echo '<h3>License</h3><table class="form-table" role="presentation">';
 		$in_text( 'license_name', 'License', $d['license']['name'], 'cc-by-4.0' );
@@ -638,7 +808,7 @@ JS;
 				array( 'key' => 'feed_guid', 'label' => 'Other podcast\'s feed GUID', 'type' => 'text', 'class' => 'regular-text code' ),
 				array( 'key' => 'item_guid', 'label' => 'Other episode\'s GUID (optional)', 'type' => 'text', 'class' => 'regular-text code' ),
 				array( 'key' => 'feed_url', 'label' => 'Other feed address (optional)', 'type' => 'text', 'ph' => 'https://' ),
-			), PodPub_P20::MAX_SPLITS );
+			), PodPub_P20::MAX_SPLITS, array( 'noun' => 'time split', 'add' => 'Add time split', 'title' => 'start', 'none' => 'No time splits yet.' ) );
 			echo '<h4>Import time splits</h4><p class="description">Paste time splits here or upload a file. The usual input is ready-made <code>&lt;podcast:valueTimeSplit&gt;</code> tags copied from a feed, but a whole value block, JSON, or lines separated by commas, tabs, semicolons or spaces (start, length, feed GUID, episode GUID, remote start, percentage, feed address) also work, with or without a header row. Decimals of a second are rounded to whole seconds. Nothing is kept until you save.</p>';
 			echo '<p><textarea name="' . esc_attr( $prefix ) . '[splits_import]" rows="6" class="large-text code" placeholder="&lt;podcast:valueTimeSplit startTime=&quot;76.645988&quot; duration=&quot;270.916411&quot; remotePercentage=&quot;99&quot;&gt;&#10;  &lt;podcast:remoteItem feedGuid=&quot;...&quot; itemGuid=&quot;...&quot;/&gt;&#10;&lt;/podcast:valueTimeSplit&gt;">' . esc_textarea( isset( $in['splits_import'] ) && is_string( $in['splits_import'] ) ? $in['splits_import'] : '' ) . '</textarea></p>';
 			echo '<p><label>Or upload a file (.txt, .xml, .csv or .json, up to 1 MB): <input type="file" name="podpub_splits_file" accept=".txt,.xml,.csv,.tsv,.json,text/plain,text/xml,application/json"></label> &nbsp; <label>When saving: <select name="' . esc_attr( $prefix ) . '[splits_mode]"><option value="replace">replace the time splits above</option><option value="add">add to the time splits above</option></select></label></p>';
@@ -647,14 +817,14 @@ JS;
 			self::render_rows( $prefix . '[block]', $rows( 'block', $d['block'] ), array(
 				array( 'key' => 'id', 'label' => 'Service id (optional)', 'type' => 'text', 'class' => 'regular-text' ),
 				array( 'key' => 'value', 'label' => 'Block', 'type' => 'select', 'options' => array( '' => '', 'yes' => 'Yes', 'no' => 'No' ) ),
-			), PodPub_P20::MAX_BLOCK );
+			), PodPub_P20::MAX_BLOCK, array( 'noun' => 'block', 'add' => 'Add block', 'title' => 'value', 'none' => 'Nothing is blocked or allowed.' ) );
 
 			echo '<h3>Podroll</h3><p class="description">Other podcasts you recommend. The feed GUID is the podcast:guid in the other podcast\'s feed.</p>';
 			self::render_rows( $prefix . '[podroll]', $rows( 'podroll', $d['podroll'] ), array(
 				array( 'key' => 'feed_guid', 'label' => 'Feed GUID', 'type' => 'text', 'class' => 'regular-text code' ),
 				array( 'key' => 'feed_url', 'label' => 'Feed address (optional)', 'type' => 'text', 'ph' => 'https://' ),
 				array( 'key' => 'title', 'label' => 'Title (optional)', 'type' => 'text' ),
-			), PodPub_P20::MAX_PODROLL );
+			), PodPub_P20::MAX_PODROLL, array( 'noun' => 'recommended podcast', 'add' => 'Add podcast', 'title' => 'title,feed_guid', 'none' => 'No podcasts in the podroll yet.' ) );
 		}
 
 		if ( $item ) {
@@ -664,7 +834,7 @@ JS;
 				array( 'key' => 'title', 'label' => 'Title', 'type' => 'text' ),
 				array( 'key' => 'img', 'label' => 'Picture address', 'type' => 'text', 'ph' => 'https://' ),
 				array( 'key' => 'url', 'label' => 'Link', 'type' => 'text', 'ph' => 'https://' ),
-			), PodPub_P20::MAX_CHAPTERS );
+			), PodPub_P20::MAX_CHAPTERS, array( 'noun' => 'chapter', 'add' => 'Add chapter', 'title' => 'title', 'none' => 'No chapters yet.' ) );
 			echo '<table class="form-table" role="presentation">';
 			$in_text( 'chapters_url', 'Or: a chapters file hosted elsewhere', $d['chapters_url'], 'https://', 'regular-text' );
 			echo '</table><p class="description">Use the list above or this address, not both.</p>';
@@ -676,7 +846,7 @@ JS;
 				array( 'key' => 'type', 'label' => 'File type', 'type' => 'select', 'options' => array( '' => '' ) + PodPub_P20::transcript_types() ),
 				array( 'key' => 'language', 'label' => 'Language', 'type' => 'text', 'ph' => 'en', 'class' => 'small-text' ),
 				array( 'key' => 'rel', 'label' => 'Rel', 'type' => 'text', 'ph' => 'captions', 'class' => 'small-text' ),
-			), PodPub_P20::MAX_TRANSCRIPTS );
+			), PodPub_P20::MAX_TRANSCRIPTS, array( 'noun' => 'transcript', 'add' => 'Add transcript', 'title' => 'url', 'none' => 'No transcripts yet.' ) );
 			echo '<p><label>Or upload a transcript file (' . esc_html( implode( ', ', array_keys( PodPub_Episodes::transcript_exts() ) ) ) . ', up to 5 MB): <input type="file" name="podpub_transcript"></label> &nbsp; It is added to the list above when you save.</p>';
 			if ( $ctx ) {
 				$files = PodPub_Episodes::list_folder_transcripts( $ctx['podcast'], $ctx['episode'] );
@@ -695,7 +865,7 @@ JS;
 				array( 'key' => 'start', 'label' => 'Start (seconds)', 'type' => 'text', 'class' => 'small-text' ),
 				array( 'key' => 'duration', 'label' => 'Length (seconds)', 'type' => 'text', 'class' => 'small-text' ),
 				array( 'key' => 'title', 'label' => 'Title (optional)', 'type' => 'text' ),
-			), PodPub_P20::MAX_SOUNDBITES );
+			), PodPub_P20::MAX_SOUNDBITES, array( 'noun' => 'soundbite', 'add' => 'Add soundbite', 'title' => 'title,start', 'none' => 'No soundbites yet.' ) );
 
 			echo '<h3>Alternate files</h3><p class="description">Other versions of the episode (for example a video or a different quality), hosted elsewhere. Tick Default if it is the same as the main audio and preferred. Size, bitrate and height are whole numbers; the title is best at 32 characters or fewer. A checksum (kind and value together) lets apps check the file has not been changed.</p>';
 			self::render_rows( $prefix . '[enclosures]', $rows( 'enclosures', $d['enclosures'] ), array(
@@ -711,7 +881,7 @@ JS;
 				array( 'key' => 'default', 'label' => 'Default', 'type' => 'check' ),
 				array( 'key' => 'integrity_type', 'label' => 'Checksum kind', 'type' => 'select', 'options' => array( '' => 'None', 'sri' => 'sri', 'pgp' => 'pgp' ) ),
 				array( 'key' => 'integrity_value', 'label' => 'Checksum value', 'type' => 'text', 'ph' => 'sha384-...' ),
-			), PodPub_P20::MAX_ENCLOSURES );
+			), PodPub_P20::MAX_ENCLOSURES, array( 'noun' => 'alternate file', 'add' => 'Add alternate file', 'title' => 'title,uri', 'none' => 'No alternate files yet.' ) );
 		} else {
 			echo '<h3>Status and ownership</h3><table class="form-table" role="presentation">';
 			echo '<tr><th scope="row"><label>Complete</label></th><td><label><input type="checkbox" name="' . esc_attr( $prefix . '[complete]' ) . '" value="1"' . checked( null !== $in ? ! empty( $in['complete'] ) : ! empty( $d['complete'] ), true, false ) . '> This podcast is finished (no more episodes will be published)</label></td></tr>';
@@ -733,16 +903,6 @@ JS;
 				array( 'key' => 'season', 'label' => 'Season', 'type' => 'text', 'class' => 'small-text' ),
 			), PodPub_P20::MAX_TRAILERS );
 
-			echo '<h3>Live episodes</h3><p class="description">A live stream that apps can announce before it starts and show while it runs. Give the stream address (https://) and its type (usually audio/mpeg); set the status to Pending until it is on air, Live while it is, and Ended afterwards. Change the status and save to update the feed. The link (optional) is a page where people can join.</p>';
-			self::render_rows( $prefix . '[live]', $rows( 'live', $d['live'] ), array(
-				array( 'key' => 'title', 'label' => 'Title', 'type' => 'text' ),
-				array( 'key' => 'status', 'label' => 'Status', 'type' => 'select', 'options' => array( '' => '', 'pending' => 'Pending', 'live' => 'Live', 'ended' => 'Ended' ) ),
-				array( 'key' => 'start', 'label' => 'Starts', 'type' => 'datetime' ),
-				array( 'key' => 'end', 'label' => 'Ends (optional)', 'type' => 'datetime' ),
-				array( 'key' => 'url', 'label' => 'Stream address', 'type' => 'text', 'ph' => 'https://' ),
-				array( 'key' => 'type', 'label' => 'Stream type', 'type' => 'text', 'ph' => 'audio/mpeg', 'class' => 'small-text' ),
-				array( 'key' => 'link', 'label' => 'Link', 'type' => 'text', 'ph' => 'https://' ),
-			), PodPub_P20::MAX_LIVE );
 		}
 
 		echo '<h3>Comments (cross-app)</h3><p class="description">A social post whose replies apps can show as comments on this ' . ( $item ? 'episode' : 'podcast' ) . '. Protocol is for example activitypub; the address is the post\'s address. To say you do not want comments shown, enter the protocol disabled and nothing else.' . esc_html( $inherit ) . '</p>';
@@ -752,7 +912,7 @@ JS;
 			array( 'key' => 'account_id', 'label' => 'Account id', 'type' => 'text', 'class' => 'small-text' ),
 			array( 'key' => 'account_url', 'label' => 'Account address', 'type' => 'text', 'ph' => 'https://' ),
 			array( 'key' => 'priority', 'label' => 'Priority', 'type' => 'text', 'class' => 'small-text' ),
-		), PodPub_P20::MAX_SOCIAL );
+		), PodPub_P20::MAX_SOCIAL, array( 'noun' => 'comment link', 'add' => 'Add comment link', 'title' => 'uri,protocol', 'none' => 'No comment links yet.' ) );
 	}
 
 	/**
@@ -851,7 +1011,7 @@ JS;
 		echo '<tr><th scope="row"><label for="ep_sum">Summary</label></th><td><textarea id="ep_sum" name="podpub_ep[summary]" rows="3" class="large-text">' . esc_textarea( $v( 'summary', $d['summary'] ) ) . '</textarea><p class="description">Optional. A longer plain text summary for apps that show one.</p></td></tr>';
 		echo '<tr><th scope="row"><label for="ep_kw">Keywords</label></th><td><input type="text" id="ep_kw" class="regular-text" maxlength="255" name="podpub_ep[keywords]" value="' . esc_attr( $v( 'keywords', $d['keywords'] ) ) . '"><p class="description">Optional, separated by commas.</p></td></tr>';
 		$ex = $v( 'explicit', $d['explicit'] );
-		echo '<tr><th scope="row"><label for="ep_ex">Explicit</label></th><td><select id="ep_ex" name="podpub_ep[explicit]"><option value=""' . selected( $ex, '', false ) . '>Same as the podcast</option><option value="yes"' . selected( $ex, 'yes', false ) . '>Yes, this episode is explicit</option><option value="no"' . selected( $ex, 'no', false ) . '>No, it is not</option></select></td></tr>';
+		echo '<tr><th scope="row"><label for="ep_ex">Explicit *</label></th><td><select id="ep_ex" name="podpub_ep[explicit]" required><option value=""' . selected( $ex, '', false ) . '>Choose&hellip;</option><option value="yes"' . selected( $ex, 'yes', false ) . '>Yes, this episode is explicit</option><option value="no"' . selected( $ex, 'no', false ) . '>No, it is not</option></select></td></tr>';
 		echo '<tr><th scope="row"><label for="ep_img">Episode picture</label></th><td>';
 		if ( $post && '' !== $d['image'] && '' !== PodPub_Storage::base_url() ) {
 			echo '<p><img src="' . esc_url( PodPub_Storage::base_url() . '/' . PodPub_Feeds::dir_name( $id ) . '/' . PodPub_Episodes::dir_name( $eid ) . '/' . $d['image'] ) . '" alt="" style="max-width:120px;height:auto"> <label><input type="checkbox" name="podpub_ep[remove_image]" value="1"> Remove it</label></p>';
@@ -923,15 +1083,30 @@ JS;
 		echo '</select></td></tr>';
 		$status = $v( 'status', $d['status'] );
 		echo '<tr><th scope="row"><label for="ep_status">Status</label></th><td><select id="ep_status" name="podpub_ep[status]"><option value="draft"' . selected( $status, 'draft', false ) . '>Draft (not in the feed)</option><option value="published"' . selected( $status, 'published', false ) . '>Published (in the feed; needs audio)</option></select></td></tr>';
+		$ps = PodPub_Posts::settings( (int) $id );
+		if ( $ps['enabled'] ) {
+			$has_post = $eid ? PodPub_Posts::post_for( $eid ) : 0;
+			$answer   = $v( 'wp_post', $has_post ? 'no' : 'yes' );
+			echo '<tr id="ep_post_row"><th scope="row"><label for="ep_post">WordPress post</label></th><td>';
+			echo '<label><input type="radio" id="ep_post" name="podpub_ep[wp_post]" value="yes"' . checked( $answer, 'yes', false ) . '> ' . ( $has_post ? 'Update the WordPress post' : 'Create a WordPress post' ) . '</label> &nbsp; ';
+			echo '<label><input type="radio" name="podpub_ep[wp_post]" value="no"' . checked( $answer, 'no', false ) . '> No, leave ' . ( $has_post ? 'the post as it is' : 'WordPress alone' ) . '</label>';
+			if ( $has_post ) {
+				echo '<p class="description"><strong>Choosing update replaces the post\'s title and content</strong> with this episode\'s title and show notes; any changes made to that post in WordPress will be lost. <a href="' . esc_url( get_edit_post_link( $has_post ) ) . '">Open the post</a></p>';
+			} else {
+				echo '<p class="description">Asked only when the episode is published. The post is made after the episode has saved, using the author and categories set on the WordPress posts tab of the podcast.</p>';
+			}
+			echo '<script>(function(){var s=document.getElementById("ep_status"),r=document.getElementById("ep_post_row");if(!s||!r)return;function f(){r.hidden=s.value!=="published";}s.addEventListener("change",f);f();})();</script>';
+			echo '</td></tr>';
+		}
 		$all_rows = ob_get_clean();
-		preg_match_all( '#<tr>.*?</tr>#s', $all_rows, $mm );
+		preg_match_all( '#<tr[^>]*>.*?</tr>#s', $all_rows, $mm );
 		$by = array();
 		foreach ( $mm[0] as $row ) {
 			if ( preg_match( '#for="(ep_\w+)"#', $row, $idm ) ) {
 				$by[ $idm[1] ] = $row;
 			}
 		}
-		$placed = array( 'ep_title', 'ep_desc', 'ep_date', 'ep_status', 'ep_type', 'ep_season', 'ep_num', 'ep_ex', 'ep_src', 'ep_dur', 'ep_notes', 'ep_sub', 'ep_sum', 'ep_kw', 'ep_img' );
+		$placed = array( 'ep_title', 'ep_desc', 'ep_date', 'ep_status', 'ep_post', 'ep_type', 'ep_season', 'ep_num', 'ep_ex', 'ep_src', 'ep_dur', 'ep_notes', 'ep_sub', 'ep_sum', 'ep_kw', 'ep_img' );
 		$group  = function ( $ids ) use ( $by, $placed ) {
 			$h = '<table class="form-table" role="presentation">';
 			foreach ( $ids as $k ) {
@@ -947,7 +1122,7 @@ JS;
 			return $h . '</table>';
 		};
 		$tabs = array(
-			'episode' => array( 'label' => 'Episode', 'html' => $group( array( 'ep_title', 'ep_desc', 'ep_date', 'ep_status', 'ep_type', 'ep_season', 'ep_num', 'ep_ex' ) ) ),
+			'episode' => array( 'label' => 'Episode', 'html' => $group( array( 'ep_title', 'ep_desc', 'ep_date', 'ep_status', 'ep_post', 'ep_type', 'ep_season', 'ep_num', 'ep_ex' ) ) ),
 			'audio'   => array( 'label' => 'Audio', 'html' => $group( array( 'ep_src', 'ep_dur' ) ) ),
 			'notes'   => array( 'label' => 'Notes and picture', 'html' => $group( array( 'ep_notes', 'ep_sub', 'ep_sum', 'ep_kw', 'ep_img' ) ) ),
 		);
@@ -966,6 +1141,9 @@ JS;
 			echo '<input type="hidden" name="action" value="podpub_delete_episode"><input type="hidden" name="podpub_id" value="' . (int) $id . '"><input type="hidden" name="podpub_episode_id" value="' . (int) $eid . '">';
 			wp_nonce_field( 'podpub_delete_episode' );
 			echo '<div class="podpub-danger" style="margin-top:18px">';
+			if ( PodPub_Posts::post_for( $eid ) ) {
+				echo '<p><label><input type="checkbox" name="podpub_delete_post" value="1"> Also move this episode\'s WordPress post to the trash</label></p>';
+			}
 			submit_button( 'Delete episode', 'delete', 'submit', false );
 			echo '</div></form>';
 		}
@@ -1017,6 +1195,9 @@ JS;
 		$text .= ! empty( $notice['files_deleted'] )
 			? 'Its folder and files were deleted too.'
 			: 'Its files were left on the server' . ( '' !== $notice['folder'] ? ' in ' . $notice['folder'] : '' ) . ', so the feed address still works.';
+		if ( ! empty( $notice['posts_trashed'] ) ) {
+			$text .= ' ' . (int) $notice['posts_trashed'] . ' WordPress ' . ( 1 === (int) $notice['posts_trashed'] ? 'post or page was' : 'posts and pages were' ) . ' moved to the trash.';
+		}
 		echo '<div class="notice notice-success"><p>' . esc_html( $text ) . '</p></div>';
 		foreach ( $notice['warnings'] as $m ) {
 			echo '<div class="notice notice-warning"><p>' . esc_html( $m ) . '</p></div>';
@@ -1029,6 +1210,41 @@ JS;
 	 * @param int     $id   Podcast record id.
 	 * @param WP_Post $feed Podcast record.
 	 */
+	/** The WordPress posts tab: whether episodes get posts, who they are by, categories, and the podcast page. */
+	private static function render_posts_tab( $id ) {
+		$s    = PodPub_Posts::settings( $id );
+		$page = PodPub_Posts::page_url( $id );
+		echo '<h2>WordPress posts</h2>';
+		echo '<p class="description">Each published episode can have an ordinary WordPress post with its title and show notes. The feed item then links to that post. These settings are only used when you answer yes on an episode; nothing here changes the feed file.</p>';
+		echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '">';
+		echo '<input type="hidden" name="action" value="podpub_save_posts"><input type="hidden" name="podpub_id" value="' . (int) $id . '">';
+		wp_nonce_field( 'podpub_save_posts' );
+		echo '<table class="form-table" role="presentation">';
+		echo '<tr><th scope="row">Posts</th><td><label><input type="checkbox" name="podpub_posts[enabled]" value="1"' . checked( $s['enabled'], true, false ) . '> Offer to create a WordPress post for each episode</label></td></tr>';
+		echo '<tr><th scope="row"><label for="pp_post_author">Author</label></th><td><select id="pp_post_author" name="podpub_posts[author]"><option value="0"' . selected( $s['author'], 0, false ) . '>Whoever saves the episode</option>';
+		foreach ( PodPub_Posts::authors() as $u ) {
+			echo '<option value="' . (int) $u->ID . '"' . selected( $s['author'], (int) $u->ID, false ) . '>' . esc_html( $u->display_name ) . '</option>';
+		}
+		echo '</select></td></tr>';
+		echo '<tr><th scope="row">Categories</th><td>';
+		$cats = PodPub_Posts::categories();
+		if ( ! $cats ) {
+			echo '<span class="description">There are no categories yet.</span>';
+		}
+		foreach ( $cats as $c ) {
+			echo '<label style="display:block"><input type="checkbox" name="podpub_posts[categories][]" value="' . (int) $c->term_id . '"' . checked( in_array( (int) $c->term_id, $s['categories'], true ), true, false ) . '> ' . esc_html( $c->name ) . '</label>';
+		}
+		echo '</td></tr>';
+		echo '<tr><th scope="row">Podcast page</th><td><label><input type="checkbox" name="podpub_posts[page]" value="1"' . checked( $s['page'], true, false ) . '> Keep a WordPress page for this podcast that lists its published episodes</label>';
+		echo '<p class="description">The page shows the show art and description, then each published episode (newest first) with a link to its post. It is made when you save this tab and kept up to date when episodes are saved or deleted. Unticking it leaves the page as it is.</p>';
+		if ( '' !== $page ) {
+			echo '<p><a href="' . esc_url( $page ) . '" target="_blank" rel="noopener">View the page</a></p>';
+		}
+		echo '</td></tr></table>';
+		self::render_savebar( 'Save WordPress post settings', 'Does not change the feed file.' );
+		echo '</form>';
+	}
+
 	private static function render_delete_podcast( $id, $feed ) {
 		$n   = count( PodPub_Episodes::all( $id ) );
 		$dir = PodPub_Feeds::dir_name( $id );
@@ -1042,6 +1258,7 @@ JS;
 			echo '<p><label><input type="checkbox" name="podpub_delete_files" value="1"> Also delete its folder on the server: <code>' . esc_html( PodPub_Storage::base_path() . '/' . $dir ) . '</code> (the feed file, show art, and every episode folder with its audio, chapters and other files)</label></p>';
 			echo '<p class="description">Left unticked, the files stay on the server and the feed address keeps working, so listeners are not cut off. Ticked, they are gone for good.</p>';
 		}
+		echo '<p><label><input type="checkbox" name="podpub_delete_posts" value="1"> Also move the WordPress posts of its episodes, and its page, to the trash</label></p>';
 		submit_button( 'Delete podcast', 'delete', 'submit', false );
 		echo '</form>';
 	}
@@ -1249,6 +1466,8 @@ JS;
 				foreach ( ! empty( $a['warnings'] ) ? $a['warnings'] : array() as $m ) {
 					echo '<div class="notice notice-warning"><p>' . esc_html( $m ) . '</p></div>';
 				}
+			} elseif ( ! empty( $notice['posts_saved'] ) ) {
+				echo '<div class="notice notice-success"><p>WordPress post settings saved. The feed file has not been changed.</p></div>';
 			} else {
 				echo '<div class="notice notice-success"><p>' . ( ! empty( $notice['written'] ) ? 'Saved. The feed file was written (the previous file was kept as a backup).' : 'Saved. The feed file has not been changed; press Save and write feed on the podcast page to publish.' ) . '</p></div>';
 			}
@@ -1317,6 +1536,8 @@ JS;
 		// Episodes.
 		ob_start();
 		self::render_episode_list( $id );
+		$live_in = is_array( $notice ) && isset( $notice['form'] ) && 'live' === $notice['form'] && ! empty( $notice['input'] ) ? $notice['input'] : null;
+		self::render_live_form( $id, $d, $live_in );
 		$tabs['episodes'] = array( 'label' => 'Episodes' . ( $eps ? ' (' . count( $eps ) . ')' : '' ), 'html' => ob_get_clean() );
 
 		// Details.
@@ -1372,6 +1593,11 @@ JS;
 		echo '</form>';
 		$tabs['p20'] = array( 'label' => 'Podcasting 2.0', 'html' => ob_get_clean() );
 
+		// WordPress posts and page.
+		ob_start();
+		self::render_posts_tab( $id );
+		$tabs['posts'] = array( 'label' => 'WordPress posts', 'html' => ob_get_clean() );
+
 		// Feed and files, and deleting.
 		ob_start();
 		echo '<h2>Feed and files</h2><table class="form-table" role="presentation">';
@@ -1388,8 +1614,12 @@ JS;
 		echo '</div>';
 		$tabs['feed'] = array( 'label' => 'Feed and files', 'html' => ob_get_clean() );
 
-		if ( is_array( $notice ) && isset( $notice['form'] ) && 'p20' === $notice['form'] && ! empty( $notice['errors'] ) ) {
+		if ( is_array( $notice ) && isset( $notice['form'] ) && 'live' === $notice['form'] ) {
+			$default = 'episodes';
+		} elseif ( is_array( $notice ) && isset( $notice['form'] ) && 'p20' === $notice['form'] && ! empty( $notice['errors'] ) ) {
 			$default = 'p20';
+		} elseif ( is_array( $notice ) && isset( $notice['form'] ) && 'posts' === $notice['form'] ) {
+			$default = 'posts';
 		} elseif ( is_array( $notice ) && ! empty( $notice['errors'] ) ) {
 			$default = 'details';
 		} elseif ( isset( $_GET['tab'] ) && isset( $tabs[ sanitize_key( wp_unslash( $_GET['tab'] ) ) ] ) ) {

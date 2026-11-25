@@ -189,6 +189,9 @@ class PodPub_FeedXml {
 	private static function write_item( $w, $e ) {
 		$w->startElement( 'item' );
 		$w->writeElement( 'title', $e['title'] );
+		if ( ! empty( $e['post_url'] ) ) {
+			$w->writeElement( 'link', $e['post_url'] );
+		}
 		$w->writeElement( 'description', $e['description'] );
 		$w->writeElement( 'pubDate', gmdate( 'D, d M Y H:i:s', (int) $e['published'] ) . ' +0000' );
 		$w->startElement( 'guid' );

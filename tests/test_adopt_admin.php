@@ -37,7 +37,7 @@ function wp_remote_retrieve_header( $r, $h ) { return isset( $r['headers'][ $h ]
 class WP_Error { public $m; function __construct( $c, $m ) { $this->m = $m; } function get_error_message() { return $this->m; } }
 function is_wp_error( $x ) { return $x instanceof WP_Error; }
 
-foreach ( array( 'settings', 'storage', 'p20', 'images', 'details', 'episodes', 'feedxml', 'feeds', 'geo', 'adopt', 'admin' ) as $c ) { require __DIR__ . "/../plugin/includes/class-podpub-$c.php"; }
+foreach ( array( 'settings', 'storage', 'p20', 'images', 'details', 'posts', 'episodes', 'feedxml', 'feeds', 'geo', 'adopt', 'admin' ) as $c ) { require __DIR__ . "/../plugin/includes/class-podpub-$c.php"; }
 
 $fail = 0;
 function check( $name, $ok ) { global $fail; echo ( $ok ? 'ok   ' : 'FAIL ' ) . $name . "\n"; if ( ! $ok ) { $fail = 1; } }
@@ -65,6 +65,9 @@ function admin_url( $p = '' ) { return 'https://example.com/wp-admin/' . $p; }
 function add_query_arg( $a, $u, $v = null ) { if ( ! is_array( $a ) ) { $a = array( $a => $u ); $u = $v; } return $u . ( false === strpos( $u, '?' ) ? '?' : '&' ) . http_build_query( $a ); }
 function wp_nonce_field() { echo '<input type="hidden" name="_wpnonce" value="n">'; }
 function submit_button( $t = 'Save', $type = 'primary', $name = 'submit', $wrap = true ) { echo '<button class="' . $type . '">' . esc_html( $t ) . '</button>'; }
+function get_users( $a ) { return array( (object) array( 'ID' => 3, 'display_name' => 'Ann Author' ) ); }
+function get_categories( $a ) { return array( (object) array( 'term_id' => 7, 'name' => 'News' ) ); }
+function get_edit_post_link( $id ) { return 'https://example.com/wp-admin/post.php?post=' . $id; }
 function current_user_can() { return ! isset( $GLOBALS['can'] ) || $GLOBALS['can']; }
 function get_current_user_id() { return 1; }
 function get_transient( $k ) { return isset( $GLOBALS['trans'][ $k ] ) ? $GLOBALS['trans'][ $k ] : false; }

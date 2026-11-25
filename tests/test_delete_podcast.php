@@ -37,7 +37,7 @@ function wp_remote_retrieve_header( $r, $h ) { return isset( $r['headers'][ $h ]
 class WP_Error { public $m; function __construct( $c, $m ) { $this->m = $m; } function get_error_message() { return $this->m; } }
 function is_wp_error( $x ) { return $x instanceof WP_Error; }
 
-foreach ( array( 'settings', 'storage', 'p20', 'images', 'details', 'episodes', 'feedxml', 'feeds' ) as $c ) { require __DIR__ . "/../plugin/includes/class-podpub-$c.php"; }
+foreach ( array( 'settings', 'storage', 'p20', 'images', 'details', 'posts', 'episodes', 'feedxml', 'feeds' ) as $c ) { require __DIR__ . "/../plugin/includes/class-podpub-$c.php"; }
 
 $fail = 0;
 function check( $name, $ok ) { global $fail; echo ( $ok ? 'ok   ' : 'FAIL ' ) . $name . "\n"; if ( ! $ok ) { $fail = 1; } }
@@ -47,7 +47,7 @@ function feed_dom( $file ) { $d = new DOMDocument(); $d->load( $file ); $x = new
 mkdir( "$tmp/in", 0755, true );
 $MP3  = "ID3\x04\x00\x00\x00\x00\x00\x00" . str_repeat( "\0", 100 );
 $det  = array( 'title' => 'x', 'description' => 'About', 'language' => 'en', 'explicit' => 'no' );
-$ep   = array( 'title' => 'First', 'description' => 'Hello', 'published' => '2026-01-15T09:30', 'duration' => '5:00', 'status' => 'published' );
+$ep   = array( 'title' => 'First', 'description' => 'Hello', 'explicit' => 'no', 'published' => '2026-01-15T09:30', 'duration' => '5:00', 'status' => 'published' );
 $base = "$tmp/uploads/podpublisher";
 
 // A podcast with details, a feed file and two episodes (one with audio), and a second podcast that must never be touched.
