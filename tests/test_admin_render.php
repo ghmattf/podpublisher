@@ -140,6 +140,9 @@ $ae = PodPub_Episodes::save( 5, 0, array( 'title' => 'WithAudio', 'description' 
 $_GET['episode'] = (string) $ae['id'];
 $h = page( 5 );
 check( 'audio (episode with audio): Replace audio button, Open is a button, duration is plain text, no editable duration on the page', false !== strpos( $h, 'data-podpub-audio-open>Replace audio</button>' ) && preg_match( '#<a class="button button-small" href="[^"]*WithAudio\.mp3" target="_blank" rel="noopener">Open</a>#', $h ) && false !== strpos( $h, '<p class="podpub-audio-dur">Duration: 1:02:30</p>' ) && 0 === preg_match( '#<tr><th[^>]*><label for="ep_dur"#', $h ) );
+foreach ( array( 'image' => array( 'podpub_ep_image', 'podpub_ep[image_staged]' ), 'transcript' => array( 'podpub_transcript', 'podpub_ep[transcript_staged]' ), 'chapters' => array( 'podpub_chapters_file', 'podpub_ep[chapters_staged]' ), 'splits' => array( 'podpub_splits_file', 'podpub_ep[splits_staged]' ) ) as $k => $n ) {
+	check( "chunked upload ($k): box, plain file input and hidden token on the episode page", false !== strpos( $h, 'data-podpub-chunk data-kind="' . $k . '"' ) && 1 === preg_match( '#<input type="file"[^>]*name="' . preg_quote( $n[0], '#' ) . '"#', $h ) && false !== strpos( $h, 'name="' . $n[1] . '" value=""' ) );
+}
 unset( $_GET['episode'] );
 // Podcast page lists and the Live episodes move.
 unset( $_GET['episode'] );
@@ -301,6 +304,7 @@ check( 'search handler: an array instead of text is treated as empty', $r['succe
 // ---- Tabs, cards and look (TODO 20 and 27) ----
 $_GET = array(); unset( $_GET['episode'] );
 $h = page( 5 );
+check( 'chunked upload (image): show art has the Upload box, a plain file input and a hidden token', false !== strpos( $h, 'data-podpub-chunk data-kind="image"' ) && 1 === preg_match( '#<input type="file" id="pp_img" name="podpub_image"#', $h ) && false !== strpos( $h, 'name="podpub[image_staged]" value=""' ) );
 check( 'tabs: the podcast page has Episodes, Details, Podcasting 2.0 and Feed and files, each with a panel', 4 === preg_match_all( '/role="tab" id="podpub-t-(episodes|details|p20|feed)"/', $h ) && 4 === preg_match_all( '/role="tabpanel" id="podpub-tab-(episodes|details|p20|feed)"/', $h ) );
 check( 'tabs: aria links between tab and panel, and the default tab is marked', false !== strpos( $h, 'aria-controls="podpub-tab-details"' ) && false !== strpos( $h, 'aria-labelledby="podpub-t-details"' ) && false !== strpos( $h, 'data-default="episodes"' ) );
 check( 'tabs: only the default panel is visible when the page loads (the others are hidden by the server, no flash)', 4 === preg_match_all( '/<section[^>]* hidden/', $h ) && 0 === preg_match( '/<section[^>]*data-tab="episodes"[^>]* hidden/', $h ) );

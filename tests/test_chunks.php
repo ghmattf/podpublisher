@@ -113,5 +113,17 @@ PodPub_Chunks::receive( $old, 0, 2, 'a.mp3', 60, piece( "$tmp/in", 102, str_repe
 touch( PodPub_Chunks::dir() . "/$old.part", time() - 90000 ); touch( PodPub_Chunks::dir() . "/$old.json", time() - 90000 );
 PodPub_Chunks::receive( str_repeat( 'f6', 16 ), 0, 2, 'a.mp3', 60, piece( "$tmp/in", 103, str_repeat( 'x', 30 ) ), 7 );
 check( 'uploads older than a day are removed', ! is_file( PodPub_Chunks::dir() . "/$old.part" ) && ! is_file( PodPub_Chunks::dir() . "/$old.json" ) );
+
+// Other kinds of file (images, transcripts, chapters, time splits).
+$kid = str_repeat( 'a7', 16 );
+check( 'kinds: image accepts a picture and refuses audio', ! is_wp_error( PodPub_Chunks::receive( $kid, 0, 1, 'cover.png', 30, piece( "$tmp/in", 110, str_repeat( 'p', 30 ) ), 7, 'image' ) ) && is_wp_error( PodPub_Chunks::receive( str_repeat( 'a8', 16 ), 0, 1, 'a.mp3', 30, piece( "$tmp/in", 111, str_repeat( 'p', 30 ) ), 7, 'image' ) ) );
+check( 'kinds: audio does not accept a picture', is_wp_error( PodPub_Chunks::receive( str_repeat( 'a9', 16 ), 0, 1, 'cover.png', 30, piece( "$tmp/in", 112, str_repeat( 'p', 30 ) ), 7, 'audio' ) ) );
+check( 'kinds: chapters accept only json; splits accept txt', ! is_wp_error( PodPub_Chunks::receive( str_repeat( 'b1', 16 ), 0, 1, 'chapters.json', 30, piece( "$tmp/in", 113, str_repeat( 'j', 30 ) ), 7, 'chapters' ) ) && is_wp_error( PodPub_Chunks::receive( str_repeat( 'b2', 16 ), 0, 1, 'chapters.txt', 30, piece( "$tmp/in", 114, str_repeat( 'j', 30 ) ), 7, 'chapters' ) ) && ! is_wp_error( PodPub_Chunks::receive( str_repeat( 'b3', 16 ), 0, 1, 'splits.txt', 30, piece( "$tmp/in", 115, str_repeat( 'j', 30 ) ), 7, 'splits' ) ) );
+check( 'kinds: each kind has its own size limit', is_wp_error( PodPub_Chunks::receive( str_repeat( 'b4', 16 ), 0, 1, 'chapters.json', 2 * 1048576, piece( "$tmp/in", 116, str_repeat( 'j', 30 ) ), 7, 'chapters' ) ) && is_wp_error( PodPub_Chunks::receive( str_repeat( 'b5', 16 ), 0, 1, 't.srt', 6 * 1048576, piece( "$tmp/in", 117, str_repeat( 'j', 30 ) ), 7, 'transcript' ) ) && is_wp_error( PodPub_Chunks::receive( str_repeat( 'b6', 16 ), 0, 1, 'c.jpg', 11 * 1048576, piece( "$tmp/in", 118, str_repeat( 'j', 30 ) ), 7, 'image' ) ) );
+check( 'kinds: an unknown kind is refused', is_wp_error( PodPub_Chunks::receive( str_repeat( 'b7', 16 ), 0, 1, 'a.mp3', 30, piece( "$tmp/in", 119, str_repeat( 'j', 30 ) ), 7, 'script' ) ) );
+$f = PodPub_Chunks::file( $kid, 7, 'image' );
+check( 'kinds: a finished image is a usable file entry for its own kind only', UPLOAD_ERR_OK === $f['error'] && is_file( $f['tmp_name'] ) && 'cover.png' === $f['name'] && UPLOAD_ERR_OK !== PodPub_Chunks::file( $kid, 7, 'audio' )['error'] && UPLOAD_ERR_OK !== PodPub_Chunks::file( $kid, 7, 'chapters' )['error'] );
+check( 'kinds: a finished upload cannot be continued as another kind', is_wp_error( PodPub_Chunks::receive( $kid, 0, 1, 'cover.png', 30, piece( "$tmp/in", 120, str_repeat( 'p', 30 ) ), 7, 'chapters' ) ) );
+check( 'fail(): message of a missing staged file is passed on', 'gone' === PodPub_Chunks::fail( array( 'error' => 4, 'message' => 'gone' ), 'x' ) && 'x' === PodPub_Chunks::fail( array( 'error' => 1 ), 'x' ) );
 echo $fail ? "\nSOME FAILED\n" : "\nAll passed\n";
 exit( $fail );

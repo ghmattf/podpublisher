@@ -143,6 +143,25 @@ class PodPub_Admin {
 	}
 
 	/**
+	 * A file sent in pieces with an Upload button waits in the staging folder; Save picks it up when no file
+	 * was sent directly with the form.
+	 *
+	 * @param array|null $input  The form's field array (holds the token under "<kind>_staged").
+	 * @param string     $kind   Kind of upload (see PodPub_Chunks::kinds()).
+	 * @param array|null $direct The $_FILES entry sent with the form, or null.
+	 * @param array      $used   Tokens picked up (collected so they can be removed after a good save).
+	 * @return array|null The file entry to use.
+	 */
+	private static function staged_upload( $input, $kind, $direct, &$used ) {
+		$tok = isset( $input[ $kind . '_staged' ] ) && is_string( $input[ $kind . '_staged' ] ) ? $input[ $kind . '_staged' ] : '';
+		if ( PodPub_Chunks::valid_id( $tok ) && ( null === $direct || ( isset( $direct['error'] ) && UPLOAD_ERR_NO_FILE === (int) $direct['error'] ) ) ) {
+			$used[] = $tok;
+			return PodPub_Chunks::file( $tok, get_current_user_id(), $kind );
+		}
+		return $direct;
+	}
+
+	/**
 	 * Podcast details form handler.
 	 */
 	public static function handle_save_details() {
@@ -159,7 +178,12 @@ class PodPub_Admin {
 				$file = null;
 			}
 		}
+		$used   = array();
+		$file   = self::staged_upload( $input, 'image', $file, $used );
 		$result = PodPub_Feeds::save_details( $id, $input, $file );
+		if ( ! $result['errors'] ) {
+			array_map( array( 'PodPub_Chunks', 'discard' ), $used );
+		}
 		set_transient( 'podpub_notice_' . get_current_user_id(), $result, 120 );
 		wp_safe_redirect( self::feed_page_url( $id, array( 'tab' => 'details' ) ) );
 		exit;
@@ -204,10 +228,14 @@ class PodPub_Admin {
 			}
 			return null;
 		};
-		$result          = PodPub_Episodes::save( $pid, $eid, $input, $file, $upload( 'podpub_ep_image' ), $upload( 'podpub_transcript' ), $upload( 'podpub_chapters_file' ), $upload( 'podpub_splits_file' ) );
+		$used            = array();
+		$result          = PodPub_Episodes::save( $pid, $eid, $input, $file, self::staged_upload( $input, 'image', $upload( 'podpub_ep_image' ), $used ), self::staged_upload( $input, 'transcript', $upload( 'podpub_transcript' ), $used ), self::staged_upload( $input, 'chapters', $upload( 'podpub_chapters_file' ), $used ), self::staged_upload( $input, 'splits', $upload( 'podpub_splits_file' ), $used ) );
 		$result['input'] = $result['errors'] ? $input : null;
-		if ( '' !== $staged && ! $result['errors'] ) {
-			PodPub_Chunks::discard( $staged );
+		if ( '' !== $staged ) {
+			$used[] = $staged;
+		}
+		if ( ! $result['errors'] ) {
+			array_map( array( 'PodPub_Chunks', 'discard' ), $used );
 		}
 		set_transient( 'podpub_notice_' . get_current_user_id(), $result, 120 );
 		$go = $result['errors'] ? ( $eid ? (string) $eid : 'new' ) : (string) $result['id'];
@@ -290,7 +318,8 @@ class PodPub_Admin {
 		if ( isset( $_FILES['chunk'] ) && is_array( $_FILES['chunk'] ) && isset( $_FILES['chunk']['tmp_name'], $_FILES['chunk']['error'] ) && UPLOAD_ERR_OK === (int) $_FILES['chunk']['error'] && is_uploaded_file( $_FILES['chunk']['tmp_name'] ) ) {
 			$tmp = $_FILES['chunk']['tmp_name']; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput
 		}
-		$r = PodPub_Chunks::receive( $id, $index, $total, $name, $size, $tmp, get_current_user_id() );
+		$kind = isset( $_POST['kind'] ) && is_string( $_POST['kind'] ) ? sanitize_key( wp_unslash( $_POST['kind'] ) ) : 'audio';
+		$r    = PodPub_Chunks::receive( $id, $index, $total, $name, $size, $tmp, get_current_user_id(), $kind );
 		if ( is_wp_error( $r ) ) {
 			wp_send_json_error( array( 'message' => $r->get_error_message() ) );
 		}
@@ -592,7 +621,7 @@ render();
 });
 document.querySelectorAll("[data-podpub-chunk]").forEach(function(box){
 var inp=box.querySelector("input[type=file]"),go=box.querySelector(".podpub-chunk-go"),live=box.querySelector(".podpub-chunk-live"),bar=live&&live.querySelector("progress"),st=live&&live.querySelector(".podpub-chunk-status"),hid=box.querySelector("input[type=hidden]");
-var url=box.getAttribute("data-url"),nonce=box.getAttribute("data-nonce"),csize=parseInt(box.getAttribute("data-chunk"),10)||1048576;
+var kind=box.getAttribute("data-kind")||"audio",doneTxt=box.getAttribute("data-done-text")||"Press OK to use it.",url=box.getAttribute("data-url"),nonce=box.getAttribute("data-nonce"),csize=parseInt(box.getAttribute("data-chunk"),10)||1048576;
 var slot=document.getElementById(box.getAttribute("data-slot")||""),fields=document.getElementById(box.getAttribute("data-fields")||""),home=live?live.parentNode:null;
 if(!inp||!go||!live||!window.XMLHttpRequest||!window.FormData||!window.Blob||!Blob.prototype.slice)return;
 box.classList.add("podpub-chunk-on");inp.removeAttribute("name");
@@ -609,7 +638,7 @@ var tries=0;
 (function attempt(){
 if(cancelled){done("cancelled");return;}
 var x=new XMLHttpRequest(),d=new FormData(),from=i*csize,part=file.slice(from,Math.min(file.size,from+csize));xhr=x;
-d.append("action","podpub_chunk");d.append("nonce",nonce);d.append("id",id);d.append("index",i);d.append("total",total);d.append("name",file.name);d.append("size",file.size);d.append("chunk",part,"chunk.bin");
+d.append("action","podpub_chunk");d.append("nonce",nonce);d.append("kind",kind);d.append("id",id);d.append("index",i);d.append("total",total);d.append("name",file.name);d.append("size",file.size);d.append("chunk",part,"chunk.bin");
 x.open("POST",url);
 x.upload.onprogress=function(e){if(e.lengthComputable){bar.value=Math.min(file.size,from+e.loaded);}};
 x.onabort=function(){done("cancelled");};
@@ -628,16 +657,16 @@ var total=Math.ceil(f.size/csize),id=rid();busy=true;cancelled=false;hid.value="
 var i=0;
 function end(){busy=false;show(false);ev("end");}
 function next(){
-if(i>=total){hid.value=id;bar.value=f.size;box.setAttribute("data-uploaded",f.name+" ("+fmt(f.size)+")");say("Uploaded "+f.name+" ("+fmt(f.size)+"). Press OK to use it.");end();return;}
+if(i>=total){hid.value=id;bar.value=f.size;box.setAttribute("data-uploaded",f.name+" ("+fmt(f.size)+")");say("Uploaded "+f.name+" ("+fmt(f.size)+"). "+doneTxt);end();return;}
 send(id,f,i,total,function(err){
 if(err){bar.hidden=true;say(err==="cancelled"?"Upload cancelled.":err,err!=="cancelled");end();return;}
 i++;next();});}
 next();});
 inp.addEventListener("change",function(){if(!busy){hid.value="";box.removeAttribute("data-uploaded");bar.hidden=true;say(inp.files&&inp.files.length?"Press Upload to send the file. Choosing it does not upload it.":"");}});
 if(form)form.addEventListener("submit",function(e){
-var s=document.getElementById("ep_src"),useUp=!s||s.value==="upload";
-if(busy){e.preventDefault();alert("The audio is still uploading. Wait for it to finish, then press Save.");return;}
-if(useUp&&inp.files&&inp.files.length&&!hid.value){e.preventDefault();say("Press Upload to send this file first, or choose another audio source.",true);box.dispatchEvent(new CustomEvent("podpub-show",{bubbles:true}));inp.focus();}});
+var s=document.getElementById("ep_src"),useUp=kind!=="audio"||!s||s.value==="upload";
+if(busy){e.preventDefault();alert("A file is still uploading. Wait for it to finish, then press Save.");return;}
+if(useUp&&inp.files&&inp.files.length&&!hid.value){e.preventDefault();say(kind==="audio"?"Press Upload to send this file first, or choose another audio source.":"Press Upload to send this file first, or clear it.",true);if(kind==="audio")box.dispatchEvent(new CustomEvent("podpub-show",{bubbles:true}));else if(box.scrollIntoView)box.scrollIntoView({block:"center"});inp.focus();}});
 window.addEventListener("beforeunload",function(e){if(busy){e.preventDefault();e.returnValue="";}});
 });
 document.querySelectorAll("[data-podpub-audio]").forEach(function(dlg){
@@ -853,6 +882,27 @@ JS;
 		echo '</form>';
 	}
 
+	/**
+	 * A file input that also offers an Upload button (script on): the file goes up in pieces with a progress bar,
+	 * separate from Save, and Save uses the finished upload. Without script it is an ordinary file input.
+	 *
+	 * @param string $kind     Upload kind (see PodPub_Chunks::kinds()).
+	 * @param string $field    Name of the plain file input.
+	 * @param string $hidden   Name of the hidden field that carries the finished upload's id.
+	 * @param string $accept   Accept attribute (may be empty).
+	 * @param string $staged   Id of a finished upload still waiting (after a failed save), or empty.
+	 * @param string $file_id  Optional id for the file input.
+	 */
+	private static function render_chunk_input( $kind, $field, $hidden, $accept, $staged = '', $file_id = '' ) {
+		$info = PodPub_Chunks::valid_id( $staged ) ? PodPub_Chunks::info( $staged, get_current_user_id() ) : null;
+		$text = $info ? 'Uploaded ' . $info['name'] . ' (' . size_format( $info['size'] ) . '). It is used when you press Save.' : '';
+		echo '<div class="podpub-chunk" data-podpub-chunk data-kind="' . esc_attr( $kind ) . '" data-done-text="It is used when you press Save." data-url="' . esc_url( admin_url( 'admin-ajax.php' ) ) . '" data-nonce="' . esc_attr( wp_create_nonce( 'podpub_chunk' ) ) . '" data-chunk="' . (int) PodPub_Chunks::chunk_size() . '">';
+		echo '<input type="file"' . ( '' !== $file_id ? ' id="' . esc_attr( $file_id ) . '"' : '' ) . ' name="' . esc_attr( $field ) . '"' . ( '' !== $accept ? ' accept="' . esc_attr( $accept ) . '"' : '' ) . '>';
+		echo '<span class="podpub-chunk-ui"> <button type="button" class="button podpub-chunk-go">Upload</button>';
+		echo '<span class="podpub-chunk-live"><progress max="100" value="0" hidden></progress><span class="podpub-chunk-status" role="status">' . esc_html( $text ) . '</span></span></span>';
+		echo '<input type="hidden" name="' . esc_attr( $hidden ) . '" value="' . esc_attr( $info ? $staged : '' ) . '"></div>';
+	}
+
 	private static function render_p20_fields( $prefix, $d, $in, $item, $ctx = null ) {
 		ob_start();
 		self::render_p20_fields_raw( $prefix, $d, $in, $item, $ctx );
@@ -943,7 +993,9 @@ JS;
 			), PodPub_P20::MAX_SPLITS, array( 'noun' => 'time split', 'add' => 'Add time split', 'title' => 'start', 'none' => 'No time splits yet.' ) );
 			echo '<h4>Import time splits</h4><p class="description">Paste time splits here or upload a file. The usual input is ready-made <code>&lt;podcast:valueTimeSplit&gt;</code> tags copied from a feed, but a whole value block, JSON, or lines separated by commas, tabs, semicolons or spaces (start, length, feed GUID, episode GUID, remote start, percentage, feed address) also work, with or without a header row. Decimals of a second are rounded to whole seconds. Nothing is kept until you save.</p>';
 			echo '<p><textarea name="' . esc_attr( $prefix ) . '[splits_import]" rows="6" class="large-text code" placeholder="&lt;podcast:valueTimeSplit startTime=&quot;76.645988&quot; duration=&quot;270.916411&quot; remotePercentage=&quot;99&quot;&gt;&#10;  &lt;podcast:remoteItem feedGuid=&quot;...&quot; itemGuid=&quot;...&quot;/&gt;&#10;&lt;/podcast:valueTimeSplit&gt;">' . esc_textarea( isset( $in['splits_import'] ) && is_string( $in['splits_import'] ) ? $in['splits_import'] : '' ) . '</textarea></p>';
-			echo '<p><label>Or upload a file (.txt, .xml, .csv or .json, up to 1 MB): <input type="file" name="podpub_splits_file" accept=".txt,.xml,.csv,.tsv,.json,text/plain,text/xml,application/json"></label> &nbsp; <label>When saving: <select name="' . esc_attr( $prefix ) . '[splits_mode]"><option value="replace">replace the time splits above</option><option value="add">add to the time splits above</option></select></label></p>';
+			echo '<p>Or upload a file (.txt, .xml, .csv or .json, up to 1 MB): ';
+			self::render_chunk_input( 'splits', 'podpub_splits_file', $prefix . '[splits_staged]', '.txt,.xml,.csv,.tsv,.json,text/plain,text/xml,application/json', $v( 'splits_staged', '' ) );
+			echo ' &nbsp; <label>When saving: <select name="' . esc_attr( $prefix ) . '[splits_mode]"><option value="replace">replace the time splits above</option><option value="add">add to the time splits above</option></select></label></p>';
 		} else {
 			echo '<h3>Block</h3><p class="description">Ask podcast apps not to list this podcast. Choose yes to block, no to say it is not blocked. To block or allow just one service, enter its id.</p>';
 			self::render_rows( $prefix . '[block]', $rows( 'block', $d['block'] ), array(
@@ -970,7 +1022,9 @@ JS;
 			echo '<table class="form-table" role="presentation">';
 			$in_text( 'chapters_url', 'Or: a chapters file hosted elsewhere', $d['chapters_url'], 'https://', 'regular-text' );
 			echo '</table><p class="description">Use the list above or this address, not both.</p>';
-			echo '<p><label>Or upload a <code>chapters.json</code> file (JSON chapters, up to 1 MB): <input type="file" name="podpub_chapters_file" accept=".json,application/json"></label> &nbsp; It replaces the list above and any address when you save. Fields PodPublisher does not keep are named in a warning.</p>';
+			echo '<p>Or upload a <code>chapters.json</code> file (JSON chapters, up to 1 MB): ';
+			self::render_chunk_input( 'chapters', 'podpub_chapters_file', $prefix . '[chapters_staged]', '.json,application/json', $v( 'chapters_staged', '' ) );
+			echo ' It replaces the list above and any address when you save. Fields PodPublisher does not keep are named in a warning.</p>';
 
 			echo '<h3>Transcripts</h3><p class="description">Links to transcript or caption files (hosted elsewhere or copied into the episode folder). Language is optional (the podcast\'s language is assumed). Put captions in Rel if the file has timecodes and is meant as closed captions.</p>';
 			self::render_rows( $prefix . '[transcripts]', $rows( 'transcripts', $d['transcripts'] ), array(
@@ -979,7 +1033,9 @@ JS;
 				array( 'key' => 'language', 'label' => 'Language', 'type' => 'text', 'ph' => 'en', 'class' => 'small-text' ),
 				array( 'key' => 'rel', 'label' => 'Rel', 'type' => 'text', 'ph' => 'captions', 'class' => 'small-text' ),
 			), PodPub_P20::MAX_TRANSCRIPTS, array( 'noun' => 'transcript', 'add' => 'Add transcript', 'title' => 'url', 'none' => 'No transcripts yet.' ) );
-			echo '<p><label>Or upload a transcript file (' . esc_html( implode( ', ', array_keys( PodPub_Episodes::transcript_exts() ) ) ) . ', up to 5 MB): <input type="file" name="podpub_transcript"></label> &nbsp; It is added to the list above when you save.</p>';
+			echo '<p>Or upload a transcript file (' . esc_html( implode( ', ', array_keys( PodPub_Episodes::transcript_exts() ) ) ) . ', up to 5 MB): ';
+			self::render_chunk_input( 'transcript', 'podpub_transcript', $prefix . '[transcript_staged]', '', $v( 'transcript_staged', '' ) );
+			echo ' It is added to the list above when you save.</p>';
 			if ( $ctx ) {
 				$files = PodPub_Episodes::list_folder_transcripts( $ctx['podcast'], $ctx['episode'] );
 				if ( $files ) {
@@ -1148,7 +1204,8 @@ JS;
 		if ( $post && '' !== $d['image'] && '' !== PodPub_Storage::base_url() ) {
 			echo '<p><img src="' . esc_url( PodPub_Storage::base_url() . '/' . PodPub_Feeds::dir_name( $id ) . '/' . PodPub_Episodes::dir_name( $eid ) . '/' . $d['image'] ) . '" alt="" style="max-width:120px;height:auto"> <label><input type="checkbox" name="podpub_ep[remove_image]" value="1"> Remove it</label></p>';
 		}
-		echo '<input type="file" id="ep_img" name="podpub_ep_image" accept="image/jpeg,image/png,image/gif"><p class="description">Optional. JPEG, PNG or GIF, square, 1400 to 3000 pixels. Smaller copies are made automatically for apps to use (not for a GIF). Without one, apps use the podcast\'s show art.</p></td></tr>';
+		self::render_chunk_input( 'image', 'podpub_ep_image', 'podpub_ep[image_staged]', 'image/jpeg,image/png,image/gif', $v( 'image_staged', '' ), 'ep_img' );
+		echo '<p class="description">Optional. JPEG, PNG or GIF, square, 1400 to 3000 pixels. Smaller copies are made automatically for apps to use (not for a GIF). Without one, apps use the podcast\'s show art.</p></td></tr>';
 		echo '<tr><th scope="row"><label for="ep_notes">Show notes</label></th><td><textarea id="ep_notes" name="podpub_ep[show_notes]" rows="8" class="large-text code">' . esc_textarea( $v( 'show_notes', $d['show_notes'] ) ) . '</textarea><p class="description">Optional. Links and simple formatting only (a, b, strong, i, em, br, p, ul, ol, li, h2-h4, blockquote); anything else is removed.</p></td></tr>';
 		// Audio: three ways to give the episode its audio file.
 		$pd       = PodPub_Feeds::dir_name( $id );
@@ -1730,7 +1787,8 @@ JS;
 		if ( '' !== $d['image'] && '' !== $base && '' !== $dir ) {
 			echo '<p><img src="' . esc_url( $base . '/' . $dir . '/' . $d['image'] ) . '" alt="" style="max-width:150px;height:auto"></p>';
 		}
-		echo '<input type="file" id="pp_img" name="podpub_image" accept="image/jpeg,image/png,image/gif"><p class="description">JPEG, PNG or GIF, square, between 1400 x 1400 and 3000 x 3000 pixels, up to 10 MB. Saved in the podcast folder as cover.jpg, cover.png or cover.gif; smaller copies (300, 600, 1000 and 1500 pixels wide) are made automatically for apps to use (not for a GIF). Some directories (such as Apple Podcasts and Spotify) only take JPEG or PNG.</p></td></tr>';
+		self::render_chunk_input( 'image', 'podpub_image', 'podpub[image_staged]', 'image/jpeg,image/png,image/gif', '', 'pp_img' );
+		echo '<p class="description">JPEG, PNG or GIF, square, between 1400 x 1400 and 3000 x 3000 pixels, up to 10 MB. Saved in the podcast folder as cover.jpg, cover.png or cover.gif; smaller copies (300, 600, 1000 and 1500 pixels wide) are made automatically for apps to use (not for a GIF). Some directories (such as Apple Podcasts and Spotify) only take JPEG or PNG.</p></td></tr>';
 		echo '</table>';
 		self::render_savebar( 'Save and write feed', 'Saves the details and writes the feed file (the old file is kept as a backup).' );
 		echo '</form>';

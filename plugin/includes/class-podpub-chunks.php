@@ -16,6 +16,30 @@ class PodPub_Chunks {
 
 	const MAX_AGE = 86400; // Seconds a staged file is kept.
 
+	/**
+	 * The kinds of file that can be sent in pieces: allowed extensions and the most bytes for each.
+	 *
+	 * @return array kind => array( 'exts' => string[], 'max' => int, 'label' => string )
+	 */
+	public static function kinds() {
+		return array(
+			'audio'      => array( 'exts' => array_keys( PodPub_Episodes::audio_types() ), 'max' => self::max_bytes(), 'label' => 'audio file' ),
+			'image'      => array( 'exts' => array( 'jpg', 'jpeg', 'png', 'gif' ), 'max' => 10 * 1048576, 'label' => 'picture' ),
+			'transcript' => array( 'exts' => array_keys( PodPub_Episodes::transcript_exts() ), 'max' => 5 * 1048576, 'label' => 'transcript' ),
+			'chapters'   => array( 'exts' => array( 'json' ), 'max' => 1048576, 'label' => 'chapters file' ),
+			'splits'     => array( 'exts' => array( 'txt', 'xml', 'csv', 'tsv', 'json' ), 'max' => 1048576, 'label' => 'time splits file' ),
+		);
+	}
+
+	public static function valid_kind( $kind ) {
+		return is_string( $kind ) && isset( self::kinds()[ $kind ] );
+	}
+
+	/** The message to show when a file entry from file() carries one, else the fallback. */
+	public static function fail( $file, $fallback ) {
+		return is_array( $file ) && isset( $file['message'] ) && '' !== $file['message'] ? (string) $file['message'] : $fallback;
+	}
+
 	/** The most bytes one upload may total (a filter lets a site raise or lower it). */
 	public static function max_bytes() {
 		$max = (int) apply_filters( 'podpub_max_upload_bytes', 2 * 1024 * 1024 * 1024 );
@@ -79,18 +103,20 @@ class PodPub_Chunks {
 	 * @param int    $size    The whole file's size in bytes.
 	 * @param string $tmp     Path of the piece just received.
 	 * @param int    $user    Id of the signed-in user (a staged file is only usable by the person who sent it).
+	 * @param string $kind    audio, image, transcript, chapters or splits (see kinds()).
 	 * @return array|WP_Error { done: bool, received: int, next: int }
 	 */
-	public static function receive( $id, $index, $total, $name, $size, $tmp, $user ) {
-		if ( ! self::valid_id( $id ) || $index < 0 || $total < 1 || $index >= $total || $size < 1 ) {
+	public static function receive( $id, $index, $total, $name, $size, $tmp, $user, $kind = 'audio' ) {
+		if ( ! self::valid_id( $id ) || $index < 0 || $total < 1 || $index >= $total || $size < 1 || ! self::valid_kind( $kind ) ) {
 			return new WP_Error( 'podpub_chunk', 'The upload details were not valid.' );
 		}
-		if ( $size > self::max_bytes() ) {
-			return new WP_Error( 'podpub_chunk', 'The file is larger than the most this plugin accepts (' . size_format( self::max_bytes() ) . ').' );
+		$k = self::kinds()[ $kind ];
+		if ( $size > $k['max'] ) {
+			return new WP_Error( 'podpub_chunk', 'The ' . $k['label'] . ' is larger than the most this plugin accepts (' . size_format( $k['max'] ) . ').' );
 		}
 		$ext = strtolower( pathinfo( (string) $name, PATHINFO_EXTENSION ) );
-		if ( ! isset( PodPub_Episodes::audio_types()[ $ext ] ) ) {
-			return new WP_Error( 'podpub_chunk', 'The audio file must be one of: ' . implode( ', ', array_keys( PodPub_Episodes::audio_types() ) ) . '.' );
+		if ( ! in_array( $ext, $k['exts'], true ) ) {
+			return new WP_Error( 'podpub_chunk', 'The ' . $k['label'] . ' must be one of: ' . implode( ', ', $k['exts'] ) . '.' );
 		}
 		if ( ! is_file( $tmp ) || ! filesize( $tmp ) ) {
 			return new WP_Error( 'podpub_chunk', 'That piece of the file was not received. The file may be too big for the server\'s limit of ' . size_format( wp_max_upload_size() ) . ' per piece.' );
@@ -104,8 +130,8 @@ class PodPub_Chunks {
 		if ( 0 === $index ) {
 			@unlink( $part ); // phpcs:ignore WordPress.PHP.NoSilencedErrors
 			@unlink( self::dir() . '/' . $id . '.bin' ); // phpcs:ignore WordPress.PHP.NoSilencedErrors
-			$m = array( 'name' => (string) $name, 'size' => (int) $size, 'total' => (int) $total, 'next' => 0, 'user' => (int) $user, 'done' => false );
-		} elseif ( ! $m || (int) $m['user'] !== (int) $user || (int) $m['total'] !== (int) $total || (int) $m['size'] !== (int) $size ) {
+			$m = array( 'name' => (string) $name, 'size' => (int) $size, 'total' => (int) $total, 'next' => 0, 'user' => (int) $user, 'done' => false, 'kind' => $kind );
+		} elseif ( ! $m || (int) $m['user'] !== (int) $user || ( isset( $m['kind'] ) ? $m['kind'] : 'audio' ) !== $kind || (int) $m['total'] !== (int) $total || (int) $m['size'] !== (int) $size ) {
 			return new WP_Error( 'podpub_chunk', 'This upload was not started, or has expired. Choose the file and upload it again.' );
 		}
 		if ( $index < $m['next'] ) { // A piece sent twice (a retry after a lost reply): already have it.
@@ -147,16 +173,17 @@ class PodPub_Chunks {
 	 *
 	 * @param string $id   Upload id.
 	 * @param int    $user Signed-in user.
+	 * @param string $kind Kind the upload was made as.
 	 * @return array
 	 */
-	public static function file( $id, $user ) {
+	public static function file( $id, $user, $kind = 'audio' ) {
 		$m = self::valid_id( $id ) ? self::meta( $id ) : null;
 		$f = self::dir() . '/' . $id . '.bin';
-		if ( ! $m || (int) $m['user'] !== (int) $user ) {
-			return array( 'error' => UPLOAD_ERR_NO_FILE, 'message' => 'The uploaded audio is no longer on the server (it is kept for a day). Upload it again.' );
+		if ( ! $m || (int) $m['user'] !== (int) $user || ( isset( $m['kind'] ) ? $m['kind'] : 'audio' ) !== $kind ) {
+			return array( 'error' => UPLOAD_ERR_NO_FILE, 'message' => 'The uploaded file is no longer on the server (it is kept for a day). Upload it again.' );
 		}
 		if ( empty( $m['done'] ) || ! is_file( $f ) ) {
-			return array( 'error' => UPLOAD_ERR_PARTIAL, 'message' => 'The audio upload did not finish. Upload it again.' );
+			return array( 'error' => UPLOAD_ERR_PARTIAL, 'message' => 'The upload did not finish. Upload it again.' );
 		}
 		return array( 'error' => UPLOAD_ERR_OK, 'tmp_name' => $f, 'name' => (string) $m['name'], 'size' => (int) $m['size'], 'staged' => true );
 	}

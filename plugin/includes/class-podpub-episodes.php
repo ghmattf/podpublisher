@@ -719,7 +719,7 @@ class PodPub_Episodes {
 		$img = null;
 		if ( is_array( $image ) && isset( $image['error'] ) && UPLOAD_ERR_NO_FILE !== (int) $image['error'] ) {
 			if ( UPLOAD_ERR_OK !== (int) $image['error'] ) {
-				$out['errors'][] = 'The episode picture upload failed. Try a smaller picture.';
+				$out['errors'][] = PodPub_Chunks::fail( $image, 'The episode picture upload failed. Try a smaller picture.' );
 			} else {
 				$img = PodPub_Details::inspect_image( $image['tmp_name'] );
 				if ( is_wp_error( $img ) ) {
@@ -733,7 +733,7 @@ class PodPub_Episodes {
 		$tup = null;
 		if ( is_array( $transcript ) && isset( $transcript['error'] ) && UPLOAD_ERR_NO_FILE !== (int) $transcript['error'] ) {
 			if ( UPLOAD_ERR_OK !== (int) $transcript['error'] ) {
-				$out['errors'][] = 'The transcript upload failed.';
+				$out['errors'][] = PodPub_Chunks::fail( $transcript, 'The transcript upload failed.' );
 			} else {
 				$tup = self::inspect_transcript( $transcript['tmp_name'], isset( $transcript['name'] ) ? $transcript['name'] : '' );
 				if ( is_wp_error( $tup ) ) {
@@ -757,7 +757,7 @@ class PodPub_Episodes {
 		// An uploaded chapters.json replaces the typed chapter list and any outside address.
 		if ( is_array( $chapters_file ) && isset( $chapters_file['error'] ) && UPLOAD_ERR_NO_FILE !== (int) $chapters_file['error'] ) {
 			if ( UPLOAD_ERR_OK !== (int) $chapters_file['error'] ) {
-				$out['errors'][] = 'The chapters file upload failed.';
+				$out['errors'][] = PodPub_Chunks::fail( $chapters_file, 'The chapters file upload failed.' );
 			} elseif ( filesize( $chapters_file['tmp_name'] ) > 1048576 ) {
 				$out['errors'][] = 'The chapters file is over 1 MB. A chapters file is normally a few kilobytes.';
 			} else {
@@ -772,7 +772,7 @@ class PodPub_Episodes {
 		$stext = isset( $input['splits_import'] ) && is_string( $input['splits_import'] ) ? trim( $input['splits_import'] ) : '';
 		if ( is_array( $splits_file ) && isset( $splits_file['error'] ) && UPLOAD_ERR_NO_FILE !== (int) $splits_file['error'] ) {
 			if ( UPLOAD_ERR_OK !== (int) $splits_file['error'] ) {
-				$out['errors'][] = 'The time splits file upload failed.';
+				$out['errors'][] = PodPub_Chunks::fail( $splits_file, 'The time splits file upload failed.' );
 			} elseif ( filesize( $splits_file['tmp_name'] ) > PodPub_SplitsImport::MAX_BYTES ) {
 				$out['errors'][] = 'The time splits file is over 1 MB. A list of time splits is normally a few kilobytes.';
 			} else {

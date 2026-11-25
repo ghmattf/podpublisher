@@ -126,7 +126,7 @@ class PodPub_Feeds {
 		$image = null;
 		if ( is_array( $file ) && isset( $file['error'] ) && UPLOAD_ERR_NO_FILE !== (int) $file['error'] ) {
 			if ( UPLOAD_ERR_OK !== (int) $file['error'] ) {
-				$out['errors'][] = 'The show art upload failed. Try a smaller picture.';
+				$out['errors'][] = PodPub_Chunks::fail( $file, 'The show art upload failed. Try a smaller picture.' );
 			} else {
 				$image = PodPub_Details::inspect_image( $file['tmp_name'] );
 				if ( is_wp_error( $image ) ) {
