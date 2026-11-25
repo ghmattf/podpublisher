@@ -139,7 +139,7 @@ check( 'posts: delete podcast offers to trash posts and page', false !== strpos(
 $ae = PodPub_Episodes::save( 5, 0, array( 'title' => 'WithAudio', 'description' => 'D', 'explicit' => 'no', 'published' => '2026-03-01T09:30', 'status' => 'draft', 'duration' => '1:02:30', 'audio_source' => 'upload' ), array( 'error' => UPLOAD_ERR_OK, 'tmp_name' => ( function () use ( $tmp ) { @mkdir( "$tmp/in", 0755, true ); file_put_contents( "$tmp/in/w.mp3", "ID3\x04\x00\x00\x00\x00\x00\x00" . str_repeat( 'a', 200 ) ); return "$tmp/in/w.mp3"; } )(), 'name' => 'w.mp3' ) );
 $_GET['episode'] = (string) $ae['id'];
 $h = page( 5 );
-check( 'audio (episode with audio): Replace audio button, Open is a button, duration is plain text, no editable duration on the page', false !== strpos( $h, 'data-podpub-audio-open>Replace audio</button>' ) && preg_match( '#<a class="button button-small" href="[^"]*WithAudio\.mp3" target="_blank" rel="noopener">Open</a>#', $h ) && false !== strpos( $h, '<p>Duration: 1:02:30</p>' ) && 0 === preg_match( '#<tr><th[^>]*><label for="ep_dur"#', $h ) );
+check( 'audio (episode with audio): Replace audio button, Open is a button, duration is plain text, no editable duration on the page', false !== strpos( $h, 'data-podpub-audio-open>Replace audio</button>' ) && preg_match( '#<a class="button button-small" href="[^"]*WithAudio\.mp3" target="_blank" rel="noopener">Open</a>#', $h ) && false !== strpos( $h, '<p class="podpub-audio-dur">Duration: 1:02:30</p>' ) && 0 === preg_match( '#<tr><th[^>]*><label for="ep_dur"#', $h ) );
 unset( $_GET['episode'] );
 // Podcast page lists and the Live episodes move.
 unset( $_GET['episode'] );

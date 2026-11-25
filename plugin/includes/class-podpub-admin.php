@@ -642,7 +642,7 @@ window.addEventListener("beforeunload",function(e){if(busy){e.preventDefault();e
 });
 document.querySelectorAll("[data-podpub-audio]").forEach(function(dlg){
 var form=dlg.closest("form");if(!form||!dlg.showModal)return;
-var open=form.querySelector("[data-podpub-audio-open]"),ok=dlg.querySelector("[data-podpub-audio-ok]"),cancel=dlg.querySelector("[data-podpub-audio-cancel]"),err=dlg.querySelector(".podpub-dialog-err"),pend=form.querySelector(".podpub-audio-pending"),box=dlg.querySelector("[data-podpub-chunk]"),src=dlg.querySelector("#ep_src");
+var open=form.querySelector("[data-podpub-audio-open]"),ok=dlg.querySelector("[data-podpub-audio-ok]"),cancel=dlg.querySelector("[data-podpub-audio-cancel]"),err=dlg.querySelector(".podpub-dialog-err"),pend=form.querySelector(".podpub-audio-pending"),curp=form.querySelector(".podpub-audio-cur"),durp=form.querySelector(".podpub-audio-dur"),curKids=curp?[].slice.call(curp.childNodes):[],durTxt=durp?durp.textContent:"",box=dlg.querySelector("[data-podpub-chunk]"),src=dlg.querySelector("#ep_src");
 var fields=[].slice.call(dlg.querySelectorAll("input,select,textarea")),snap=[],note="",upl=null,uploading=false,cur=dlg.getAttribute("data-current-url")||"";
 function st(){return box?box.querySelector(".podpub-chunk-status"):null;}
 function take(){snap=fields.map(function(f){return f.type==="checkbox"||f.type==="radio"?f.checked:(f.type==="file"?"":f.value);});var s=st();note=s?s.textContent:"";upl=box?box.getAttribute("data-uploaded"):null;}
@@ -650,11 +650,15 @@ function put(){fields.forEach(function(f,i){if(f.type==="checkbox"||f.type==="ra
 var s=st();if(s){s.textContent=note;s.className="podpub-chunk-status";}if(box){if(upl)box.setAttribute("data-uploaded",upl);else box.removeAttribute("data-uploaded");var b=box.querySelector("progress");if(b)b.hidden=true;}
 if(src)src.dispatchEvent(new Event("change"));}
 function pending(){
-var t="",v=src?src.value:"";
-if(v==="upload"){var h=box&&box.querySelector("input[type=hidden]");if(h&&h.value){t="New audio ready: "+(box.getAttribute("data-uploaded")||box.getAttribute("data-staged")||"uploaded file")+".";}}
-else if(v==="folder"){var p=dlg.querySelector("[name='podpub_ep[audio_pick]']");if(p&&p.value)t="New audio chosen from the episode folder: "+p.value+".";}
-else if(v==="external"){var u=dlg.querySelector("[name='podpub_ep[audio_url]']");if(u&&u.value.trim()!==""&&u.value.trim()!==cur)t="New audio address: "+u.value.trim()+".";}
-if(pend){pend.textContent=t?t+" It becomes the episode audio when you press Save.":"";pend.hidden=t==="";}}
+var t=false,pre="",code="",post="",v=src?src.value:"";
+if(v==="upload"){var h=box&&box.querySelector("input[type=hidden]");if(h&&h.value){pre="Current file: ";code=box.getAttribute("data-uploaded")||box.getAttribute("data-staged")||"uploaded file";t=true;}}
+else if(v==="folder"){var p=dlg.querySelector("[name='podpub_ep[audio_pick]']");if(p&&p.value){pre="Current file: ";code=p.value;post=" (from the episode folder)";t=true;}}
+else if(v==="external"){var u=dlg.querySelector("[name='podpub_ep[audio_url]']");if(u&&u.value.trim()!==""&&u.value.trim()!==cur){pre="Current audio, hosted elsewhere: ";code=u.value.trim();t=true;}}
+if(curp){while(curp.firstChild)curp.removeChild(curp.firstChild);
+if(t){curp.appendChild(document.createTextNode(pre));var c=document.createElement("code");c.textContent=code;curp.appendChild(c);curp.appendChild(document.createTextNode(post));}
+else curKids.forEach(function(n){curp.appendChild(n);});}
+if(durp)durp.textContent=t?"Duration: known after Save":durTxt;
+if(pend){pend.textContent=t?"Not saved yet. Press Save to make this the episode audio.":"";pend.hidden=!t;}}
 function openIt(){take();err.textContent="";dlg.showModal();}
 function closeIt(){if(dlg.open)dlg.close();}
 function doCancel(){
@@ -1158,19 +1162,19 @@ JS;
 		echo '<tr><th scope="row"><label for="ep_audio_open">Audio</label></th><td><div class="podpub-audio-info">';
 		if ( $has_audio ) {
 			if ( '' !== $d['external_url'] ) {
-				echo '<p>Current audio, hosted elsewhere: <code>' . esc_html( $d['external_url'] ) . '</code>';
+				echo '<p class="podpub-audio-cur">Current audio, hosted elsewhere: <code>' . esc_html( $d['external_url'] ) . '</code>';
 			} else {
-				echo '<p>Current file: <code>' . esc_html( $d['audio'] ) . '</code>';
+				echo '<p class="podpub-audio-cur">Current file: <code>' . esc_html( $d['audio'] ) . '</code>';
 			}
 			echo ' (' . esc_html( $d['audio_size'] ? size_format( $d['audio_size'] ) : 'size unknown' ) . ', ' . esc_html( $d['audio_type'] ) . ')';
 			if ( '' !== $d['audio'] && '' !== $url ) {
 				echo ' <a class="button button-small" href="' . esc_url( $url . '/' . $pd . '/' . $ed . '/' . $d['audio'] ) . '" target="_blank" rel="noopener">Open</a>';
 			}
-			echo '</p><p>Duration: ' . esc_html( $d['duration'] ? PodPub_Episodes::format_duration( $d['duration'] ) : 'not known' ) . '</p>';
+			echo '</p><p class="podpub-audio-dur">Duration: ' . esc_html( $d['duration'] ? PodPub_Episodes::format_duration( $d['duration'] ) : 'not known' ) . '</p>';
 		} else {
-			echo '<p class="description">No audio yet.</p>';
+			echo '<p class="podpub-audio-cur description">No audio yet.</p>';
 		}
-		echo '<p class="podpub-audio-pending"' . ( $staged_info ? '' : ' hidden' ) . '>' . ( $staged_info ? esc_html( 'New audio ready: ' . $staged_info['name'] . ' (' . size_format( $staged_info['size'] ) . '). It becomes the episode audio when you press Save.' ) : '' ) . '</p>';
+		echo '<p class="podpub-audio-pending"' . ( $staged_info ? '' : ' hidden' ) . '>' . ( $staged_info ? esc_html( 'Not saved yet. Press Save to make this the episode audio.' ) : '' ) . '</p>';
 		echo '<p><button type="button" class="button" id="ep_audio_open" data-podpub-audio-open>' . ( $has_audio ? 'Replace audio' : 'Add audio' ) . '</button></p>';
 		echo '</div>';
 
