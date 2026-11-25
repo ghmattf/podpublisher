@@ -776,6 +776,35 @@ JS;
 	}
 
 	/**
+	 * The WordPress post question for an episode, asked after "Save episode" is pressed, and only when
+	 * posts are on for the podcast and the episode is being published. The answer travels in a hidden
+	 * field that starts at "yes" (also what a browser without script sends).
+	 */
+	private static function render_post_prompt( $id, $eid, $v ) {
+		$ps = PodPub_Posts::settings( (int) $id );
+		if ( empty( $ps['enabled'] ) ) {
+			return;
+		}
+		$has_post = $eid ? PodPub_Posts::post_for( $eid ) : 0;
+		echo '<input type="hidden" name="podpub_ep[wp_post]" id="ep_post" value="' . esc_attr( 'no' === $v( 'wp_post', 'yes' ) ? 'no' : 'yes' ) . '">';
+		echo '<dialog class="podpub-dialog" id="ep_post_dlg" aria-labelledby="ep_post_ttl"><div class="podpub-dialog-box">';
+		echo '<h3 id="ep_post_ttl">WordPress post</h3>';
+		if ( $has_post ) {
+			echo '<p>Update the WordPress post for this episode?</p><p class="description"><strong>Updating replaces the post\'s title and content</strong> with this episode\'s title and show notes; any changes made to that post in WordPress will be lost. <a href="' . esc_url( get_edit_post_link( $has_post ) ) . '" target="_blank" rel="noopener">Open the post</a></p>';
+		} else {
+			echo '<p>Create a WordPress post for this episode?</p><p class="description">The post is made after the episode has saved, using the author and categories set on the WordPress posts tab of the podcast.</p>';
+		}
+		echo '<div class="podpub-dialog-foot"><button type="button" class="button button-primary" data-post-answer="yes" autofocus>Yes</button><button type="button" class="button" data-post-answer="no">' . ( $has_post ? 'No, leave the post as it is' : 'No, leave WordPress alone' ) . '</button><button type="button" class="button" data-post-answer="back">Back to editing</button></div>';
+		echo '</div></dialog>';
+		echo '<script>(function(){var f=document.getElementById("ep_post").form,d=document.getElementById("ep_post_dlg"),h=document.getElementById("ep_post"),s=document.getElementById("ep_status");if(!f||!d||!s||typeof d.showModal!=="function")return;
+var ok=false;
+f.addEventListener("submit",function(e){if(ok||s.value!=="published")return;e.preventDefault();d.showModal();});
+d.addEventListener("cancel",function(e){e.preventDefault();d.close();});
+[].slice.call(d.querySelectorAll("[data-post-answer]")).forEach(function(b){b.addEventListener("click",function(){var a=b.getAttribute("data-post-answer");d.close();if(a==="back")return;h.value=a;ok=true;HTMLFormElement.prototype.submit.call(f);});});
+})();</script>';
+	}
+
+	/**
 	 * Split card HTML from cards() into its cards, keyed by the card's title, so a few can be placed on other tabs.
 	 *
 	 * @param string $html Card HTML.
@@ -1311,21 +1340,6 @@ JS;
 		echo '</select></td></tr>';
 		$status = $v( 'status', $d['status'] );
 		echo '<tr><th scope="row"><label for="ep_status">Status</label></th><td><select id="ep_status" name="podpub_ep[status]"><option value="draft"' . selected( $status, 'draft', false ) . '>Draft (not in the feed)</option><option value="published"' . selected( $status, 'published', false ) . '>Published (in the feed; needs audio)</option></select></td></tr>';
-		$ps = PodPub_Posts::settings( (int) $id );
-		if ( $ps['enabled'] ) {
-			$has_post = $eid ? PodPub_Posts::post_for( $eid ) : 0;
-			$answer   = $v( 'wp_post', $has_post ? 'no' : 'yes' );
-			echo '<tr id="ep_post_row"><th scope="row"><label for="ep_post">WordPress post</label></th><td>';
-			echo '<label><input type="radio" id="ep_post" name="podpub_ep[wp_post]" value="yes"' . checked( $answer, 'yes', false ) . '> ' . ( $has_post ? 'Update the WordPress post' : 'Create a WordPress post' ) . '</label> &nbsp; ';
-			echo '<label><input type="radio" name="podpub_ep[wp_post]" value="no"' . checked( $answer, 'no', false ) . '> No, leave ' . ( $has_post ? 'the post as it is' : 'WordPress alone' ) . '</label>';
-			if ( $has_post ) {
-				echo '<p class="description"><strong>Choosing update replaces the post\'s title and content</strong> with this episode\'s title and show notes; any changes made to that post in WordPress will be lost. <a href="' . esc_url( get_edit_post_link( $has_post ) ) . '">Open the post</a></p>';
-			} else {
-				echo '<p class="description">Asked only when the episode is published. The post is made after the episode has saved, using the author and categories set on the WordPress posts tab of the podcast.</p>';
-			}
-			echo '<script>(function(){var s=document.getElementById("ep_status"),r=document.getElementById("ep_post_row");if(!s||!r)return;function f(){r.hidden=s.value!=="published";}s.addEventListener("change",f);f();})();</script>';
-			echo '</td></tr>';
-		}
 		$all_rows = ob_get_clean();
 		preg_match_all( '#<tr[^>]*>.*?</tr>#s', $all_rows, $mm );
 		$by = array();
@@ -1334,7 +1348,7 @@ JS;
 				$by[ $idm[1] ] = $row;
 			}
 		}
-		$placed = array( 'ep_title', 'ep_desc', 'ep_date', 'ep_status', 'ep_post', 'ep_type', 'ep_season', 'ep_num', 'ep_ex', 'ep_audio_open', 'ep_notes', 'ep_sub', 'ep_sum', 'ep_kw', 'ep_img' );
+		$placed = array( 'ep_title', 'ep_desc', 'ep_date', 'ep_status', 'ep_type', 'ep_season', 'ep_num', 'ep_ex', 'ep_audio_open', 'ep_notes', 'ep_sub', 'ep_sum', 'ep_kw', 'ep_img' );
 		$group  = function ( $ids ) use ( $by, $placed ) {
 			$h = '<table class="form-table" role="presentation">';
 			foreach ( $ids as $k ) {
@@ -1350,7 +1364,7 @@ JS;
 			return $h . '</table>';
 		};
 		$tabs = array(
-			'episode' => array( 'label' => 'Episode', 'html' => $group( array( 'ep_img', 'ep_title', 'ep_desc', 'ep_date', 'ep_status', 'ep_post', 'ep_type', 'ep_season', 'ep_num', 'ep_ex' ) ) ),
+			'episode' => array( 'label' => 'Episode', 'html' => $group( array( 'ep_img', 'ep_title', 'ep_desc', 'ep_date', 'ep_status', 'ep_type', 'ep_season', 'ep_num', 'ep_ex' ) ) ),
 			'media'   => array( 'label' => 'Media', 'html' => $group( array( 'ep_audio_open' ) ) ),
 			'notes'   => array( 'label' => 'Notes', 'html' => $group( array( 'ep_notes', 'ep_sub', 'ep_sum', 'ep_kw' ) ) ),
 		);
@@ -1375,6 +1389,7 @@ JS;
 			$want = 'media';
 		}
 		self::render_tabs( $tabs, isset( $tabs[ $want ] ) ? $want : 'episode' );
+		self::render_post_prompt( $id, $eid, $v );
 		echo '<div class="podpub-savebar" style="margin:0;border:1px solid var(--pp-border);border-radius:8px;margin-top:14px">';
 		submit_button( 'Save episode', 'primary', 'submit', false );
 		echo '<span class="podpub-hint">Stores the episode on the server. The feed file is updated when you use Save and write feed on the podcast page.</span></div>';

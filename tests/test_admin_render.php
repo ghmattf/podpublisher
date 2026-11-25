@@ -121,14 +121,14 @@ check( 'bad episode value falls back to the podcast page', false !== strpos( pag
 // WordPress posts: episode prompt, posts tab, delete options.
 $_GET['episode'] = (string) $eid;
 $h = page( 5 );
-check( 'posts: episode form asks yes/no, default yes when there is no post', false !== strpos( $h, 'name="podpub_ep[wp_post]" value="yes" checked' ) && false !== strpos( $h, 'value="no"' ) && false !== strpos( $h, 'Create a WordPress post' ) && false === strpos( $h, 'podpub_delete_post' ) );
+check( 'posts: no yes/no row on the form; hidden answer starts at yes; prompt dialog asks to create', false === strpos( $h, 'type="radio" id="ep_post"' ) && false !== strpos( $h, '<input type="hidden" name="podpub_ep[wp_post]" id="ep_post" value="yes">' ) && false !== strpos( $h, 'id="ep_post_dlg"' ) && false !== strpos( $h, 'Create a WordPress post for this episode?' ) && false === strpos( $h, 'podpub_delete_post' ) );
 update_post_meta( $eid, '_podpub_wp_post', 900 );
 $GLOBALS['posts'][900] = (object) array( 'ID' => 900, 'post_type' => 'post', 'post_status' => 'publish', 'post_title' => 'x', 'post_parent' => 0 );
 $h = page( 5 );
-check( 'posts: with an existing post the prompt warns, defaults to no, delete offers the post', false !== strpos( $h, 'Update the WordPress post' ) && false !== strpos( $h, 'replaces the post' ) && false !== strpos( $h, 'value="no" checked' ) && false !== strpos( $h, 'podpub_delete_post' ) );
+check( 'posts: with an existing post the prompt warns about overwriting, still defaults to yes, delete offers the post', false !== strpos( $h, 'Update the WordPress post for this episode?' ) && false !== strpos( $h, 'replaces the post' ) && false !== strpos( $h, 'name="podpub_ep[wp_post]" id="ep_post" value="yes"' ) && false !== strpos( $h, 'podpub_delete_post' ) );
 update_post_meta( 5, '_podpub_posts', array( 'enabled' => false ) );
 $h = page( 5 );
-check( 'posts: turned off, no prompt', false === strpos( $h, 'podpub_ep[wp_post]' ) );
+check( 'posts: turned off, no prompt and no answer field', false === strpos( $h, 'podpub_ep[wp_post]' ) && false === strpos( $h, 'ep_post_dlg' ) );
 update_post_meta( 5, '_podpub_posts', array() );
 unset( $_GET['episode'] );
 $h = page( 5 );

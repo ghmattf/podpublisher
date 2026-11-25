@@ -10,4 +10,3 @@ Wording is the owner's. Completed items are removed from this list (the history 
 ## New (2026-11-26)
 
 44. WordPress post content and link.
-45. Remove the Episode tab "WordPress post" option and instead prompt for it after clicking "Save episode".
