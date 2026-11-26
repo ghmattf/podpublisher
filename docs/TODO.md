@@ -13,3 +13,5 @@ Wording is the owner's. Completed items are removed from this list (the history 
 
 ## New (2026-11-26, evening)
 
+
+56. Remove the editable "Podcast folder" and "Public address" settings; always use the default folder inside the WordPress uploads folder (the most secure option). Keep existing installs working (migration), and move the upload staging folder inside the Podcast folder.
