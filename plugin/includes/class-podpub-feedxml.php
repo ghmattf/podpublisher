@@ -315,6 +315,9 @@ class PodPub_FeedXml {
 			return new WP_Error( 'podpub_feed', 'The feed file could not be written.' );
 		}
 		update_post_meta( (int) $id, PodPub_Feeds::META_FEED_SHA, sha1( $xml ) );
+		foreach ( PodPub_Episodes::all( (int) $id ) as $ep ) { // Everything saved is in the file now.
+			delete_post_meta( $ep->ID, PodPub_Episodes::META_PENDING );
+		}
 		return $file;
 	}
 

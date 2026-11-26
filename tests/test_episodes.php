@@ -19,6 +19,7 @@ function get_post( $id ) { return isset( $GLOBALS['posts'][ $id ] ) ? $GLOBALS['
 function get_posts( $a ) { $o = array(); foreach ( $GLOBALS['posts'] as $p ) { if ( $p->post_type === $a['post_type'] && ( ! isset( $a['post_parent'] ) || (int) $p->post_parent === (int) $a['post_parent'] ) ) { $o[] = $p; } } return $o; }
 function get_post_meta( $id, $k ) { return isset( $GLOBALS['meta'][ $id ][ $k ] ) ? $GLOBALS['meta'][ $id ][ $k ] : ''; }
 function update_post_meta( $id, $k, $v ) { $GLOBALS['meta'][ $id ][ $k ] = $v; }
+function delete_post_meta( $id, $k ) { unset( $GLOBALS['meta'][ $id ][ $k ] ); }
 function wp_insert_post( $a ) { $id = $GLOBALS['next']++; $GLOBALS['posts'][ $id ] = (object) array_merge( array( 'ID' => $id, 'post_parent' => 0 ), $a ); return $id; }
 function wp_update_post( $a ) { $GLOBALS['posts'][ $a['ID'] ]->post_title = $a['post_title']; }
 function wp_delete_post( $id ) { unset( $GLOBALS['posts'][ $id ], $GLOBALS['meta'][ $id ] ); }
@@ -274,12 +275,14 @@ $r = PodPub_Episodes::save( 5, 0, array_merge( $good, array( 'title' => 'Stored 
 check( 'episode save: stores the episode, does not write or touch the feed file', $r['errors'] === array() && ! $r['written'] && $before === file_get_contents( "$pf/$pdir.xml" ) );
 $bak_before = count( glob( "$pf/$pdir.xml.bak*" ) );
 $r2 = PodPub_Episodes::save( 5, 0, array_merge( $good, array( 'title' => 'Stored Second', 'status' => 'draft' ) ) );
+check( 'episode save: marks the episode as pending a feed write', PodPub_Episodes::pending( $r['id'] ) && PodPub_Episodes::pending( $r2['id'] ) );
 check( 'episode save: makes no backup either', count( glob( "$pf/$pdir.xml.bak*" ) ) === $bak_before );
 $dd = PodPub_Details::get( 5 ); $dd['description'] = 'Changed in storage only.'; PodPub_Details::save( 5, $dd );
 $st = PodPub_FeedXml::status( 5 );
 check( 'status: stored data that differs from the file is pending, with a message', 'pending' === $st['state'] && false !== strpos( $st['message'], 'Save and write feed' ) );
 $w = PodPub_FeedXml::write( 5 );
 $baks = glob( "$pf/$pdir.xml.bak*" ); usort( $baks, function ( $a, $b ) { return (int) substr( strrchr( $a, 'k' ), 1 ) - (int) substr( strrchr( $b, 'k' ), 1 ); } );
+check( 'feed write: clears the pending mark on every episode', ! PodPub_Episodes::pending( $r['id'] ) && ! PodPub_Episodes::pending( $r2['id'] ) );
 check( 'podcast-level write: always makes a backup (.bak), holding the file as it was', ! is_wp_error( $w ) && sha1( file_get_contents( "$pf/$pdir.xml.bak" ) ) === sha1( $before ) );
 check( 'status: current again after the write', 'current' === PodPub_FeedXml::status( 5 )['state'] );
 $n = count( glob( "$pf/$pdir.xml.bak*" ) );

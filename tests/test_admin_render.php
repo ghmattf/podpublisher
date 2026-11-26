@@ -20,6 +20,7 @@ function get_post( $id ) { return isset( $GLOBALS['posts'][ $id ] ) ? $GLOBALS['
 function get_posts( $a ) { $o = array(); foreach ( $GLOBALS['posts'] as $p ) { if ( $p->post_type === $a['post_type'] && ( ! isset( $a['post_parent'] ) || (int) $p->post_parent === (int) $a['post_parent'] ) ) { $o[] = $p; } } return $o; }
 function get_post_meta( $id, $k ) { return isset( $GLOBALS['meta'][ $id ][ $k ] ) ? $GLOBALS['meta'][ $id ][ $k ] : ''; }
 function update_post_meta( $id, $k, $v ) { $GLOBALS['meta'][ $id ][ $k ] = $v; }
+function delete_post_meta( $id, $k ) { unset( $GLOBALS['meta'][ $id ][ $k ] ); }
 function wp_insert_post( $a ) { $id = $GLOBALS['next']++; $GLOBALS['posts'][ $id ] = (object) array_merge( array( 'ID' => $id, 'post_parent' => 0 ), $a ); return $id; }
 function wp_update_post( $a ) { $GLOBALS['posts'][ $a['ID'] ]->post_title = $a['post_title']; }
 function sanitize_text_field( $s ) { return trim( preg_replace( '/\s+/', ' ', strip_tags( (string) $s ) ) ); }
@@ -110,7 +111,7 @@ $r = PodPub_Episodes::save( 5, 0, array( 'title' => 'First <b>One</b>', 'descrip
 $eid = $r['id'];
 unset( $_GET['episode'] );
 $h = page( 5 );
-check( 'podcast page: episode listed with date and status', false !== strpos( $h, 'First One' ) && false !== strpos( $h, '2026-01-15T09:30' ) && false !== strpos( $h, 'Draft' ) && false !== strpos( $h, "episode=$eid" ) );
+check( 'podcast page: episode listed with date and the orange pending status (just saved)', false !== strpos( $h, 'First One' ) && false !== strpos( $h, '2026-01-15T09:30' ) && false !== strpos( $h, 'Pending feed write' ) && false !== strpos( $h, "episode=$eid" ) );
 $r2 = PodPub_Episodes::save( 5, 0, array( 'title' => 'Hosted Elsewhere', 'description' => 'D', 'explicit' => 'no', 'published' => '2026-01-16T09:30', 'status' => 'published', 'audio_source' => 'external', 'audio_url' => 'https://cdn.example.net/x.mp3', 'audio_size' => '1000', 'duration' => '1:00' ) );
 $h = page( 5 );
 check( 'podcast page: published episode with an https audio address is not labelled "no audio"', $r2['errors'] === array() && false !== strpos( $h, 'Hosted Elsewhere' ) && false === strpos( $h, 'Published (no audio)' ) );
@@ -197,6 +198,12 @@ $hb    = page( $blank );
 check( 'podcast page: OP3 tick box present and off, no statistics link yet', false !== strpos( $h, 'name="podpub[op3]"' ) && false === strpos( $h, 'checked=\'checked\'> Count downloads' ) && false === strpos( $h, 'op3.dev/show/' ) && false !== strpos( $h, 'Count downloads with OP3' ) );
 check( 'podcast page: explicit is a required yes/no select; a new podcast starts on Choose, a saved one shows its answer', false !== strpos( $hb, '<select id="pp_explicit" name="podpub[explicit]" required><option value="" selected>Choose&hellip;</option><option value="yes">Yes</option><option value="no">No</option>' ) && false !== strpos( $h, '<option value="no" selected>No</option>' ) && false !== strpos( $h, 'This feed contains explicit content' ) && false !== strpos( $h, 'name="podpub[keywords]"' ) && false !== strpos( $h, 'managing editor' ) );
 check( 'podcast page: trailers and live episodes with date pickers and a status list', false !== strpos( $h, 'name="podpub_p20[trailers][0][pubdate]"' ) && false !== strpos( $h, '<input type="datetime-local" name="podpub_p20[live][0][start]"' ) && false !== strpos( $h, '<select name="podpub_p20[live][0][status]">' ) && false !== strpos( $h, '<option value="pending">Pending</option>' ) );
+$pe_ids = array_map( function ( $e ) { return $e->ID; }, PodPub_Episodes::all( 5 ) );
+foreach ( $pe_ids as $x ) { update_post_meta( $x, PodPub_Episodes::META_PENDING, 1 ); }
+$hpend = page( 5 );
+check( 'episode list: a saved episode shows the orange "Pending feed write" status', false !== strpos( $hpend, 'podpub-pill--pending">Pending feed write' ) && false !== strpos( $hpend, '.podpub-pill--pending{' ) );
+foreach ( $pe_ids as $x ) { delete_post_meta( $x, PodPub_Episodes::META_PENDING ); }
+check( 'episode list: no pending mark once written', false === strpos( page( 5 ), 'podpub-pill--pending">Pending' ) );
 check( 'podcast page: add-episode link, and the copy link once there is an episode', false !== strpos( $h, 'class="button button-primary">Add episode</a>' ) && false !== strpos( $h, 'Add episode, copying details from the latest' ) && false !== strpos( $h, 'copy=1' ) );
 $_GET['episode'] = (string) $eid;
 $h = page( 5 );

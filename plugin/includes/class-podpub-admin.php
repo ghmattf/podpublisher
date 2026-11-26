@@ -441,6 +441,7 @@ class PodPub_Admin {
 .podpub-pill--ok{background:#edfaef;color:#005c12;border-color:#b8e6bf}
 .podpub-pill--warn{background:#fcf9e8;color:#614a00;border-color:#f0d980}
 .podpub-pill--bad{background:#fcf0f1;color:#8a2424;border-color:#f1b1b4}
+.podpub-pill--pending{background:#fff1e0;color:#8a4200;border-color:#f3b56b}
 .podpub-pill--draft{background:#f0f0f1;color:var(--pp-muted);border-color:#dcdcde}
 .podpub-tabs .nav-tab-wrapper{margin:0;padding-top:0;border-bottom:1px solid var(--pp-border);overflow-x:auto;white-space:nowrap;display:flex;flex-wrap:nowrap}
 .podpub-tabs .nav-tab{float:none;margin-bottom:-1px;flex:0 0 auto;padding:10px 16px;font-size:14px}
@@ -1232,7 +1233,9 @@ d.addEventListener("cancel",function(e){e.preventDefault();d.close();});
 		foreach ( $eps as $e ) {
 			$d    = PodPub_Episodes::details( $e->ID );
 			$link = self::feed_page_url( $id, array( 'episode' => (int) $e->ID ) );
-			if ( 'published' !== $d['status'] ) {
+			if ( PodPub_Episodes::pending( $e->ID ) ) {
+				$stat = self::pill( 'Pending feed write', 'pending' );
+			} elseif ( 'published' !== $d['status'] ) {
 				$stat = self::pill( 'Draft', 'draft' );
 			} elseif ( ! PodPub_Episodes::has_audio( $d ) ) {
 				$stat = self::pill( 'Published (no audio)', 'warn' );
@@ -1289,7 +1292,7 @@ d.addEventListener("cancel",function(e){e.preventDefault();d.close();});
 		};
 		echo '<h2 style="margin:6px 0 12px">' . ( $post ? 'Edit episode' : 'Add episode' );
 		if ( $post ) {
-			echo ' ' . ( 'published' === $d['status'] ? self::pill( 'Published', 'ok' ) : self::pill( 'Draft', 'draft' ) ); // phpcs:ignore WordPress.Security.EscapeOutput
+			echo ' ' . ( PodPub_Episodes::pending( $post->ID ) ? self::pill( 'Pending feed write', 'pending' ) : ( 'published' === $d['status'] ? self::pill( 'Published', 'ok' ) : self::pill( 'Draft', 'draft' ) ) ); // phpcs:ignore WordPress.Security.EscapeOutput
 		}
 		echo '</h2>';
 		if ( $copied ) {

@@ -15,6 +15,7 @@ class PodPub_Episodes {
 
 	const POST_TYPE       = 'podpub_episode';
 	const META            = '_podpub_ep';
+	const META_PENDING    = '_podpub_pending';
 	const MAX_DESCRIPTION = 4000;
 	const MAX_SHOW_NOTES  = 50000;
 
@@ -907,6 +908,7 @@ class PodPub_Episodes {
 		}
 
 		update_post_meta( $id, self::META, $data );
+		update_post_meta( $id, self::META_PENDING, 1 ); // Saved on the server, not in the feed file until the feed is next written.
 		$out['id'] = $id;
 
 		// The chapter list is written as chapters.json in the episode folder (removed when the list is emptied).
@@ -958,6 +960,11 @@ class PodPub_Episodes {
 		update_post_meta( $id, '_podpub_dir', $ep_dir );
 		update_post_meta( $id, self::META, $data );
 		return (int) $id;
+	}
+
+	/** Has this episode been saved since the feed file was last written? */
+	public static function pending( $id ) {
+		return (bool) get_post_meta( (int) $id, self::META_PENDING, true );
 	}
 
 	/**
