@@ -65,9 +65,16 @@ $pf  = "$tmp/uploads/podpublisher/$pdir";
 $ep  = array( 'title' => 'Episode One', 'description' => 'First one', 'show_notes' => '<p>Notes <a href="https://x.example">here</a></p>', 'explicit' => 'no', 'published' => '2026-01-15T09:30', 'status' => 'published', 'duration' => '1:00' );
 $aud = function () use ( $tmp, $MP3 ) { return up( put( "$tmp/in/a.mp3", $MP3 ), 'a.mp3' ); };
 
+// Save as draft: stored, feed file untouched.
+$feedf   = PodPub_Feeds::feed_target( 5 )['file'];
+$before  = file_get_contents( $feedf );
+$rd      = PodPub_Feeds::save_details( 5, array( 'title' => 'My Show', 'description' => 'Draft words', 'language' => 'en', 'explicit' => 'no' ), null, false );
+check( 'save as draft: details stored, feed file not written', $rd['errors'] === array() && ! $rd['written'] && 'Draft words' === PodPub_Details::get( 5 )['description'] && file_get_contents( $feedf ) === $before );
+PodPub_Feeds::save_details( 5, array( 'title' => 'My Show', 'description' => 'About the show', 'language' => 'en', 'explicit' => 'no' ) );
+
 // Defaults.
 $s = PodPub_Posts::settings( 5 );
-check( 'settings: posts on by default, no page, no categories', $s['enabled'] && ! $s['page'] && $s['categories'] === array() && 0 === $s['author'] );
+check( 'settings: posts and the page are on by default, no categories', $s['enabled'] && $s['page'] && $s['categories'] === array() && 0 === $s['author'] );
 
 // No answer, or a draft: no post.
 $r = PodPub_Episodes::save( 5, 0, $ep, $aud() );
@@ -138,12 +145,14 @@ $r = PodPub_Posts::save_settings( 5, array( 'enabled' => 1, 'author' => 3, 'page
 $pages = wp_posts( 'page' );
 check( 'page: made when asked', $r['errors'] === array() && count( $pages ) === 1 && $pages[0]->post_title === 'My Show' && PodPub_Posts::settings( 5 )['page_id'] === (int) $pages[0]->ID );
 $c = $pages[0]->post_content;
-check( 'page: description and both episodes, newest first, escaped', false !== strpos( $c, 'About the show' ) && strpos( $c, 'Two' ) < strpos( $c, 'Episode One' ) && false !== strpos( $c, 'First one' ) );
-check( 'page: episode with a post is linked, one without is not', false !== strpos( $c, '<a href="https://example.com/?p=' . PodPub_Posts::post_for( $e1 ) . '">Episode One</a>' ) && false === strpos( $c, '>Two</a>' ) );
+check( 'page: description and the episode that has a post', false !== strpos( $c, 'About the show' ) && false !== strpos( $c, 'First one' ) );
+check( 'page: only episodes that have a post are listed, and they are linked', false !== strpos( $c, '<a href="https://example.com/?p=' . PodPub_Posts::post_for( $e1 ) . '">Episode One</a>' ) && false === strpos( $c, 'Two' ) );
 PodPub_Posts::save_settings( 5, array( 'enabled' => 1, 'author' => 3, 'page' => 1 ) );
 check( 'page: saving again updates, never duplicates', count( wp_posts( 'page' ) ) === 1 );
-PodPub_Episodes::save( 5, $e2, array_merge( $ep, array( 'title' => 'Two <b>&</b>', 'explicit' => 'no', 'published' => '2026-02-15T09:30' ) ) );
-check( 'page: kept up to date by an episode save, titles escaped', false !== strpos( $GLOBALS['posts'][ $pages[0]->ID ]->post_content, 'Two &lt;b&gt;&amp;&lt;/b&gt;' ) || false !== strpos( $GLOBALS['posts'][ $pages[0]->ID ]->post_content, 'Two &amp;' ) );
+PodPub_Episodes::save( 5, $e2, array_merge( $ep, array( 'title' => 'Two <b>&</b>', 'explicit' => 'no', 'published' => '2026-02-15T09:30', 'wp_post' => 'yes' ) ) );
+check( 'page: an episode save does not touch the page', false === strpos( $GLOBALS['posts'][ $pages[0]->ID ]->post_content, 'Two' ) );
+PodPub_Posts::sync_page( 5 );
+check( 'page: updated on request, newest first, titles escaped', ( false !== strpos( $GLOBALS['posts'][ $pages[0]->ID ]->post_content, 'Two &lt;b&gt;&amp;&lt;/b&gt;' ) || false !== strpos( $GLOBALS['posts'][ $pages[0]->ID ]->post_content, 'Two &amp;' ) ) && strpos( $GLOBALS['posts'][ $pages[0]->ID ]->post_content, 'Two' ) < strpos( $GLOBALS['posts'][ $pages[0]->ID ]->post_content, 'Episode One' ) );
 $GLOBALS['deny'] = array( 'publish_pages' );
 PodPub_Posts::save_settings( 6, array( 'page' => 1 ) );
 check( 'page: without publish_pages, refused', count( wp_posts( 'page' ) ) === 1 );
@@ -157,7 +166,8 @@ check( 'page: drafts not listed', false === strpos( $GLOBALS['posts'][ $pages[0]
 $pid1 = PodPub_Posts::post_for( $e1 );
 PodPub_Episodes::delete( 5, $e2, false );
 check( 'delete episode without the post question ticked leaves posts alone', $GLOBALS['trashed'] === array() );
-check( 'delete: page no longer lists the deleted episode', false === strpos( $GLOBALS['posts'][ $pages[0]->ID ]->post_content, 'Two' ) );
+PodPub_Posts::sync_page( 5 );
+check( 'delete: after the page is updated it no longer lists the deleted episode', false === strpos( $GLOBALS['posts'][ $pages[0]->ID ]->post_content, 'Two' ) );
 PodPub_Episodes::delete( 5, $e1, true );
 check( 'delete episode with the box ticked trashes its post (not a permanent delete)', in_array( $pid1, $GLOBALS['trashed'], true ) && isset( $GLOBALS['posts'][ $pid1 ] ) );
 

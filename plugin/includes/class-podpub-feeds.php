@@ -109,9 +109,10 @@ class PodPub_Feeds {
 	 * @param int        $id    Record id.
 	 * @param array      $input Form values (unslashed).
 	 * @param array|null $file  One entry of $_FILES for the show art (already confirmed to be an upload), or null.
+	 * @param bool       $write Write the feed file after saving (false for Save as draft).
 	 * @return array { errors: string[], warnings: string[], written: bool }
 	 */
-	public static function save_details( $id, $input, $file = null ) {
+	public static function save_details( $id, $input, $file = null, $write = true ) {
 		$out  = array( 'errors' => array(), 'warnings' => array(), 'written' => false );
 		$post = self::get( $id );
 		$dir  = self::dir_name( $id );
@@ -165,6 +166,9 @@ class PodPub_Feeds {
 		if ( $r['title'] !== $post->post_title ) {
 			wp_update_post( array( 'ID' => (int) $id, 'post_title' => $r['title'] ) );
 		}
+		if ( ! $write ) { // Save as draft: stored on the server, the feed file is left alone.
+			return $out;
+		}
 		$written = PodPub_FeedXml::write( $id );
 		if ( is_wp_error( $written ) ) {
 			$out['warnings'][] = 'Details saved, but ' . lcfirst( $written->get_error_message() );
@@ -182,7 +186,7 @@ class PodPub_Feeds {
 	 * @param array $input Form values (unslashed).
 	 * @return array { errors: string[], warnings: string[], written: bool }
 	 */
-	public static function save_p20( $id, $input ) {
+	public static function save_p20( $id, $input, $write = true ) {
 		$out = array( 'errors' => array(), 'warnings' => array(), 'written' => false );
 		if ( ! self::get( $id ) || '' === self::dir_name( $id ) ) {
 			$out['errors'][] = 'This podcast was not found.';
@@ -195,6 +199,9 @@ class PodPub_Feeds {
 			return $out;
 		}
 		PodPub_Details::save( $id, $data );
+		if ( ! $write ) {
+			return $out;
+		}
 		$written = PodPub_FeedXml::write( $id );
 		if ( is_wp_error( $written ) ) {
 			$out['warnings'][] = 'Saved, but ' . lcfirst( $written->get_error_message() );
@@ -211,7 +218,7 @@ class PodPub_Feeds {
 	 * @param array $input Form values (unslashed), with a "live" list.
 	 * @return array { errors: string[], warnings: string[], written: bool }
 	 */
-	public static function save_live( $id, $input ) {
+	public static function save_live( $id, $input, $write = true ) {
 		$out = array( 'errors' => array(), 'warnings' => array(), 'written' => false );
 		if ( ! self::get( $id ) || '' === self::dir_name( $id ) ) {
 			$out['errors'][] = 'This podcast was not found.';
@@ -225,6 +232,9 @@ class PodPub_Feeds {
 			return $out;
 		}
 		PodPub_Details::save( $id, $data );
+		if ( ! $write ) {
+			return $out;
+		}
 		$written = PodPub_FeedXml::write( $id );
 		if ( is_wp_error( $written ) ) {
 			$out['warnings'][] = 'Saved, but ' . lcfirst( $written->get_error_message() );

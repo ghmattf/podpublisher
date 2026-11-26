@@ -20,6 +20,7 @@ function get_post( $id ) { return isset( $GLOBALS['posts'][ $id ] ) ? $GLOBALS['
 function get_posts( $a ) { $o = array(); foreach ( $GLOBALS['posts'] as $p ) { if ( $p->post_type === $a['post_type'] && ( ! isset( $a['post_parent'] ) || (int) $p->post_parent === (int) $a['post_parent'] ) ) { $o[] = $p; } } return $o; }
 function get_post_meta( $id, $k ) { return isset( $GLOBALS['meta'][ $id ][ $k ] ) ? $GLOBALS['meta'][ $id ][ $k ] : ''; }
 function update_post_meta( $id, $k, $v ) { $GLOBALS['meta'][ $id ][ $k ] = $v; }
+function delete_post_meta( $id, $k ) { unset( $GLOBALS['meta'][ $id ][ $k ] ); }
 function wp_insert_post( $a ) { $id = $GLOBALS['next']++; $GLOBALS['posts'][ $id ] = (object) array_merge( array( 'ID' => $id, 'post_parent' => 0 ), $a ); return $id; }
 function wp_update_post( $a ) { $GLOBALS['posts'][ $a['ID'] ]->post_title = $a['post_title']; }
 function sanitize_text_field( $s ) { return trim( preg_replace( '/\s+/', ' ', strip_tags( (string) $s ) ) ); }
@@ -38,7 +39,8 @@ function esc_html__( $s ) { return $s; }
 function admin_url( $p = '' ) { return 'https://example.com/wp-admin/' . $p; }
 function add_query_arg( $a, $u, $v = null ) { if ( ! is_array( $a ) ) { $a = array( $a => $u ); $u = $v; } return $u . ( false === strpos( $u, '?' ) ? '?' : '&' ) . http_build_query( $a ); }
 function wp_nonce_field() { echo '<input type="hidden" name="_wpnonce" value="n">'; }
-function submit_button( $t = 'Save', $type = 'primary', $name = 'submit', $wrap = true ) { echo '<button class="' . $type . '">' . esc_html( $t ) . '</button>'; }
+function submit_button( $t = 'Save', $type = 'primary', $name = 'submit', $wrap = true ) { echo '<button class="' . $type . '" name="' . $name . '">' . esc_html( $t ) . '</button>'; }
+function get_permalink( $id ) { return 'https://example.com/?page_id=' . (int) $id; }
 function selected( $a, $b, $e = true ) { return (string) $a === (string) $b ? ' selected' : ''; }
 function checked( $a, $b, $e = true ) { return (string) $a === (string) $b ? ' checked' : ''; }
 function get_users( $a ) { return array( (object) array( 'ID' => 3, 'display_name' => 'Ann Author' ) ); }
@@ -84,7 +86,10 @@ check( 'podcast page: title is escaped', false !== strpos( $h, '<h1>My &lt;Show&
 check( 'podcast page: details form, upload enabled, nonce and action', false !== strpos( $h, 'enctype="multipart/form-data"' ) && false !== strpos( $h, 'value="podpub_save_details"' ) && false !== strpos( $h, '_wpnonce' ) && false !== strpos( $h, 'name="podpub_image"' ) );
 check( 'podcast page: GIF offered for show art', false !== strpos( $h, 'image/gif' ) );
 check( 'podcast page: feed address shown', false !== strpos( $h, "https://example.com/wp-content/uploads/podpublisher/$pdir/$pdir.xml" ) && false !== strpos( $h, 'not written yet' ) );
-check( 'podcast page: episodes section with Add episode', false !== strpos( $h, 'data-tab="episodes"' ) && false !== strpos( $h, 'episode=new' ) && false !== strpos( $h, 'No episodes yet' ) );
+check( 'new podcast (details not saved): no Episodes tab, no Add episode, Details is the default tab', false === strpos( $h, 'data-tab="episodes"' ) && false === strpos( $h, 'episode=new' ) && false !== strpos( $h, 'data-default="details"' ) );
+$_GET['episode'] = 'new';
+check( 'new podcast: ?episode=new shows a warning, not the episode form', false !== strpos( page( 5 ), 'Save the podcast details first' ) && false === strpos( page( 5 ), 'podpub_save_episode' ) );
+$_GET = array();
 check( 'podcast page: delete podcast form, files box not ticked by default, confirmation text', false !== strpos( $h, 'value="podpub_delete_podcast"' ) && false !== strpos( $h, 'name="podpub_delete_files" value="1">' ) && false === strpos( $h, 'podpub_delete_files" value="1" checked' ) && false !== strpos( $h, 'onsubmit="return confirm(' ) && false !== strpos( $h, 'This cannot be undone' ) );
 
 PodPub_Feeds::save_details( 5, array( 'title' => 'My Show', 'description' => 'About', 'language' => 'en', 'explicit' => 'no' ) );
@@ -106,7 +111,7 @@ $r = PodPub_Episodes::save( 5, 0, array( 'title' => 'First <b>One</b>', 'descrip
 $eid = $r['id'];
 unset( $_GET['episode'] );
 $h = page( 5 );
-check( 'podcast page: episode listed with date and status', false !== strpos( $h, 'First One' ) && false !== strpos( $h, '2026-01-15T09:30' ) && false !== strpos( $h, 'Draft' ) && false !== strpos( $h, "episode=$eid" ) );
+check( 'podcast page: episode listed with date and status (a new draft shows Draft)', false !== strpos( $h, 'First One' ) && false !== strpos( $h, '2026-01-15T09:30' ) && false !== strpos( $h, 'Draft' ) && false !== strpos( $h, "episode=$eid" ) );
 $r2 = PodPub_Episodes::save( 5, 0, array( 'title' => 'Hosted Elsewhere', 'description' => 'D', 'explicit' => 'no', 'published' => '2026-01-16T09:30', 'status' => 'published', 'audio_source' => 'external', 'audio_url' => 'https://cdn.example.net/x.mp3', 'audio_size' => '1000', 'duration' => '1:00' ) );
 $h = page( 5 );
 check( 'podcast page: published episode with an https audio address is not labelled "no audio"', $r2['errors'] === array() && false !== strpos( $h, 'Hosted Elsewhere' ) && false === strpos( $h, 'Published (no audio)' ) );
@@ -121,14 +126,25 @@ check( 'bad episode value falls back to the podcast page', false !== strpos( pag
 // WordPress posts: episode prompt, posts tab, delete options.
 $_GET['episode'] = (string) $eid;
 $h = page( 5 );
-check( 'posts: episode form asks yes/no, default yes when there is no post', false !== strpos( $h, 'name="podpub_ep[wp_post]" value="yes" checked' ) && false !== strpos( $h, 'value="no"' ) && false !== strpos( $h, 'Create a WordPress post' ) && false === strpos( $h, 'podpub_delete_post' ) );
+check( 'posts: no yes/no row on the form; hidden answer starts at yes; prompt dialog asks to create', false === strpos( $h, 'type="radio" id="ep_post"' ) && false !== strpos( $h, '<input type="hidden" name="podpub_ep[wp_post]" id="ep_post" value="yes">' ) && false !== strpos( $h, 'id="ep_post_dlg"' ) && false !== strpos( $h, 'Create a WordPress post for this episode?' ) && false === strpos( $h, 'podpub_delete_post' ) );
 update_post_meta( $eid, '_podpub_wp_post', 900 );
 $GLOBALS['posts'][900] = (object) array( 'ID' => 900, 'post_type' => 'post', 'post_status' => 'publish', 'post_title' => 'x', 'post_parent' => 0 );
 $h = page( 5 );
-check( 'posts: with an existing post the prompt warns, defaults to no, delete offers the post', false !== strpos( $h, 'Update the WordPress post' ) && false !== strpos( $h, 'replaces the post' ) && false !== strpos( $h, 'value="no" checked' ) && false !== strpos( $h, 'podpub_delete_post' ) );
+check( 'posts: with an existing post the prompt warns about overwriting, still defaults to yes, delete offers the post', false !== strpos( $h, 'Update the WordPress post for this episode?' ) && false !== strpos( $h, 'replaces the post' ) && false !== strpos( $h, 'name="podpub_ep[wp_post]" id="ep_post" value="yes"' ) && false !== strpos( $h, 'podpub_delete_post' ) );
+$_GET = array();
+$hp = page( 5 );
+check( 'draft: podcast page has Save as draft beside Save and write feed on the live, details and Podcasting 2.0 forms', 3 === substr_count( $hp, 'name="podpub_as_draft"' ) && false !== strpos( $hp, 'data-tab="episodes"' ) );
+check( 'page prompt: asked on each of those forms, default yes, create wording while there is no page', 3 === substr_count( $hp, 'name="podpub_page" id="pp_page_' ) && 3 === substr_count( $hp, 'name="podpub_page" id="pp_page_' ) && false !== strpos( $hp, 'Create the podcast page?' ) && false === strpos( $hp, 'Update the podcast page?' ) && false !== strpos( $hp, 'value="yes"' ) );
+$ps = PodPub_Posts::settings( 5 ); $ps['page_id'] = 901; update_post_meta( 5, '_podpub_posts', $ps );
+$GLOBALS['posts'][901] = (object) array( 'ID' => 901, 'post_type' => 'page', 'post_status' => 'publish', 'post_title' => 'x', 'post_parent' => 0 );
+check( 'page prompt: update wording once the page exists', false !== strpos( page( 5 ), 'Update the podcast page?' ) );
+$_GET['episode'] = (string) $eid;
 update_post_meta( 5, '_podpub_posts', array( 'enabled' => false ) );
 $h = page( 5 );
-check( 'posts: turned off, no prompt', false === strpos( $h, 'podpub_ep[wp_post]' ) );
+check( 'posts: turned off, no prompt and no answer field', false === strpos( $h, 'podpub_ep[wp_post]' ) && false === strpos( $h, 'ep_post_dlg' ) );
+$_GET = array();
+check( 'page prompt: posts off, no page question', false === strpos( page( 5 ), 'podpub_page' ) );
+$_GET['episode'] = (string) $eid;
 update_post_meta( 5, '_podpub_posts', array() );
 unset( $_GET['episode'] );
 $h = page( 5 );
@@ -182,6 +198,12 @@ $hb    = page( $blank );
 check( 'podcast page: OP3 tick box present and off, no statistics link yet', false !== strpos( $h, 'name="podpub[op3]"' ) && false === strpos( $h, 'checked=\'checked\'> Count downloads' ) && false === strpos( $h, 'op3.dev/show/' ) && false !== strpos( $h, 'Count downloads with OP3' ) );
 check( 'podcast page: explicit is a required yes/no select; a new podcast starts on Choose, a saved one shows its answer', false !== strpos( $hb, '<select id="pp_explicit" name="podpub[explicit]" required><option value="" selected>Choose&hellip;</option><option value="yes">Yes</option><option value="no">No</option>' ) && false !== strpos( $h, '<option value="no" selected>No</option>' ) && false !== strpos( $h, 'This feed contains explicit content' ) && false !== strpos( $h, 'name="podpub[keywords]"' ) && false !== strpos( $h, 'managing editor' ) );
 check( 'podcast page: trailers and live episodes with date pickers and a status list', false !== strpos( $h, 'name="podpub_p20[trailers][0][pubdate]"' ) && false !== strpos( $h, '<input type="datetime-local" name="podpub_p20[live][0][start]"' ) && false !== strpos( $h, '<select name="podpub_p20[live][0][status]">' ) && false !== strpos( $h, '<option value="pending">Pending</option>' ) );
+$pe_ids = array_map( function ( $e ) { return $e->ID; }, PodPub_Episodes::all( 5 ) );
+foreach ( $pe_ids as $x ) { update_post_meta( $x, PodPub_Episodes::META_PENDING, 1 ); }
+$hpend = page( 5 );
+check( 'episode list: a saved episode shows the orange "Pending feed write" status', false !== strpos( $hpend, 'podpub-pill--pending">Pending feed write' ) && false !== strpos( $hpend, '.podpub-pill--pending{' ) );
+foreach ( $pe_ids as $x ) { delete_post_meta( $x, PodPub_Episodes::META_PENDING ); }
+check( 'episode list: no pending mark once written', false === strpos( page( 5 ), 'podpub-pill--pending">Pending' ) );
 check( 'podcast page: add-episode link, and the copy link once there is an episode', false !== strpos( $h, 'class="button button-primary">Add episode</a>' ) && false !== strpos( $h, 'Add episode, copying details from the latest' ) && false !== strpos( $h, 'copy=1' ) );
 $_GET['episode'] = (string) $eid;
 $h = page( 5 );
@@ -321,13 +343,17 @@ check( 'cards: Podcasting 2.0 sections are open/close cards with summaries', fal
 check( 'feed tab: shows the files folder, feed file, the three-backup note and the delete section in a danger box', false !== strpos( $h, 'Files folder' ) && false !== strpos( $h, '.bak3' ) && false !== strpos( $h, 'podpub-danger' ) && false !== strpos( $h, 'podpub_delete_podcast' ) );
 $_GET['episode'] = (string) $eid;
 $he = page( 5 );
-check( 'episode page: tabs Episode, Audio, Notes and picture, Podcasting 2.0 inside the one form', 4 === preg_match_all( '/role="tab" id="podpub-t-(episode|audio|notes|p20)"/', $he ) && 1 === substr_count( $he, 'value="podpub_save_episode"' ) );
-check( 'episode page: every field is still there, each once', 1 === substr_count( $he, 'name="podpub_ep[title]"' ) && 1 === substr_count( $he, 'name="podpub_ep[show_notes]"' ) && 1 === substr_count( $he, 'name="podpub_audio"' ) && 1 === substr_count( $he, 'name="podpub_ep[published]"' ) && 1 === substr_count( $he, 'name="podpub_ep[status]"' ) && 1 === substr_count( $he, 'name="podpub_ep[duration]"' ) && 1 === substr_count( $he, 'name="podpub_ep_image"' ) && 1 === substr_count( $he, 'name="podpub_ep[explicit]"' ) );
-preg_match( '#id="podpub-tab-audio".*?</section>#s', $he, $pa ); preg_match( '#id="podpub-tab-notes".*?</section>#s', $he, $pn ); preg_match( '#id="podpub-tab-episode".*?</section>#s', $he, $pe );
-check( 'episode page: fields are on the right tab (audio and duration on Audio; show notes on Notes; title and date on Episode)', false !== strpos( $pa[0], 'name="podpub_audio"' ) && false !== strpos( $pa[0], 'name="podpub_ep[duration]"' ) && false !== strpos( $pn[0], 'name="podpub_ep[show_notes]"' ) && false !== strpos( $pe[0], 'name="podpub_ep[title]"' ) && false !== strpos( $pe[0], 'name="podpub_ep[published]"' ) && false === strpos( $pe[0], 'name="podpub_audio"' ) );
+check( 'episode page: tabs Episode, Media, Notes, Podcasting 2.0 inside the one form', 4 === preg_match_all( '/role="tab" id="podpub-t-(episode|media|notes|p20)"/', $he ) && 1 === substr_count( $he, 'value="podpub_save_episode"' ) );
+check( 'episode page: every field is still there, each once', 1 === substr_count( $he, 'name="podpub_ep[title]"' ) && 1 === substr_count( $he, 'name="podpub_ep[show_notes]"' ) && 1 === substr_count( $he, 'name="podpub_audio"' ) && 1 === substr_count( $he, 'name="podpub_ep[published]"' ) && 0 === substr_count( $he, 'name="podpub_ep[status]"' ) && 1 === substr_count( $he, 'name="podpub_as_draft"' ) && 1 === substr_count( $he, 'name="podpub_ep[duration]"' ) && 1 === substr_count( $he, 'name="podpub_ep_image"' ) && 1 === substr_count( $he, 'name="podpub_ep[explicit]"' ) );
+preg_match( '#id="podpub-tab-media".*?</section>#s', $he, $pa ); preg_match( '#id="podpub-tab-notes".*?</section>#s', $he, $pn ); preg_match( '#id="podpub-tab-episode".*?</section>#s', $he, $pe );
+check( 'episode page: fields are on the right tab (audio and duration on Media; show notes on Notes; title and date on Episode)', false !== strpos( $pa[0], 'name="podpub_audio"' ) && false !== strpos( $pa[0], 'name="podpub_ep[duration]"' ) && false !== strpos( $pn[0], 'name="podpub_ep[show_notes]"' ) && false !== strpos( $pe[0], 'name="podpub_ep[title]"' ) && false !== strpos( $pe[0], 'name="podpub_ep[published]"' ) && false === strpos( $pe[0], 'name="podpub_audio"' ) );
+preg_match( '#id="podpub-tab-p20".*?</section>#s', $he, $pp );
+check( 'episode page: picture is the first row of Episode; Location is on Episode; time splits, chapters, transcripts, soundbites and alternate files are on Media; none of them on Podcasting 2.0', ( $pe[0] && strpos( $pe[0], 'for="ep_img"' ) < strpos( $pe[0], 'name="podpub_ep[title]"' ) ) && false !== strpos( $pe[0], '<summary>Location' ) && false === strpos( $pp[0], '<summary>Location' ) && ( function () use ( $pa, $pp ) { foreach ( array( 'Value time splits', 'Chapters', 'Transcripts', 'Soundbites', 'Alternate files' ) as $n ) { if ( false === strpos( $pa[0], '<summary>' . $n ) || false !== strpos( $pp[0], '<summary>' . $n ) ) { return false; } } return true; } )() );
 check( 'episode page: the button says Save episode, it remembers the tab, and the old long label is gone', false !== strpos( $he, 'Save episode</button>' ) && false !== strpos( $he, 'data-podpub-tabfield' ) && false === strpos( $he, 'Save episode and write feed' ) );
+$_GET['tab'] = 'media';
+check( 'episode page: ?tab= selects the starting tab', false !== strpos( page( 5 ), 'data-default="media"' ) );
 $_GET['tab'] = 'audio';
-check( 'episode page: ?tab= selects the starting tab', false !== strpos( page( 5 ), 'data-default="audio"' ) );
+check( 'episode page: the old ?tab=audio opens the Media tab', false !== strpos( page( 5 ), 'data-default="media"' ) );
 $_GET = array();
 $hl = ( function () { ob_start(); $_GET = array( 'page' => 'podpublisher' ); PodPub_Admin::render_list(); return ob_get_clean(); } )();
 check( 'list page: podcasts are cards with an episode count', false !== strpos( $hl, 'podpub-grid' ) && false !== strpos( $hl, 'podpub-podcast' ) && false !== strpos( $hl, ' episode' ) && false === strpos( $hl, 'wp-list-table' ) );
