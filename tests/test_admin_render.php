@@ -111,7 +111,7 @@ $r = PodPub_Episodes::save( 5, 0, array( 'title' => 'First <b>One</b>', 'descrip
 $eid = $r['id'];
 unset( $_GET['episode'] );
 $h = page( 5 );
-check( 'podcast page: episode listed with date and the orange pending status (just saved)', false !== strpos( $h, 'First One' ) && false !== strpos( $h, '2026-01-15T09:30' ) && false !== strpos( $h, 'Pending feed write' ) && false !== strpos( $h, "episode=$eid" ) );
+check( 'podcast page: episode listed with date and status (a new draft shows Draft)', false !== strpos( $h, 'First One' ) && false !== strpos( $h, '2026-01-15T09:30' ) && false !== strpos( $h, 'Draft' ) && false !== strpos( $h, "episode=$eid" ) );
 $r2 = PodPub_Episodes::save( 5, 0, array( 'title' => 'Hosted Elsewhere', 'description' => 'D', 'explicit' => 'no', 'published' => '2026-01-16T09:30', 'status' => 'published', 'audio_source' => 'external', 'audio_url' => 'https://cdn.example.net/x.mp3', 'audio_size' => '1000', 'duration' => '1:00' ) );
 $h = page( 5 );
 check( 'podcast page: published episode with an https audio address is not labelled "no audio"', $r2['errors'] === array() && false !== strpos( $h, 'Hosted Elsewhere' ) && false === strpos( $h, 'Published (no audio)' ) );

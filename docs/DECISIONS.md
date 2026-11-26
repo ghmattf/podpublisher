@@ -145,3 +145,8 @@ What sovereignfeeds.com offers, from its site (2026-11-20): create a feed (requi
 - *Save as draft:* beside Save and write feed on the three podcast forms it stores the changes on the server without writing the feed file or touching the page (no pop-up). On the episode form, Save episode publishes (needs audio) and Save as draft keeps the episode out of the feed; the Status drop-down is gone. Saving a draft episode with Save episode publishes it.
 
 95. **"Pending feed write" status (0.24.1).** Saving an episode (Save episode or Save as draft) sets a mark on it (`_podpub_pending`); the episode list and the episode page heading then show an orange "Pending feed write" pill in place of Published or Draft. Any successful feed write (Save and write feed, delete, adopt) clears the mark on every episode of that podcast. Episodes imported by adopt are not marked. The mark is per episode and records "saved since the last write"; it does not compare file contents, so a draft that was never in the feed also shows it until the next write.
+
+96. **Dialog scroll, drafts, duplicate warnings (0.24.2).**
+- The pop-up dialog itself no longer scrolls (`overflow:hidden`); only its inner box does, so there is one scroll bar.
+- Refines 95: an episode is marked "Pending feed write" only when it is saved as published, or when a save takes a published episode back to draft (it leaves the feed). A draft that was never published stays "Draft".
+- Saving an episode warns (it still saves) when another episode of the same podcast has the same title (ignoring case) or the same season and episode number for the same episode type. Different seasons with the same episode number are fine.

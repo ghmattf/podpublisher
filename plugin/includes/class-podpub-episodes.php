@@ -907,9 +907,15 @@ class PodPub_Episodes {
 			}
 		}
 
+		$was_published = $post && 'published' === $cur['status'];
 		update_post_meta( $id, self::META, $data );
-		update_post_meta( $id, self::META_PENDING, 1 ); // Saved on the server, not in the feed file until the feed is next written.
+		if ( 'published' === $data['status'] || $was_published ) { // Published now, or taken out of the feed by this save: the feed file needs writing.
+			update_post_meta( $id, self::META_PENDING, 1 );
+		} else {
+			delete_post_meta( $id, self::META_PENDING ); // A draft that was never published does not change the feed.
+		}
 		$out['id'] = $id;
+		$out['warnings'] = array_merge( $out['warnings'], self::duplicate_warnings( $podcast_id, (int) $id, (string) $r['title'], $data ) );
 
 		// The chapter list is written as chapters.json in the episode folder (removed when the list is emptied).
 		$chfile = $folder . '/chapters.json';
@@ -960,6 +966,33 @@ class PodPub_Episodes {
 		update_post_meta( $id, '_podpub_dir', $ep_dir );
 		update_post_meta( $id, self::META, $data );
 		return (int) $id;
+	}
+
+	/**
+	 * Warnings (not errors) when another episode of the same podcast has the same title, or the same
+	 * season and episode number for the same type of episode.
+	 *
+	 * @param int    $podcast_id Podcast record id.
+	 * @param int    $id         This episode's record id.
+	 * @param string $title      This episode's title.
+	 * @param array  $data       This episode's saved details.
+	 * @return string[]
+	 */
+	public static function duplicate_warnings( $podcast_id, $id, $title, $data ) {
+		$out = array();
+		foreach ( self::all( $podcast_id ) as $o ) {
+			if ( (int) $o->ID === (int) $id ) {
+				continue;
+			}
+			$od = self::details( $o->ID );
+			if ( '' !== trim( $title ) && 0 === strcasecmp( trim( $title ), trim( $o->post_title ) ) ) {
+				$out[] = 'Another episode in this podcast already has the title "' . $o->post_title . '". Podcast apps may treat them as the same; consider a different title.';
+			}
+			if ( (int) $data['episode'] > 0 && (int) $od['episode'] === (int) $data['episode'] && (int) $od['season'] === (int) $data['season'] && $od['type'] === $data['type'] ) {
+				$out[] = 'Another episode ("' . $o->post_title . '") already uses ' . ( (int) $data['season'] > 0 ? 'season ' . (int) $data['season'] . ', ' : '' ) . 'episode ' . (int) $data['episode'] . '. Change one of the numbers unless this is intended.';
+			}
+		}
+		return $out;
 	}
 
 	/** Has this episode been saved since the feed file was last written? */

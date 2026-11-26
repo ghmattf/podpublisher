@@ -499,7 +499,7 @@ class PodPub_Admin {
 .podpub-remove{color:var(--pp-bad)!important;border-color:var(--pp-bad)!important}
 .podpub-none{color:var(--pp-muted);font-style:italic;margin:4px 0}
 .podpub-itembar{margin:8px 0}
-.podpub-dialog{border:0;border-radius:8px;padding:0;width:min(640px,calc(100vw - 24px));max-height:calc(100vh - 40px);box-shadow:0 10px 40px rgba(0,0,0,.35)}
+.podpub-dialog{border:0;border-radius:8px;padding:0;overflow:hidden;width:min(640px,calc(100vw - 24px));max-height:calc(100vh - 40px);box-shadow:0 10px 40px rgba(0,0,0,.35)}
 .podpub-dialog::backdrop{background:rgba(0,0,0,.5)}
 .podpub-dialog-box{padding:18px 20px;overflow:auto;max-height:calc(100vh - 40px)}
 .podpub-dialog-box h2{margin-top:0}

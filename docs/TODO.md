@@ -14,6 +14,3 @@ Wording is the owner's. Completed items are removed from this list (the history 
 
 ## New (2026-11-26, evening)
 
-53. Fix the two scroll bars in the "Add location" window.
-54. Saving a new episode with "Save as draft" shows "Pending feed write" instead of "Draft".
-55. Warn when an episode title, or a season and episode number combination, is already used by another episode in the same podcast.
