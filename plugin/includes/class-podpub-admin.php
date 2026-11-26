@@ -180,13 +180,35 @@ class PodPub_Admin {
 		}
 		$used   = array();
 		$file   = self::staged_upload( $input, 'image', $file, $used );
-		$result = PodPub_Feeds::save_details( $id, $input, $file );
+		$draft  = ! empty( $_POST['podpub_as_draft'] );
+		$result = PodPub_Feeds::save_details( $id, $input, $file, ! $draft );
+		self::page_after_save( $id, $result, $draft );
 		if ( ! $result['errors'] ) {
 			array_map( array( 'PodPub_Chunks', 'discard' ), $used );
 		}
 		set_transient( 'podpub_notice_' . get_current_user_id(), $result, 120 );
 		wp_safe_redirect( self::feed_page_url( $id, array( 'tab' => 'details' ) ) );
 		exit;
+	}
+
+	/**
+	 * After a podcast-level Save and write feed: make or update the podcast page when the owner
+	 * answered yes in the pop-up (a browser without script sends yes). Not done for Save as draft
+	 * or when the save had errors. Adds 'page' => 'created'|'updated' to the result.
+	 */
+	private static function page_after_save( $id, &$result, $draft ) {
+		if ( $draft || ! empty( $result['errors'] ) || ! PodPub_Posts::page_wanted( $id ) ) {
+			return;
+		}
+		$ans = isset( $_POST['podpub_page'] ) && is_string( $_POST['podpub_page'] ) ? sanitize_key( wp_unslash( $_POST['podpub_page'] ) ) : 'yes'; // phpcs:ignore WordPress.Security.NonceVerification
+		if ( 'no' === $ans ) {
+			return;
+		}
+		$had                = PodPub_Posts::page_present( $id );
+		$result['warnings'] = array_merge( $result['warnings'], PodPub_Posts::sync_page( $id, true ) );
+		if ( PodPub_Posts::page_present( $id ) ) {
+			$result['page'] = $had ? 'updated' : 'created';
+		}
 	}
 
 	private static function feed_page_url( $podcast_id, $args = array() ) {
@@ -204,6 +226,12 @@ class PodPub_Admin {
 		$pid   = isset( $_POST['podpub_id'] ) ? (int) $_POST['podpub_id'] : 0;
 		$eid   = isset( $_POST['podpub_episode_id'] ) ? (int) $_POST['podpub_episode_id'] : 0;
 		$input = isset( $_POST['podpub_ep'] ) && is_array( $_POST['podpub_ep'] ) ? wp_unslash( $_POST['podpub_ep'] ) : array(); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput
+		$input['status'] = ! empty( $_POST['podpub_as_draft'] ) ? 'draft' : 'published'; // The Save episode and Save as draft buttons decide the status.
+		if ( 'none' === PodPub_FeedXml::status( $pid )['state'] ) {
+			set_transient( 'podpub_notice_' . get_current_user_id(), array( 'errors' => array( 'Save the podcast details first. Episodes can be added once the podcast has been saved.' ), 'warnings' => array(), 'input' => null ), 120 );
+			wp_safe_redirect( self::feed_page_url( $pid, array( 'tab' => 'details' ) ) );
+			exit;
+		}
 		$file  = null;
 		if ( isset( $_FILES['podpub_audio'] ) && is_array( $_FILES['podpub_audio'] ) ) {
 			$file = $_FILES['podpub_audio']; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput
@@ -254,7 +282,9 @@ class PodPub_Admin {
 		check_admin_referer( 'podpub_save_live' );
 		$id     = isset( $_POST['podpub_id'] ) ? (int) $_POST['podpub_id'] : 0;
 		$input  = isset( $_POST['podpub_p20'] ) && is_array( $_POST['podpub_p20'] ) ? wp_unslash( $_POST['podpub_p20'] ) : array(); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput
-		$result = PodPub_Feeds::save_live( $id, $input );
+		$draft  = ! empty( $_POST['podpub_as_draft'] );
+		$result = PodPub_Feeds::save_live( $id, $input, ! $draft );
+		self::page_after_save( $id, $result, $draft );
 		$result['form'] = 'live';
 		if ( $result['errors'] ) {
 			$result['input'] = $input;
@@ -366,7 +396,9 @@ class PodPub_Admin {
 		check_admin_referer( 'podpub_save_p20' );
 		$id    = isset( $_POST['podpub_id'] ) ? (int) $_POST['podpub_id'] : 0;
 		$input = isset( $_POST['podpub_p20'] ) && is_array( $_POST['podpub_p20'] ) ? wp_unslash( $_POST['podpub_p20'] ) : array(); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput
-		$result          = PodPub_Feeds::save_p20( $id, $input );
+		$draft           = ! empty( $_POST['podpub_as_draft'] );
+		$result          = PodPub_Feeds::save_p20( $id, $input, ! $draft );
+		self::page_after_save( $id, $result, $draft );
 		$result['form']  = 'p20';
 		$result['input'] = $result['errors'] ? $input : null;
 		set_transient( 'podpub_notice_' . get_current_user_id(), $result, 120 );
@@ -740,9 +772,12 @@ JS;
 	 * @param string $label Button text.
 	 * @param string $hint  Optional small text beside the button.
 	 */
-	private static function render_savebar( $label, $hint = '' ) {
+	private static function render_savebar( $label, $hint = '', $draft = false ) {
 		echo '<div class="podpub-savebar">';
 		submit_button( $label, 'primary', 'submit', false );
+		if ( $draft ) {
+			submit_button( 'Save as draft', 'secondary', 'podpub_as_draft', false );
+		}
 		if ( '' !== $hint ) {
 			echo '<span class="podpub-hint">' . esc_html( $hint ) . '</span>';
 		}
@@ -776,8 +811,36 @@ JS;
 	}
 
 	/**
-	 * The WordPress post question for an episode, asked after "Save episode" is pressed, and only when
-	 * posts are on for the podcast and the episode is being published. The answer travels in a hidden
+	 * The podcast page question, asked when Save and write feed is pressed and the podcast has a page
+	 * (posts on, page on): create or update it? The answer goes in a hidden field that starts at "yes"
+	 * (also what a browser without script sends). Save as draft does not ask.
+	 */
+	private static function render_page_prompt( $id, $k ) {
+		if ( ! PodPub_Posts::page_wanted( (int) $id ) ) {
+			return;
+		}
+		$have = PodPub_Posts::page_present( (int) $id );
+		$h    = 'pp_page_' . $k;
+		echo '<input type="hidden" name="podpub_page" id="' . esc_attr( $h ) . '" value="yes">';
+		echo '<dialog class="podpub-dialog" id="' . esc_attr( $h ) . '_dlg" aria-labelledby="' . esc_attr( $h ) . '_ttl"><div class="podpub-dialog-box">';
+		echo '<h3 id="' . esc_attr( $h ) . '_ttl">Podcast page</h3>';
+		if ( $have ) {
+			echo '<p>Update the podcast page?</p><p class="description">The page is rebuilt with the show art, the description and a list of the WordPress posts made for the episodes. Changes made to the page in WordPress will be lost.</p>';
+		} else {
+			echo '<p>Create the podcast page?</p><p class="description">The page will show the show art, the description and a list of the WordPress posts made for the episodes.</p>';
+		}
+		echo '<div class="podpub-dialog-foot"><button type="button" class="button button-primary" data-answer="yes" autofocus>Yes</button><button type="button" class="button" data-answer="no">No, leave the page alone</button><button type="button" class="button" data-answer="back">Back to editing</button></div>';
+		echo '</div></dialog>';
+		echo '<script>(function(){var h=document.getElementById("' . $h . '"),d=document.getElementById("' . $h . '_dlg"),f=h&&h.form;if(!f||!d||typeof d.showModal!=="function")return;var ok=false;
+f.addEventListener("submit",function(e){if(ok||(e.submitter&&e.submitter.name==="podpub_as_draft"))return;e.preventDefault();d.showModal();});
+d.addEventListener("cancel",function(e){e.preventDefault();d.close();});
+[].slice.call(d.querySelectorAll("[data-answer]")).forEach(function(b){b.addEventListener("click",function(){var a=b.getAttribute("data-answer");d.close();if(a==="back")return;h.value=a;ok=true;HTMLFormElement.prototype.submit.call(f);});});
+})();</script>';
+	}
+
+	/**
+	 * The WordPress post question for an episode, asked after "Save episode" is pressed (not Save as
+	 * draft), and only when posts are on for the podcast. The answer travels in a hidden
 	 * field that starts at "yes" (also what a browser without script sends).
 	 */
 	private static function render_post_prompt( $id, $eid, $v ) {
@@ -796,9 +859,9 @@ JS;
 		}
 		echo '<div class="podpub-dialog-foot"><button type="button" class="button button-primary" data-post-answer="yes" autofocus>Yes</button><button type="button" class="button" data-post-answer="no">' . ( $has_post ? 'No, leave the post as it is' : 'No, leave WordPress alone' ) . '</button><button type="button" class="button" data-post-answer="back">Back to editing</button></div>';
 		echo '</div></dialog>';
-		echo '<script>(function(){var f=document.getElementById("ep_post").form,d=document.getElementById("ep_post_dlg"),h=document.getElementById("ep_post"),s=document.getElementById("ep_status");if(!f||!d||!s||typeof d.showModal!=="function")return;
+		echo '<script>(function(){var f=document.getElementById("ep_post").form,d=document.getElementById("ep_post_dlg"),h=document.getElementById("ep_post");if(!f||!d||typeof d.showModal!=="function")return;
 var ok=false;
-f.addEventListener("submit",function(e){if(ok||s.value!=="published")return;e.preventDefault();d.showModal();});
+f.addEventListener("submit",function(e){if(ok||(e.submitter&&e.submitter.name==="podpub_as_draft"))return;e.preventDefault();d.showModal();});
 d.addEventListener("cancel",function(e){e.preventDefault();d.close();});
 [].slice.call(d.querySelectorAll("[data-post-answer]")).forEach(function(b){b.addEventListener("click",function(){var a=b.getAttribute("data-post-answer");d.close();if(a==="back")return;h.value=a;ok=true;HTMLFormElement.prototype.submit.call(f);});});
 })();</script>';
@@ -923,7 +986,8 @@ d.addEventListener("cancel",function(e){e.preventDefault();d.close();});
 			array( 'key' => 'link', 'label' => 'Link', 'type' => 'text', 'ph' => 'https://' ),
 		), PodPub_P20::MAX_LIVE, array( 'noun' => 'live episode', 'add' => 'Add live episode', 'title' => 'title', 'none' => 'No live episodes yet.' ) );
 		echo self::cards( (string) ob_get_clean() ); // phpcs:ignore WordPress.Security.EscapeOutput
-		self::render_savebar( 'Save and write feed', 'Saves the live episodes and writes the feed file (the old file is kept as a backup).' );
+		self::render_page_prompt( $id, 'live' );
+		self::render_savebar( 'Save and write feed', 'Saves the live episodes and writes the feed file (the old file is kept as a backup). Save as draft stores them without writing the feed.', true );
 		echo '</form>';
 	}
 
@@ -1311,7 +1375,7 @@ d.addEventListener("cancel",function(e){e.preventDefault();d.close();});
 				echo '<p class="description">No audio files found in that folder yet. Copy one in, then reload this page.</p>';
 			}
 		} else {
-			echo '<p class="description">Save the episode first (as a draft). Its folder is made when it is saved; then copy the audio file into it and come back here to pick it.</p>';
+			echo '<p class="description">Save the episode first (use Save as draft). Its folder is made when it is saved; then copy the audio file into it and come back here to pick it.</p>';
 		}
 		echo '</div>';
 
@@ -1338,8 +1402,6 @@ d.addEventListener("cancel",function(e){e.preventDefault();d.close();});
 			echo '<option value="' . esc_attr( $k ) . '"' . selected( $type, $k, false ) . '>' . esc_html( $label ) . '</option>';
 		}
 		echo '</select></td></tr>';
-		$status = $v( 'status', $d['status'] );
-		echo '<tr><th scope="row"><label for="ep_status">Status</label></th><td><select id="ep_status" name="podpub_ep[status]"><option value="draft"' . selected( $status, 'draft', false ) . '>Draft (not in the feed)</option><option value="published"' . selected( $status, 'published', false ) . '>Published (in the feed; needs audio)</option></select></td></tr>';
 		$all_rows = ob_get_clean();
 		preg_match_all( '#<tr[^>]*>.*?</tr>#s', $all_rows, $mm );
 		$by = array();
@@ -1348,7 +1410,7 @@ d.addEventListener("cancel",function(e){e.preventDefault();d.close();});
 				$by[ $idm[1] ] = $row;
 			}
 		}
-		$placed = array( 'ep_title', 'ep_desc', 'ep_date', 'ep_status', 'ep_type', 'ep_season', 'ep_num', 'ep_ex', 'ep_audio_open', 'ep_notes', 'ep_sub', 'ep_sum', 'ep_kw', 'ep_img' );
+		$placed = array( 'ep_title', 'ep_desc', 'ep_date', 'ep_type', 'ep_season', 'ep_num', 'ep_ex', 'ep_audio_open', 'ep_notes', 'ep_sub', 'ep_sum', 'ep_kw', 'ep_img' );
 		$group  = function ( $ids ) use ( $by, $placed ) {
 			$h = '<table class="form-table" role="presentation">';
 			foreach ( $ids as $k ) {
@@ -1364,7 +1426,7 @@ d.addEventListener("cancel",function(e){e.preventDefault();d.close();});
 			return $h . '</table>';
 		};
 		$tabs = array(
-			'episode' => array( 'label' => 'Episode', 'html' => $group( array( 'ep_img', 'ep_title', 'ep_desc', 'ep_date', 'ep_status', 'ep_type', 'ep_season', 'ep_num', 'ep_ex' ) ) ),
+			'episode' => array( 'label' => 'Episode', 'html' => $group( array( 'ep_img', 'ep_title', 'ep_desc', 'ep_date', 'ep_type', 'ep_season', 'ep_num', 'ep_ex' ) ) ),
 			'media'   => array( 'label' => 'Media', 'html' => $group( array( 'ep_audio_open' ) ) ),
 			'notes'   => array( 'label' => 'Notes', 'html' => $group( array( 'ep_notes', 'ep_sub', 'ep_sum', 'ep_kw' ) ) ),
 		);
@@ -1392,7 +1454,8 @@ d.addEventListener("cancel",function(e){e.preventDefault();d.close();});
 		self::render_post_prompt( $id, $eid, $v );
 		echo '<div class="podpub-savebar" style="margin:0;border:1px solid var(--pp-border);border-radius:8px;margin-top:14px">';
 		submit_button( 'Save episode', 'primary', 'submit', false );
-		echo '<span class="podpub-hint">Stores the episode on the server. The feed file is updated when you use Save and write feed on the podcast page.</span></div>';
+		submit_button( 'Save as draft', 'secondary', 'podpub_as_draft', false );
+		echo '<span class="podpub-hint">Save episode publishes it (needs audio); Save as draft keeps it out of the feed. Neither writes the feed file: use Save and write feed on the podcast page.</span></div>';
 		echo '</form>';
 		if ( $post ) {
 			echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '" onsubmit="return confirm(\'Delete this episode and its audio file? This cannot be undone.\');">';
@@ -1727,7 +1790,7 @@ d.addEventListener("cancel",function(e){e.preventDefault();d.close();});
 			} elseif ( ! empty( $notice['posts_saved'] ) ) {
 				echo '<div class="notice notice-success"><p>WordPress post settings saved. The feed file has not been changed.</p></div>';
 			} else {
-				echo '<div class="notice notice-success"><p>' . ( ! empty( $notice['written'] ) ? 'Saved. The feed file was written (the previous file was kept as a backup).' : 'Saved. The feed file has not been changed; press Save and write feed on the podcast page to publish.' ) . '</p></div>';
+				echo '<div class="notice notice-success"><p>' . ( ! empty( $notice['written'] ) ? 'Saved. The feed file was written (the previous file was kept as a backup).' : 'Saved. The feed file has not been changed; press Save and write feed on the podcast page to publish.' ) . ( ! empty( $notice['page'] ) ? ' The podcast page was ' . esc_html( $notice['page'] ) . '.' : '' ) . '</p></div>';
 			}
 			foreach ( ! empty( $notice['warnings'] ) ? $notice['warnings'] : array() as $m ) {
 				echo '<div class="notice notice-warning"><p>' . esc_html( $m ) . '</p></div>';
@@ -1746,6 +1809,11 @@ d.addEventListener("cancel",function(e){e.preventDefault();d.close();});
 		}
 
 		$which = isset( $_GET['episode'] ) ? sanitize_text_field( wp_unslash( $_GET['episode'] ) ) : '';
+		$saved = 'none' !== $st['state']; // A new podcast has no feed to add episodes to until its details are saved.
+		if ( ! $saved && '' !== $which ) {
+			echo '<div class="notice notice-warning"><p>Save the podcast details first. Episodes can be added once the podcast has been saved.</p></div>';
+			$which = '';
+		}
 		if ( '' !== $which && ( 'new' === $which || ctype_digit( $which ) ) ) {
 			self::render_episode( $id, $feed, $which, is_array( $notice ) ? $notice : null );
 			echo '</div>';
@@ -1791,12 +1859,15 @@ d.addEventListener("cancel",function(e){e.preventDefault();d.close();});
 		};
 		$tabs = array();
 
-		// Episodes.
+		// Episodes (not offered until the podcast has been saved).
 		ob_start();
 		$live_in = is_array( $notice ) && isset( $notice['form'] ) && 'live' === $notice['form'] && ! empty( $notice['input'] ) ? $notice['input'] : null;
 		self::render_live_form( $id, $d, $live_in );
 		self::render_episode_list( $id );
-		$tabs['episodes'] = array( 'label' => 'Episodes' . ( $eps ? ' (' . count( $eps ) . ')' : '' ), 'html' => ob_get_clean() );
+		$ep_html = ob_get_clean();
+		if ( 'none' !== $st['state'] ) {
+			$tabs['episodes'] = array( 'label' => 'Episodes' . ( $eps ? ' (' . count( $eps ) . ')' : '' ), 'html' => $ep_html );
+		}
 
 		// Details.
 		ob_start();
@@ -1836,7 +1907,8 @@ d.addEventListener("cancel",function(e){e.preventDefault();d.close();});
 		self::render_chunk_input( 'image', 'podpub_image', 'podpub[image_staged]', 'image/jpeg,image/png,image/gif', '', 'pp_img' );
 		echo '<p class="description">JPEG, PNG or GIF, square, between 1400 x 1400 and 3000 x 3000 pixels, up to 10 MB. Saved in the podcast folder as cover.jpg, cover.png or cover.gif; smaller copies (300, 600, 1000 and 1500 pixels wide) are made automatically for apps to use (not for a GIF). Some directories (such as Apple Podcasts and Spotify) only take JPEG or PNG.</p></td></tr>';
 		echo '</table>';
-		self::render_savebar( 'Save and write feed', 'Saves the details and writes the feed file (the old file is kept as a backup).' );
+		self::render_page_prompt( $id, 'details' );
+		self::render_savebar( 'Save and write feed', 'Saves the details and writes the feed file (the old file is kept as a backup). Save as draft stores them without writing the feed.', true );
 		echo '</form>';
 		$tabs['details'] = array( 'label' => 'Details', 'html' => ob_get_clean() );
 
@@ -1848,7 +1920,8 @@ d.addEventListener("cancel",function(e){e.preventDefault();d.close();});
 		echo '<input type="hidden" name="action" value="podpub_save_p20"><input type="hidden" name="podpub_id" value="' . (int) $id . '">';
 		wp_nonce_field( 'podpub_save_p20' );
 		self::render_p20_fields( 'podpub_p20', $d, $p20_in, false );
-		self::render_savebar( 'Save and write feed', 'Saves these settings and writes the feed file.' );
+		self::render_page_prompt( $id, 'p20' );
+		self::render_savebar( 'Save and write feed', 'Saves these settings and writes the feed file. Save as draft stores them without writing the feed.', true );
 		echo '</form>';
 		$tabs['p20'] = array( 'label' => 'Podcasting 2.0', 'html' => ob_get_clean() );
 
@@ -1884,7 +1957,7 @@ d.addEventListener("cancel",function(e){e.preventDefault();d.close();});
 		} elseif ( isset( $_GET['tab'] ) && isset( $tabs[ sanitize_key( wp_unslash( $_GET['tab'] ) ) ] ) ) {
 			$default = sanitize_key( wp_unslash( $_GET['tab'] ) );
 		} else {
-			$default = '' === trim( $d['description'] ) ? 'details' : 'episodes';
+			$default = isset( $tabs['episodes'] ) && '' !== trim( $d['description'] ) ? 'episodes' : 'details';
 		}
 		self::render_tabs( $tabs, $default );
 		echo '<p style="margin-top:16px"><a href="' . esc_url( self::list_url() ) . '">&larr; All podcasts</a></p></div>';

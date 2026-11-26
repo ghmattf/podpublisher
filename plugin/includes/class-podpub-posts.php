@@ -33,7 +33,7 @@ class PodPub_Posts {
 			'enabled'    => isset( $saved['enabled'] ) ? (bool) $saved['enabled'] : true,
 			'author'     => isset( $saved['author'] ) ? (int) $saved['author'] : 0,
 			'categories' => isset( $saved['categories'] ) && is_array( $saved['categories'] ) ? array_values( array_map( 'intval', $saved['categories'] ) ) : array(),
-			'page'       => ! empty( $saved['page'] ),
+			'page'       => isset( $saved['page'] ) ? (bool) $saved['page'] : true,
 			'page_id'    => isset( $saved['page_id'] ) ? (int) $saved['page_id'] : 0,
 		);
 	}
@@ -316,6 +316,17 @@ class PodPub_Posts {
 		return array();
 	}
 
+	/** Is a podcast page wanted: posts on and the page switched on. */
+	public static function page_wanted( $podcast_id ) {
+		$s = self::settings( $podcast_id );
+		return $s['enabled'] && $s['page'];
+	}
+
+	/** Does the podcast page exist already (so the question is update, not create)? */
+	public static function page_present( $podcast_id ) {
+		return self::page_exists( self::settings( $podcast_id )['page_id'] );
+	}
+
 	/** Address of the podcast page, or ''. */
 	public static function page_url( $podcast_id ) {
 		$s = self::settings( $podcast_id );
@@ -347,7 +358,11 @@ class PodPub_Posts {
 			if ( 'published' !== $e['status'] || $e['published'] > time() ) {
 				continue;
 			}
-			$rows[] = array( 'when' => (int) $e['published'], 'title' => $ep->post_title, 'desc' => $e['description'], 'url' => self::post_url( $ep->ID ) );
+			$url = self::post_url( $ep->ID );
+			if ( '' === $url ) { // Only episodes that have a WordPress post are listed.
+				continue;
+			}
+			$rows[] = array( 'when' => (int) $e['published'], 'title' => $ep->post_title, 'desc' => $e['description'], 'url' => $url );
 		}
 		usort( $rows, function ( $a, $b ) { return $b['when'] <=> $a['when']; } );
 		if ( $rows ) {

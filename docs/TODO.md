@@ -11,8 +11,3 @@ Wording is the owner's. Completed items are removed from this list (the history 
 
 44. WordPress post content and link.
 
-## New (2026-11-26, later)
-
-50. Do not allow adding any episodes until the feed has been saved. The "Episodes" tab should be hidden for new podcasts until it has been saved, and new podcasts should default to the "Details" tab.
-51. When WordPress post is enabled for a podcast, create a page for the podcast. It should have a list (is it called a WordPress archive?) that displays all the WordPress posts created for each episode of the podcast. When "Save and write feed" is clicked it should prompt whether to update the page or not.
-52. A new button alongside the Save button for podcast and episode: "Save as draft". This should replace the "draft" section in the episode page.

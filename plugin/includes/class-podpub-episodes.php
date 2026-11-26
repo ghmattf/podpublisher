@@ -272,7 +272,7 @@ class PodPub_Episodes {
 
 		$data['status'] = 'published' === $get( 'status' ) ? 'published' : 'draft';
 		if ( 'published' === $data['status'] && ! $has_audio_after ) {
-			$errors[] = 'Upload the audio file before publishing, or save the episode as a draft.';
+			$errors[] = 'Add the audio before saving the episode, or use Save as draft.';
 		}
 		$data = PodPub_P20::sanitize_item( $in, $data, $errors );
 		return array( 'data' => $data, 'title' => $title, 'errors' => $errors );
@@ -930,7 +930,6 @@ class PodPub_Episodes {
 			$out['post']     = $pr['post'];
 			$out['warnings'] = array_merge( $out['warnings'], $pr['warnings'] );
 		}
-		$out['warnings'] = array_merge( $out['warnings'], PodPub_Posts::sync_page( $podcast_id ) );
 		// The feed is not written here: only the podcast-level "Save and write feed" does that.
 		return $out;
 	}
@@ -985,7 +984,6 @@ class PodPub_Episodes {
 			PodPub_Posts::trash_for_episode( $id );
 		}
 		wp_delete_post( (int) $id, true );
-		$out['warnings'] = array_merge( $out['warnings'], PodPub_Posts::sync_page( $podcast_id ) );
 		// The feed is not written here: only the podcast-level "Save and write feed" does that.
 		return $out;
 	}
